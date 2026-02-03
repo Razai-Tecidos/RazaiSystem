@@ -273,11 +273,112 @@ export function useEstampas() {
     [estampas, toast]
   );
 
+  /**
+   * Cria múltiplas estampas em lote
+   */
+  const createEstampasBatch = useCallback(
+    async (nomes: string[], tecidoBaseId: string): Promise<void> => {
+      if (nomes.length === 0) return;
+
+      // Buscar nome do tecido base uma vez
+      let tecidoBaseNome = '';
+      try {
+        const tecido = await getTecidoById(tecidoBaseId);
+        tecidoBaseNome = tecido?.nome || '';
+      } catch (error) {
+        console.warn('Erro ao buscar tecido base:', error);
+      }
+
+      // Criar estampas temporárias para UI otimista
+      const tempEstampas: EstampaWithStatus[] = nomes.map((nome, index) => ({
+        id: `temp-batch-${Date.now()}-${index}`,
+        nome,
+        tecidoBaseId,
+        tecidoBaseNome,
+        imagem: '',
+        sku: '...',
+        createdAt: {} as any,
+        updatedAt: {} as any,
+        _status: 'saving',
+        _tempId: `temp-batch-${Date.now()}-${index}`,
+      }));
+
+      setEstampas((prev) => [...tempEstampas, ...prev]);
+
+      toast({
+        title: 'Cadastrando...',
+        description: `Criando ${nomes.length} estampa${nomes.length > 1 ? 's' : ''}...`,
+      });
+
+      let criadas = 0;
+      let erros = 0;
+      const estampasCriadas: Estampa[] = [];
+
+      // Criar sequencialmente para garantir SKUs corretos
+      for (let i = 0; i < nomes.length; i++) {
+        const nome = nomes[i];
+        const tempId = tempEstampas[i]._tempId!;
+
+        try {
+          // Gerar SKU
+          const { sku } = await gerarSkuPorFamiliaEstampa(nome);
+
+          // Criar no Firestore
+          const created = await createEstampaFirebase(
+            { nome, tecidoBaseId },
+            sku,
+            undefined,
+            tecidoBaseNome
+          );
+
+          estampasCriadas.push(created);
+          criadas++;
+
+          // Atualizar UI com estampa real
+          setEstampas((prev) =>
+            prev.map((e) =>
+              e._tempId === tempId ? { ...created } : e
+            )
+          );
+        } catch (error) {
+          console.error(`Erro ao criar estampa "${nome}":`, error);
+          erros++;
+
+          // Remover temporário com erro
+          setEstampas((prev) => prev.filter((e) => e._tempId !== tempId));
+        }
+      }
+
+      // Toast final
+      if (erros === 0) {
+        toast({
+          title: 'Sucesso!',
+          description: `${criadas} estampa${criadas > 1 ? 's' : ''} criada${criadas > 1 ? 's' : ''}.`,
+        });
+      } else if (criadas > 0) {
+        toast({
+          title: 'Parcialmente concluído',
+          description: `${criadas} criada${criadas > 1 ? 's' : ''}, ${erros} erro${erros > 1 ? 's' : ''}.`,
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível criar as estampas.',
+          variant: 'destructive',
+        });
+        throw new Error('Falha ao criar estampas em lote');
+      }
+    },
+    [toast]
+  );
+
   return {
     estampas,
     loading,
     loadEstampas,
     createEstampa,
+    createEstampasBatch,
     updateEstampa,
     deleteEstampa,
   };

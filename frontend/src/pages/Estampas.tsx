@@ -14,7 +14,7 @@ interface EstampasProps {
 }
 
 export function Estampas({ onNavigateHome }: EstampasProps) {
-  const { estampas, loading, createEstampa, updateEstampa, deleteEstampa } = useEstampas();
+  const { estampas, loading, createEstampa, createEstampasBatch, updateEstampa, deleteEstampa } = useEstampas();
   const { tecidos, loading: loadingTecidos } = useTecidos();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEstampa, setEditingEstampa] = useState<Estampa | null>(null);
@@ -125,6 +125,7 @@ export function Estampas({ onNavigateHome }: EstampasProps) {
         open={modalOpen}
         onOpenChange={setModalOpen}
         onSubmit={handleSubmit}
+        onSubmitBatch={createEstampasBatch}
         estampa={editingEstampa}
         tecidos={tecidosEstampados}
         loading={loading || loadingTecidos}
