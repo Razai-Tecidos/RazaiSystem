@@ -206,6 +206,58 @@ const { cores, loading, createCor, updateCor, deleteCor } = useCores();
 
 ---
 
+## useEstampas
+
+Hook para operações CRUD de estampas com UI otimista e cadastro em lote.
+
+**Localização**: `frontend/src/hooks/useEstampas.ts`
+
+**Retorno**:
+```typescript
+{
+  estampas: EstampaWithStatus[];  // Lista de estampas com status
+  loading: boolean;                // Estado de carregamento inicial
+  loadEstampas: () => Promise<void>;
+  createEstampa: (data: CreateEstampaData) => Promise<void>;
+  createEstampasBatch: (nomes: string[], tecidoBaseId: string) => Promise<void>;
+  updateEstampa: (data: UpdateEstampaData) => Promise<void>;
+  deleteEstampa: (id: string) => Promise<void>;
+}
+```
+
+**Uso**:
+```typescript
+const { estampas, loading, createEstampa, createEstampasBatch } = useEstampas();
+
+// Criar uma estampa
+await createEstampa({
+  nome: 'Jardim Pink',
+  tecidoBaseId: 'tecido-123',
+});
+
+// Criar múltiplas estampas em lote
+await createEstampasBatch(
+  ['Jardim Pink', 'Jardim Azul', 'Floral Rosa'],
+  'tecido-123'
+);
+```
+
+**Funcionalidades**:
+- **UI Otimista**: Atualiza interface imediatamente antes da confirmação do servidor
+- **Rollback automático**: Reverte mudanças em caso de erro
+- **Cadastro em lote**: Cria múltiplas estampas sequencialmente
+- **SKU automático**: Gera SKU baseado na família (primeira palavra do nome)
+- **Upload de imagem**: Gerencia upload opcional para Firebase Storage
+
+**Formato de SKU**:
+- Prefixo: 2 letras da primeira palavra do nome (família)
+- Número: 3 dígitos sequenciais por família
+- Exemplo: "Jardim Pink" → `JA001`, "Floral Rosa" → `FL001`
+
+**Documentação completa**: `frontend/src/docs/ESTAMPAS.md`
+
+---
+
 ## useBluetooth
 
 Hook genérico para comunicação Bluetooth usando Web Bluetooth API.

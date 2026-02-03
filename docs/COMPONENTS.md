@@ -137,6 +137,107 @@ interface TecidoFormModalProps {
 
 ---
 
+## Componentes de Estampas
+
+### EstampaFormModal
+
+Modal para criar/editar estampas com modos Individual e Lote.
+
+**Localização**: `frontend/src/components/Estampas/EstampaFormModal.tsx`
+
+**Props**:
+```typescript
+interface EstampaFormModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: CreateEstampaData) => Promise<void>;
+  onSubmitBatch?: (nomes: string[], tecidoBaseId: string) => Promise<void>;
+  estampa?: Estampa | null;
+  tecidos: Tecido[];
+  loading?: boolean;
+}
+```
+
+**Funcionalidades**:
+- Toggle entre modo Individual e Lote (apenas criação)
+- Seleção de tecido via chips minimalistas
+- Modo Individual: nome, imagem (opcional), descrição
+- Modo Lote: textarea para múltiplos nomes + preview
+- Validação em tempo real
+- Preview do SKU estimado por família
+
+**Modo Individual**:
+- Nome obrigatório (mínimo 2 palavras)
+- Imagem opcional (upload direto)
+- Descrição opcional
+
+**Modo Lote**:
+- Nomes separados por linha ou vírgula
+- Preview mostra nomes válidos/inválidos
+- Botão dinâmico "Criar X Estampas"
+
+---
+
+### TecidoChip
+
+Chip minimalista para seleção de tecido.
+
+**Localização**: `frontend/src/components/Estampas/EstampaFormModal.tsx` (componente interno)
+
+**Props**:
+```typescript
+interface TecidoChipProps {
+  tecido: Tecido;
+  selected: boolean;
+  onSelect: () => void;
+}
+```
+
+**Estilo**:
+- Selecionado: `bg-pink-500 text-white`
+- Não selecionado: `bg-gray-100 text-gray-600`
+- Animação de escala no hover/click
+
+**Exemplo**:
+```tsx
+<TecidoChip
+  tecido={tecido}
+  selected={tecidoBaseId === tecido.id}
+  onSelect={() => setTecidoBaseId(tecido.id)}
+/>
+```
+
+---
+
+### EstampasTable
+
+Tabela responsiva para listagem de estampas.
+
+**Localização**: `frontend/src/components/Estampas/EstampasTable.tsx`
+
+**Props**:
+```typescript
+interface EstampasTableProps {
+  estampas: Estampa[];
+  onEdit: (estampa: Estampa) => void;
+  onDelete: (id: string) => void;
+  loading?: boolean;
+}
+```
+
+**Colunas**:
+- Preview (thumbnail ou placeholder)
+- SKU
+- Nome
+- Tecido Base
+- Ações (Editar, Excluir)
+
+**Estados visuais**:
+- `_status: 'saving'`: Opacidade reduzida
+- `_status: 'deleting'`: Opacidade reduzida + indicador
+
+---
+
 ## Componentes de Cores
 
 ### ColorSwatch

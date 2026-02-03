@@ -255,6 +255,7 @@ frontend/
 
 Sistema completo de gerenciamento de tecidos com:
 - CRUD completo (Create, Read, Update, Delete)
+- Tipos de tecido: Liso e Estampado
 - UI otimista para feedback rápido
 - Upload de imagens para Firebase Storage
 - Sistema de SKU único e sequencial
@@ -262,6 +263,18 @@ Sistema completo de gerenciamento de tecidos com:
 - Formatação brasileira (vírgula para decimais)
 
 **Documentação completa**: `frontend/src/docs/TECIDOS.md`
+
+### Módulo de Estampas
+
+Sistema de gerenciamento de estampas vinculadas a tecidos estampados:
+- Cadastro individual ou em lote
+- SKU automático por família (primeira palavra do nome)
+- Vinculação com tecidos do tipo "Estampado"
+- Upload de imagens opcional
+- Seleção de tecido via chips interativos
+- Validação em tempo real no modo lote
+
+**Documentação completa**: `frontend/src/docs/ESTAMPAS.md`
 
 ### Sistema de Navegação
 
@@ -315,6 +328,9 @@ Sistema completo de gerenciamento de tecidos com:
 - **[COMPONENTS.md](docs/COMPONENTS.md)** - Documentação de componentes React
 - **[HOOKS.md](docs/HOOKS.md)** - Documentação de custom hooks
 - **[TECIDOS.md](frontend/src/docs/TECIDOS.md)** - Documentação completa do módulo de Tecidos
+- **[ESTAMPAS.md](frontend/src/docs/ESTAMPAS.md)** - Documentação do módulo de Estampas
+- **[CAPTURA_COR.md](frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor
+- **[REINHARD.md](frontend/src/docs/REINHARD.md)** - Documentação do algoritmo de tingimento
 - **[CONTEXT.md](CONTEXT.md)** - Contexto técnico e padrões do projeto
 
 ## Regras de Segurança Firebase
@@ -322,9 +338,12 @@ Sistema completo de gerenciamento de tecidos com:
 O projeto inclui arquivos de regras de segurança:
 
 - **firestore.rules**: Regras do Firestore
-  - Usuários autenticados podem ler/escrever em `tecidos` e `sku_control`
+  - Usuários autenticados podem ler/escrever em `tecidos`, `cores`, `estampas` e `sku_control`
 - **storage.rules**: Regras do Firebase Storage
-  - Usuários autenticados podem fazer upload/download em `tecidos/{tecidoId}/...`
+  - Usuários autenticados podem fazer upload/download em:
+    - `tecidos/{tecidoId}/...`
+    - `cores/{corId}/...`
+    - `estampas/{estampaId}/...`
 
 **Importante**: Aplique essas regras no Firebase Console após configurar o projeto.
 

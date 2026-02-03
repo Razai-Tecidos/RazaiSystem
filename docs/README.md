@@ -15,7 +15,8 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
 4. **[COMPONENTS.md](COMPONENTS.md)** - Documentação de componentes React
 5. **[HOOKS.md](HOOKS.md)** - Documentação de custom hooks
 6. **[TECIDOS.md](../frontend/src/docs/TECIDOS.md)** - Documentação completa do módulo de Tecidos
-7. **[CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor com Colorímetro
+7. **[ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)** - Documentação do módulo de Estampas
+8. **[CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor com Colorímetro
 
 ## Guia Rápido
 
@@ -36,6 +37,10 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
 ### Para Entender um Módulo Específico
 
 - **Módulo de Tecidos**: [TECIDOS.md](../frontend/src/docs/TECIDOS.md)
+- **Módulo de Estampas**: [ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)
+  - Cadastro individual e em lote
+  - SKU automático por família
+  - Vinculação com tecidos estampados
 - **Módulo de Captura de Cor**: [CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)
   - Fluxo completo de captura com lista
   - Validação de conflitos com Delta E 2000
@@ -51,11 +56,14 @@ docs/
 ├── README.md          # Este arquivo (índice)
 ├── ARCHITECTURE.md    # Arquitetura e fluxos
 ├── COMPONENTS.md      # Componentes React
-└── HOOKS.md           # Custom hooks
+├── HOOKS.md           # Custom hooks
+└── DEPLOY_FIREBASE.md # Guia de deploy
 
 frontend/src/docs/
 ├── TECIDOS.md         # Documentação do módulo Tecidos
-└── CAPTURA_COR.md     # Documentação do módulo Captura de Cor
+├── ESTAMPAS.md        # Documentação do módulo Estampas
+├── CAPTURA_COR.md     # Documentação do módulo Captura de Cor
+└── REINHARD.md        # Documentação do algoritmo Reinhard
 
 CONTEXT.md             # Contexto técnico e padrões
 README.md              # Documentação principal
