@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Regras para coleção de tecidos
+    match /tecidos/{tecidoId} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para coleção de cores
+    match /cores/{corId} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para controle de SKU de tecidos
+    match /sku_control/{document=**} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para controle de SKU de cores
+    match /sku_control_cor/{document=**} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Negar acesso a todas as outras coleções por padrão
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

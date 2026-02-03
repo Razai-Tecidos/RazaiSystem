@@ -1,0 +1,101 @@
+---
+description: Validação de TO-DOs após execução de planos
+globs: **/*
+alwaysApply: true
+---
+
+# Validação de TO-DOs
+
+## Tabela de Conteúdo
+
+- [Validação Obrigatória](#validação-obrigatória)
+- [Processo de Validação](#processo-de-validação)
+- [Estados dos TO-DOs](#estados-dos-todos)
+- [Checklist de Validação](#checklist-de-validação)
+
+## Validação Obrigatória
+
+**CRÍTICO**: Após executar qualquer plano (build), você DEVE sempre validar se todos os TO-DOs foram marcados corretamente.
+
+### Quando Validar
+
+- Após completar execução de um plano
+- Antes de finalizar uma tarefa
+- Ao reportar conclusão ao usuário
+
+## Processo de Validação
+
+### 1. Verificar Status dos TO-DOs
+
+Após executar um plano, verifique:
+- Todos os TO-DOs foram marcados como `completed`?
+- Nenhum TO-DO ficou como `pending` ou `in_progress`?
+- Todos os arquivos mencionados nos TO-DOs foram criados/modificados?
+
+### 2. Usar Ferramenta todo_write
+
+Sempre use `todo_write` com `merge: true` para atualizar status:
+- Marcar como `in_progress` quando começar a trabalhar
+- Marcar como `completed` quando terminar
+- Não deixar nenhum TO-DO sem status atualizado
+
+### 3. Validar Completude
+
+Antes de finalizar, confirme:
+- [ ] Todos os TO-DOs do plano foram executados
+- [ ] Todos os arquivos foram criados/modificados conforme especificado
+- [ ] Todos os TO-DOs estão marcados como `completed`
+- [ ] Nenhum TO-DO foi esquecido
+
+## Estados dos TO-DOs
+
+### Estados Válidos
+
+- `pending` - Ainda não iniciado (apenas no início do plano)
+- `in_progress` - Trabalhando atualmente neste item
+- `completed` - Concluído com sucesso
+- `cancelled` - Cancelado (não será feito)
+
+### Regra de Ouro
+
+**NUNCA finalize um plano sem marcar TODOS os TO-DOs como `completed` ou `cancelled`.**
+
+## Checklist de Validação
+
+Ao finalizar execução de um plano:
+
+1. **Verificar Lista de TO-DOs**
+   - [ ] Contar quantos TO-DOs existem no plano
+   - [ ] Verificar quantos estão `completed`
+   - [ ] Confirmar que números coincidem
+
+2. **Validar Arquivos**
+   - [ ] Todos os arquivos mencionados nos TO-DOs foram criados/modificados?
+   - [ ] Arquivos têm o conteúdo esperado?
+   - [ ] Não há erros de lint ou compilação?
+
+3. **Atualizar Status**
+   - [ ] Usar `todo_write` para marcar todos como `completed`
+   - [ ] Não deixar nenhum como `pending` ou `in_progress`
+   - [ ] Confirmar atualização na interface do Cursor
+
+4. **Reportar ao Usuário**
+   - [ ] Listar todos os TO-DOs concluídos
+   - [ ] Mencionar arquivos criados/modificados
+   - [ ] Confirmar que tudo foi completado
+
+## Exemplo de Validação Correta
+
+```typescript
+// ❌ ERRADO - Não marca TO-DOs
+// Implementa código mas não atualiza status
+
+// ✅ CORRETO - Marca TO-DOs durante execução
+todo_write({ merge: true, todos: [{ id: 'task-1', status: 'in_progress' }] });
+// ... implementa código ...
+todo_write({ merge: true, todos: [{ id: 'task-1', status: 'completed' }] });
+```
+
+## Lembrete Importante
+
+Se você esquecer de marcar TO-DOs, o usuário terá que lembrá-lo manualmente. **Sempre valide e atualize os TO-DOs após executar um plano.**

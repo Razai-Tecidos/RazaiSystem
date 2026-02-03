@@ -1,0 +1,29 @@
+---
+description: Padrões de código do projeto RazaiSystem
+globs: **/*
+alwaysApply: true
+---
+
+# Padrões do Projeto RazaiSystem
+
+## Geral
+- Seja claro e objetivo nas respostas.
+- Responda em português quando o usuário escrever em português.
+- Prefira código simples e legível; evite complexidade desnecessária.
+
+## TypeScript
+- Use tipos explícitos quando necessário, evite `any`.
+- Prefira interfaces para objetos e tipos para unions/intersections.
+- Use paths/aliases (@/components, @/lib) para imports organizados.
+
+## Backend (Node.js + Express)
+- Use async/await para operações assíncronas.
+- Trate erros adequadamente com try/catch.
+- Configure CORS para permitir requisições do frontend.
+- Use variáveis de ambiente para configurações sensíveis.
+
+## Frontend (React + Vite)
+- Use componentes funcionais com hooks.
+- Prefira TypeScript para tipagem forte.
+- Use shadcn/ui para componentes de UI.
+- Organize imports: React primeiro, depois bibliotecas, depois imports locais.

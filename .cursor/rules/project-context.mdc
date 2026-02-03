@@ -1,0 +1,38 @@
+---
+description: Contexto técnico e decisões importantes do projeto RazaiSystem
+globs: **/*
+alwaysApply: true
+---
+
+# Contexto do Projeto RazaiSystem
+
+> Para informações completas, consulte [CONTEXT.md](../../CONTEXT.md)
+
+## Informações Críticas
+
+### Padrão Brasileiro
+- Números decimais: vírgula (,) como separador
+- Largura sempre em metros
+- Conversão automática: vírgula ↔ ponto
+- Aplicar em todos os campos numéricos
+
+### Campo de Composição
+- Texto livre (sem validação de formato)
+- Sem numeração nos cards ("Item 1", etc.)
+- Apenas valida preenchimento
+- Agrupamento visual com card/borda
+
+### UI Otimista
+- Padrão usado em todas operações CRUD
+- Atualização imediata + reversão em erro
+- Feedback visual durante operações
+- Toasts para feedback de ações
+
+### Estrutura de Dados
+- Composição: texto livre (nome), porcentagem não validada
+- Largura: metros (float)
+- SKU: T001, T002, etc. (não reutiliza excluídos)
+
+## Manutenção
+
+Este arquivo referencia CONTEXT.md que deve ser mantido sempre atualizado quando houver decisões importantes ou mudanças de padrão.

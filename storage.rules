@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Regras para imagens de tecidos
+    match /tecidos/{tecidoId}/{allPaths=**} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para imagens de cores (tingimentos)
+    match /cores/{corId}/{allPaths=**} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para imagens de estampas
+    match /estampas/{estampaId}/{allPaths=**} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Negar acesso a todos os outros caminhos por padrão
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
