@@ -1,11 +1,28 @@
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Login } from './pages/Login';
 import { Home } from './pages/Home';
 
 function App() {
   const { user, loading } = useAuth();
+  const [initialPage, setInitialPage] = useState<'home' | 'shopee' | null>(null);
 
-  if (loading) {
+  // Detecta callback da Shopee na URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const shopId = urlParams.get('shop_id');
+    const path = window.location.pathname;
+
+    // Se tem parâmetros de callback da Shopee ou está na rota /shopee
+    if ((code && shopId) || path === '/shopee') {
+      setInitialPage('shopee');
+    } else {
+      setInitialPage('home');
+    }
+  }, []);
+
+  if (loading || initialPage === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -16,7 +33,7 @@ function App() {
     );
   }
 
-  return user ? <Home /> : <Login />;
+  return user ? <Home initialPage={initialPage} /> : <Login />;
 }
 
 export default App;

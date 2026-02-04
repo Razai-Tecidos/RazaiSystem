@@ -14,9 +14,12 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
 
 4. **[COMPONENTS.md](COMPONENTS.md)** - Documentação de componentes React
 5. **[HOOKS.md](HOOKS.md)** - Documentação de custom hooks
-6. **[TECIDOS.md](../frontend/src/docs/TECIDOS.md)** - Documentação completa do módulo de Tecidos
-7. **[ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)** - Documentação do módulo de Estampas
-8. **[CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor com Colorímetro
+6. **[SHOPEE.md](SHOPEE.md)** - Documentação da integração Shopee
+7. **[SHOPEE_WEBHOOK_SETUP.md](SHOPEE_WEBHOOK_SETUP.md)** - Guia de configuração do webhook Shopee
+8. **[SHOPEE_PRICING.md](SHOPEE_PRICING.md)** - Módulo de gestão de preços e margens
+9. **[TECIDOS.md](../frontend/src/docs/TECIDOS.md)** - Documentação completa do módulo de Tecidos
+10. **[ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)** - Documentação do módulo de Estampas
+11. **[CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor com Colorímetro
 
 ## Guia Rápido
 
@@ -42,6 +45,11 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
   - SKU automático por família
   - Vinculação com tecidos estampados
 - **Módulo de Captura de Cor**: [CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)
+- **Módulo Shopee Preços**: [SHOPEE_PRICING.md](SHOPEE_PRICING.md)
+  - Gestão de custos por SKU
+  - Cálculo de margens considerando taxas Shopee (20% + R$4)
+  - Dashboard de performance financeira
+  - Regras de automação de preços
   - Fluxo completo de captura com lista
   - Validação de conflitos com Delta E 2000
   - Visualização com algoritmo de Reinhart
@@ -53,11 +61,14 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
 
 ```
 docs/
-├── README.md          # Este arquivo (índice)
-├── ARCHITECTURE.md    # Arquitetura e fluxos
-├── COMPONENTS.md      # Componentes React
-├── HOOKS.md           # Custom hooks
-└── DEPLOY_FIREBASE.md # Guia de deploy
+├── README.md              # Este arquivo (índice)
+├── ARCHITECTURE.md        # Arquitetura e fluxos
+├── COMPONENTS.md          # Componentes React
+├── HOOKS.md               # Custom hooks
+├── DEPLOY_FIREBASE.md     # Guia de deploy
+├── SHOPEE.md              # Integração Shopee
+├── SHOPEE_WEBHOOK_SETUP.md # Configuração webhook Shopee
+└── SHOPEE_PRICING.md      # Módulo de preços e margens
 
 frontend/src/docs/
 ├── TECIDOS.md         # Documentação do módulo Tecidos

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shopee - Autorizacao</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: #f9fafb;
+        color: #111827;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 20px 24px;
+        max-width: 420px;
+        text-align: center;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+      }
+      .muted {
+        color: #6b7280;
+        font-size: 14px;
+      }
+      a {
+        color: #f97316;
+        text-decoration: none;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Processando autorizacao...</h1>
+      <p class="muted">
+        Voce pode fechar esta janela quando terminar.
+      </p>
+      <p class="muted">
+        Se a janela nao fechar automaticamente,
+        <a id="fallback-link" href="/shopee">clique aqui</a>.
+      </p>
+    </div>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var code = params.get('code');
+        var shopId = params.get('shop_id');
+        var mainAccountId = params.get('main_account_id');
+
+        var message = {
+          type: 'shopee_auth_callback',
+          payload: {
+            code: code || '',
+            shop_id: shopId || undefined,
+            main_account_id: mainAccountId || undefined
+          }
+        };
+
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(message, window.location.origin);
+          window.close();
+          return;
+        }
+
+        var fallbackLink = document.getElementById('fallback-link');
+        if (fallbackLink) {
+          fallbackLink.setAttribute('href', '/shopee?' + params.toString());
+        }
+      })();
+    </script>
+  </body>
+</html>

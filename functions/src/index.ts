@@ -4,6 +4,8 @@ import cors from 'cors';
 import { authMiddleware } from './middleware/auth.middleware';
 import tecidosRoutes from './routes/tecidos.routes';
 import coresRoutes from './routes/cores.routes';
+import shopeeRoutes from './routes/shopee.routes';
+import shopeeWebhookRoutes from './routes/shopee-webhook.routes';
 
 // Inicializar Firebase Admin (já inicializado automaticamente no Cloud Functions)
 import * as admin from 'firebase-admin';
@@ -15,6 +17,7 @@ if (!admin.apps.length) {
 }
 
 const app = express();
+export { app };
 
 // CORS - permitir todas as origens em produção (ou configurar específicas)
 app.use(cors({
@@ -48,9 +51,18 @@ app.get('/me', authMiddleware, (req: Request, res: Response) => {
 
 // Rotas de tecidos
 app.use('/tecidos', tecidosRoutes);
+app.use('/api/tecidos', tecidosRoutes);
 
 // Rotas de cores
 app.use('/cores', coresRoutes);
+app.use('/api/cores', coresRoutes);
+
+// Rotas do Shopee
+app.use('/shopee', shopeeRoutes);
+app.use('/api/shopee', shopeeRoutes);
+
+// Rotas de webhook do Shopee (sem authMiddleware, verificação própria)
+app.use('/api/shopee', shopeeWebhookRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -60,3 +72,6 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 // Exportar como Cloud Function
 export const api = functions.https.onRequest(app);
+
+// Exportar função agendada
+export { maintainDisabledColors } from './scheduled/maintain-disabled-colors';

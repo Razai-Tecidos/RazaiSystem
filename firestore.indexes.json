@@ -1,0 +1,47 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "shopee_sku_costs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shop_id", "order": "ASCENDING" },
+        { "fieldPath": "item_sku", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopee_sku_sales",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shop_id", "order": "ASCENDING" },
+        { "fieldPath": "item_sku", "order": "ASCENDING" },
+        { "fieldPath": "coletadoEm", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopee_price_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shop_id", "order": "ASCENDING" },
+        { "fieldPath": "executadoEm", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopee_price_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shop_id", "order": "ASCENDING" },
+        { "fieldPath": "item_sku", "order": "ASCENDING" },
+        { "fieldPath": "executadoEm", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopee_pricing_rules",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shop_id", "order": "ASCENDING" },
+        { "fieldPath": "prioridade", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -31,6 +31,40 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
     
+    // Regras para lojas Shopee conectadas
+    // Acesso apenas via Backend (Firebase Admin SDK)
+    // O frontend não acessa diretamente - tokens são sensíveis
+    match /shopee_shops/{shopId} {
+      // Permite apenas leitura para usuários autenticados
+      // Escrita apenas via Admin SDK (backend)
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    
+    // Regras para custos de SKU (Gestão de Preços)
+    match /shopee_sku_costs/{costId} {
+      // Permite leitura e escrita para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para dados de vendas por SKU
+    match /shopee_sku_sales/{salesId} {
+      // Permite leitura e escrita para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para logs de alteração de preço
+    match /shopee_price_logs/{logId} {
+      // Permite leitura e escrita para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para regras de precificação automática
+    match /shopee_pricing_rules/{ruleId} {
+      // Permite leitura e escrita para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
     // Negar acesso a todas as outras coleções por padrão
     match /{document=**} {
       allow read, write: if false;

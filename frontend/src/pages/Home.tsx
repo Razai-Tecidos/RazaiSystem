@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { Package, Palette, Camera, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { Package, Palette, Camera, ChevronRight, Image as ImageIcon, ShoppingBag } from 'lucide-react';
 import { Tecidos } from './Tecidos';
 import { Estampas } from './Estampas';
 import { Cores } from './Cores';
 import { CapturaCor } from './CapturaCor';
+import { Shopee } from './Shopee';
 import { Header } from '@/components/Layout/Header';
 import { cn } from '@/lib/utils';
 
@@ -13,7 +14,7 @@ interface NavCardProps {
   description: string;
   icon: React.ReactNode;
   onClick: () => void;
-  color: 'blue' | 'purple' | 'green' | 'pink';
+  color: 'blue' | 'purple' | 'green' | 'pink' | 'orange';
   delay?: number;
 }
 
@@ -23,6 +24,7 @@ function NavCard({ title, description, icon, onClick, color, delay = 0 }: NavCar
     purple: 'from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700',
     green: 'from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700',
     pink: 'from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700',
+    orange: 'from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700',
   };
 
   return (
@@ -39,6 +41,7 @@ function NavCard({ title, description, icon, onClick, color, delay = 0 }: NavCar
         color === 'purple' && 'focus:ring-purple-500',
         color === 'green' && 'focus:ring-emerald-500',
         color === 'pink' && 'focus:ring-pink-500',
+        color === 'orange' && 'focus:ring-orange-500',
         'animate-slide-up'
       )}
       style={{ animationDelay: `${delay}ms` }}
@@ -57,9 +60,13 @@ function NavCard({ title, description, icon, onClick, color, delay = 0 }: NavCar
   );
 }
 
-export function Home() {
+interface HomeProps {
+  initialPage?: 'home' | 'shopee';
+}
+
+export function Home({ initialPage = 'home' }: HomeProps) {
   const { user } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'home' | 'tecidos' | 'estampas' | 'cores' | 'captura-cor'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'tecidos' | 'estampas' | 'cores' | 'captura-cor' | 'shopee'>(initialPage);
 
   const handleNavigateHome = () => {
     setCurrentPage('home');
@@ -79,6 +86,10 @@ export function Home() {
 
   if (currentPage === 'captura-cor') {
     return <CapturaCor onNavigateHome={handleNavigateHome} />;
+  }
+
+  if (currentPage === 'shopee') {
+    return <Shopee onNavigateHome={handleNavigateHome} />;
   }
 
   return (
@@ -129,6 +140,14 @@ export function Home() {
             onClick={() => setCurrentPage('captura-cor')}
             color="green"
             delay={300}
+          />
+          <NavCard
+            title="Shopee"
+            description="Integração com sua loja"
+            icon={<ShoppingBag className="h-6 w-6 text-white" />}
+            onClick={() => setCurrentPage('shopee')}
+            color="orange"
+            delay={400}
           />
         </div>
 

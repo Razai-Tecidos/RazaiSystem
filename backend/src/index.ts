@@ -19,8 +19,26 @@ try {
 }
 
 // Middlewares
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://razaisystem.web.app',
+  'https://razaisystem.firebaseapp.com',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Permite requisições sem origin (ex: Postman, curl)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(null, true); // Em desenvolvimento, permite todas
+    }
+  },
   credentials: true
 }));
 app.use(express.json());
@@ -54,6 +72,10 @@ app.use('/api/tecidos', tecidosRoutes);
 // Rotas de cores (opcional - frontend usa Firebase Client SDK diretamente)
 import coresRoutes from './routes/cores.routes';
 app.use('/api/cores', coresRoutes);
+
+// Rotas do Shopee
+import shopeeRoutes from './routes/shopee.routes';
+app.use('/api/shopee', shopeeRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
