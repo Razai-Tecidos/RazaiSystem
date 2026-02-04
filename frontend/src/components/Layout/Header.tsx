@@ -26,11 +26,15 @@ export function Header({ onNavigateHome }: HeaderProps) {
           <button
             onClick={onNavigateHome}
             className={cn(
-              "text-lg sm:text-2xl font-bold text-gray-900 transition-all duration-200",
-              onNavigateHome && "hover:text-primary active:scale-95 cursor-pointer"
+              "transition-all duration-200",
+              onNavigateHome && "hover:opacity-80 active:scale-95 cursor-pointer"
             )}
           >
-            RazaiSystem
+            <img 
+              src="/Razai.svg" 
+              alt="Razai" 
+              className="h-8 sm:h-10 w-auto"
+            />
           </button>
 
           {/* User info e logout */}
