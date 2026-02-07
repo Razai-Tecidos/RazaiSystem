@@ -269,8 +269,8 @@ export function EstampaFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="flex-shrink-0 px-4 sm:px-6 pt-4 sm:pt-6 pb-3">
           <DialogTitle className="text-xl">
             {isEditing ? 'Editar Estampa' : 'Nova Estampa'}
           </DialogTitle>
@@ -281,37 +281,39 @@ export function EstampaFormModal({
 
         {/* Toggle de modo (apenas para criação) */}
         {!isEditing && onSubmitBatch && (
-          <div className="flex gap-1 p-1 bg-gray-100 rounded-lg w-fit">
-            <button
-              type="button"
-              onClick={() => setMode('individual')}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
-                mode === 'individual' 
-                  ? 'bg-white text-gray-900 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              )}
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              Individual
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('lote')}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
-                mode === 'lote' 
-                  ? 'bg-white text-gray-900 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              )}
-            >
-              <ListPlus className="w-3.5 h-3.5" />
-              Lote
-            </button>
+          <div className="flex-shrink-0 px-4 sm:px-6 pb-3">
+            <div className="flex gap-1 p-1 bg-gray-100 rounded-lg w-fit">
+              <button
+                type="button"
+                onClick={() => setMode('individual')}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                  mode === 'individual' 
+                    ? 'bg-white text-gray-900 shadow-sm' 
+                    : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Individual
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('lote')}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                  mode === 'lote' 
+                    ? 'bg-white text-gray-900 shadow-sm' 
+                    : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                <ListPlus className="w-3.5 h-3.5" />
+                Lote
+              </button>
+            </div>
           </div>
         )}
 
-        <form onSubmit={mode === 'lote' ? handleSubmitLote : handleSubmitIndividual} className="space-y-5">
+        <form onSubmit={mode === 'lote' ? handleSubmitLote : handleSubmitIndividual} className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 space-y-5 pb-4">
           {/* Tecido Base - Chips */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">
@@ -498,39 +500,41 @@ export function EstampaFormModal({
               )}
             </>
           )}
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                onOpenChange(false);
-                resetForm();
-              }}
-              disabled={isSubmitting || loading}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              type="submit" 
-              disabled={
-                isSubmitting || 
-                loading || 
-                tecidos.length === 0 ||
-                (mode === 'lote' && loteValidacao.validos.length === 0)
-              }
-              className="bg-pink-500 hover:bg-pink-600"
-            >
-              {(isSubmitting || loading) && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              {mode === 'lote' 
-                ? `Criar ${loteValidacao.validos.length} Estampa${loteValidacao.validos.length !== 1 ? 's' : ''}`
-                : isEditing ? 'Salvar' : 'Criar Estampa'
-              }
-            </Button>
-          </DialogFooter>
         </form>
+
+        <DialogFooter className="flex-shrink-0 flex-col-reverse sm:flex-row gap-2 px-4 sm:px-6 pb-4 sm:pb-6 pt-4 border-t">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              onOpenChange(false);
+              resetForm();
+            }}
+            disabled={isSubmitting || loading}
+            className="w-full sm:w-auto"
+          >
+            Cancelar
+          </Button>
+          <Button 
+            type="button"
+            onClick={mode === 'lote' ? handleSubmitLote : handleSubmitIndividual}
+            disabled={
+              isSubmitting || 
+              loading || 
+              tecidos.length === 0 ||
+              (mode === 'lote' && loteValidacao.validos.length === 0)
+            }
+            className="bg-pink-500 hover:bg-pink-600 w-full sm:w-auto"
+          >
+            {(isSubmitting || loading) && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            {mode === 'lote' 
+              ? `Criar ${loteValidacao.validos.length} Estampa${loteValidacao.validos.length !== 1 ? 's' : ''}`
+              : isEditing ? 'Salvar' : 'Criar Estampa'
+            }
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

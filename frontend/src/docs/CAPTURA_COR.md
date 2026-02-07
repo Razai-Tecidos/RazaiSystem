@@ -131,7 +131,28 @@ Valida conflitos automaticamente
 ✅ Adicionado à lista
 ```
 
-### 4. Enviar Cores para Gerenciar Cores
+### 4. Resolução de Conflitos
+
+Quando uma captura tem conflito (cor similar a uma já existente), o sistema oferece três opções:
+
+```
+Cor capturada com conflito detectado
+         │
+         ├──▶ "Usar Existente" ──▶ Cria vínculo com cor existente
+         │                         (apenas novo CorTecido, não cria Cor)
+         │
+         ├──▶ "Criar Nova" ──▶ Cria cor nova + vínculo
+         │                     (ignora similaridade)
+         │
+         └──▶ "Descartar" ──▶ Remove da lista
+```
+
+**Detalhes da Resolução:**
+- **Usar Existente**: Reutiliza a cor do banco (evita duplicatas), criando apenas o vínculo `CorTecido`
+- **Criar Nova**: Ignora o conflito e cria uma cor nova (útil para cores realmente diferentes)
+- **Descartar**: Remove a captura da lista sem ação
+
+### 5. Enviar Cores para Gerenciar Cores
 
 ```
 Usuário clica "Enviar para Gerenciar Cores"
@@ -139,10 +160,10 @@ Usuário clica "Enviar para Gerenciar Cores"
          ▼
 Sistema processa cada captura da lista
          │
-         ▼
-Cria cor no Firebase com:
-- Nome, LAB original, RGB/Hex
-- Informações do tecido associado
+         ├──▶ Sem conflito ──▶ Cria Cor + CorTecido
+         │
+         └──▶ Com conflito (se não resolvido) ──▶ Cria Cor + CorTecido
+              (usuário pode resolver antes de enviar)
          │
          ▼
 Limpa lista de capturas
@@ -294,15 +315,19 @@ Modal simplificado para selecionar tecido ao adicionar captura.
 
 **Funcionalidades**:
 - Lista de tecidos sem campo de busca (otimizado para mobile)
+- **Últimos tecidos usados no topo** (até 5, com ícone de relógio)
+- Separador visual entre recentes e outros tecidos
 - Preview da imagem padrão de cada tecido
 - Seleção direta com toque (fecha modal automaticamente)
 - Layout compacto e responsivo
 - Informações: nome e SKU do tecido
+- Persistência dos últimos usados via localStorage
 
 **Notas de UX**:
 - Sem input de busca para evitar teclado no mobile
 - Toque no tecido seleciona e confirma em uma ação
 - Altura máxima de 70vh para não ocupar tela inteira
+- Tecidos recentes têm fundo levemente amarelado para destaque
 
 ### CapturaListaSimples.tsx
 
@@ -310,14 +335,15 @@ Lista simplificada de capturas (usada na tela de Captura).
 
 **Funcionalidades**:
 - Exibe capturas com swatch miniatura, nome, tecido e hex
-- Indicação de conflitos (badge amarelo)
+- Indicação de conflitos (badge amarelo com deltaE)
+- **Opções de resolução de conflito**: "Usar Existente" ou "Criar Nova"
 - Botão de remover em cada item
 - Botões "Limpar" e "Enviar para Gerenciar Cores"
-- Dica para editar cores em "Gerenciar Cores"
+- Botão "Copiar HEX" para copiar código hexadecimal
 
 **Notas**:
-- Sem botão de edição (edição é feita em Gerenciar Cores)
 - Layout responsivo para mobile
+- Conflitos podem ser resolvidos antes de enviar
 
 ## Hooks
 
@@ -591,15 +617,17 @@ O algoritmo de tingimento de Reinhart (clássico) simula como um tecido ficaria 
 - [x] Conexão Bluetooth com LS173
 - [x] Captura automática via botão físico
 - [x] Parse de dados do formato LS173 (64 bytes, AB 44)
-- [x] Debug de dados brutos visível no app (para mobile)
 - [x] Lista de capturas simplificada
 - [x] Validação de conflitos com Delta E 2000
+- [x] **Resolução de conflitos** (usar existente / criar nova)
+- [x] Botão "Copiar HEX" para cores capturadas
 - [x] Envio de cores para Firebase
 - [x] Modal de seleção de tecido otimizado para mobile
-- [x] Preview com algoritmo Reinhart (em Gerenciar Cores)
+- [x] **Últimos tecidos usados no topo** (persistido em localStorage)
+- [x] Preview com algoritmo Reinhard (em Gerenciar Cores)
 - [x] Sliders de ajuste de cor (em Gerenciar Cores)
 - [x] Responsividade mobile em todas as telas
-- [ ] Persistência dos ajustes de cor no Firebase (opcional)
+- [x] Persistência de ajustes Reinhard no Firebase
 
 ## Observações Técnicas
 

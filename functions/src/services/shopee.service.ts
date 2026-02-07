@@ -243,17 +243,32 @@ export async function callShopeeApi(request: ShopeeApiRequest): Promise<unknown>
 
   const url = `${host}${request.path}`;
 
-  const response = await axios.request({
-    url,
-    method: request.method || 'GET',
-    params,
-    data: request.body || undefined,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  try {
+    const response = await axios.request({
+      url,
+      method: request.method || 'GET',
+      params,
+      data: request.body || undefined,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 30000, // 30 segundos timeout
+    });
 
-  return response.data;
+    // Log de erro da API Shopee (quando retorna 200 mas com error no body)
+    if (response.data?.error) {
+      console.error(`[ShopeeAPI] ${request.path} - Error:`, response.data.error, response.data.message);
+    }
+
+    return response.data;
+  } catch (error: any) {
+    console.error(`[ShopeeAPI] ${request.path} - Request failed:`, {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
+    throw error;
+  }
 }
 
 /**

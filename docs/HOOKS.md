@@ -582,6 +582,69 @@ function temConflito(
 
 ---
 
+## useCorTecido
+
+Hook para gerenciamento de vínculos cor-tecido com UI otimista.
+
+**Localização**: `frontend/src/hooks/useCorTecido.ts`
+
+**Retorno**:
+```typescript
+{
+  vinculos: CorTecido[];           // Lista de todos os vínculos
+  loading: boolean;                 // Estado de carregamento inicial
+  error: string | null;             // Erro, se houver
+  createVinculo: (data: CreateCorTecidoData) => Promise<string>;
+  updateVinculo: (data: UpdateCorTecidoData) => Promise<void>;
+  deleteVinculo: (id: string) => Promise<void>;
+  getVinculosByCor: (corId: string) => CorTecido[];
+  getVinculosByTecido: (tecidoId: string) => CorTecido[];
+  vinculoExists: (corId: string, tecidoId: string) => Promise<boolean>;
+}
+```
+
+**Uso**:
+```typescript
+const { 
+  vinculos, 
+  loading, 
+  createVinculo, 
+  updateVinculo, 
+  deleteVinculo,
+  vinculoExists
+} = useCorTecido();
+
+// Verificar se vínculo já existe
+const existe = await vinculoExists(corId, tecidoId);
+
+// Criar vínculo
+await createVinculo({
+  corId: cor.id,
+  corNome: cor.nome,
+  corHex: cor.codigoHex,
+  tecidoId: tecido.id,
+  tecidoNome: tecido.nome,
+});
+
+// Atualizar ajustes Reinhard
+await updateVinculo({
+  id: vinculoId,
+  ajustesReinhard: { meanL: 70, meanA: 10, meanB: -5 },
+  imagemTingida: base64Image,
+});
+```
+
+**Funcionalidades**:
+- **UI Otimista**: Atualiza interface imediatamente
+- **Listener em tempo real**: Usa `onSnapshot` do Firestore
+- **Dados denormalizados**: Armazena corNome, corHex, tecidoNome para evitar JOINs
+- **Soft delete**: Usa campo `deletedAt` para exclusão lógica
+- **SKU automático**: Gera SKU no formato TecidoSKU-CorSKU
+
+**Documentação completa**: `frontend/src/docs/VINCULOS.md`
+
+---
+
 ## useCapturaLista
 
 Hook para gerenciar lista de capturas de cores com validação automática de conflitos.

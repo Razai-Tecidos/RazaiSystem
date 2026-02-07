@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Cor, CreateCorData, UpdateCorData } from '@/types/cor.types';
+import { Cor, CreateCorData, UpdateCorData, LabColor } from '@/types/cor.types';
 import {
   getCores as getCoresFirebase,
   createCor as createCorFirebase,
@@ -7,7 +7,12 @@ import {
   deleteCor as deleteCorFirebase,
   gerarSkuPorFamilia,
   isNomePadrao,
+  findCorByLab,
+  findCoresSimilares,
+  getCorById,
+  checkNomeDuplicado,
 } from '@/lib/firebase/cores';
+import { updateCorDataInVinculos, moverVinculosDeCor } from '@/lib/firebase/cor-tecido';
 import { useToast } from '@/hooks/use-toast';
 
 interface CorWithStatus extends Cor {
@@ -36,7 +41,9 @@ export function useCores() {
     try {
       setLoading(true);
       setError(null);
+      console.log('[useCores] Carregando cores...');
       const data = await getCoresFirebase();
+      console.log('[useCores] Cores carregadas:', data.length);
       setCores(data.map((c) => ({ ...c, _status: 'idle' as const })));
     } catch (err: any) {
       // Erros esperados que não devem ser tratados como erro crítico:
@@ -79,12 +86,39 @@ export function useCores() {
   }, []);
 
   /**
+   * Verifica se um nome de cor já existe
+   * @param nome Nome a verificar
+   * @param excludeId ID da cor a excluir (para edição)
+   * @returns A cor duplicada ou null
+   */
+  const verificarNomeDuplicado = useCallback(
+    async (nome: string, excludeId?: string): Promise<Cor | null> => {
+      return await checkNomeDuplicado(nome, excludeId);
+    },
+    []
+  );
+
+  /**
    * Cria uma nova cor com UI otimista
+   * Bloqueia se já existir uma cor com o mesmo nome
    */
   const createCor = useCallback(
     async (data: CreateCorData): Promise<void> => {
       const tempId = `temp-${Date.now()}`;
       const isPadrao = isNomePadrao(data.nome);
+
+      // Verificar nome duplicado (exceto para nomes padrão)
+      if (!isPadrao) {
+        const corDuplicada = await checkNomeDuplicado(data.nome);
+        if (corDuplicada) {
+          toast({
+            title: 'Nome já existe!',
+            description: `Já existe uma cor cadastrada com o nome "${corDuplicada.nome}". Escolha outro nome.`,
+            variant: 'destructive',
+          });
+          throw new Error(`Nome duplicado: "${data.nome}" já existe`);
+        }
+      }
 
       // Criar cor temporária para UI otimista
       const tempCor: CorWithStatus = {
@@ -129,11 +163,14 @@ export function useCores() {
         // Remover temporária em caso de erro
         setCores((prev) => prev.filter((c) => c._tempId !== tempId));
 
-        toast({
-          title: 'Erro',
-          description: err.message || 'Erro ao cadastrar cor',
-          variant: 'destructive',
-        });
+        // Só mostrar toast se não for erro de duplicado (já mostrou acima)
+        if (!err.message?.includes('Nome duplicado')) {
+          toast({
+            title: 'Erro',
+            description: err.message || 'Erro ao cadastrar cor',
+            variant: 'destructive',
+          });
+        }
 
         throw err;
       }
@@ -144,6 +181,7 @@ export function useCores() {
   /**
    * Atualiza uma cor existente
    * Se a cor não tinha SKU e o novo nome não é padrão, gera SKU
+   * Bloqueia se o novo nome já existir em outra cor
    */
   const updateCor = useCallback(
     async (data: UpdateCorData): Promise<void> => {
@@ -151,6 +189,19 @@ export function useCores() {
       if (corIndex === -1) return;
 
       const originalCor = cores[corIndex];
+
+      // Verificar nome duplicado se estiver alterando o nome
+      if (data.nome && data.nome !== originalCor.nome && !isNomePadrao(data.nome)) {
+        const corDuplicada = await checkNomeDuplicado(data.nome, data.id);
+        if (corDuplicada) {
+          toast({
+            title: 'Nome já existe!',
+            description: `Já existe uma cor cadastrada com o nome "${corDuplicada.nome}". Escolha outro nome.`,
+            variant: 'destructive',
+          });
+          throw new Error(`Nome duplicado: "${data.nome}" já existe`);
+        }
+      }
 
       // Atualizar otimisticamente
       setCores((prev) =>
@@ -175,11 +226,24 @@ export function useCores() {
           novoSku = await generateSkuFromName(nomeAtualizado);
         }
 
-        // Atualizar documento (incluindo SKU se gerado)
+        // SKU final: prioriza o gerado automaticamente, senão usa o passado manualmente
+        const skuFinal = novoSku || data.sku;
+
+        // Atualizar documento (incluindo SKU se gerado ou passado)
         await updateCorFirebase(data.id, {
           ...data,
-          ...(novoSku ? { sku: novoSku } : {}),
+          ...(skuFinal !== undefined ? { sku: skuFinal } : {}),
         });
+
+        // Propagar mudanças para os vínculos (dados denormalizados)
+        const dadosParaVinculos: { corNome?: string; corHex?: string; corSku?: string } = {};
+        if (data.nome) dadosParaVinculos.corNome = data.nome;
+        if (data.codigoHex) dadosParaVinculos.corHex = data.codigoHex;
+        if (skuFinal) dadosParaVinculos.corSku = skuFinal;
+        
+        if (Object.keys(dadosParaVinculos).length > 0) {
+          await updateCorDataInVinculos(data.id, dadosParaVinculos);
+        }
 
         // Recarregar cores para ter dados atualizados
         await loadCores();
@@ -188,6 +252,8 @@ export function useCores() {
           title: 'Sucesso!',
           description: novoSku 
             ? `Cor atualizada! SKU gerado: ${novoSku}`
+            : skuFinal && data.sku
+            ? `Cor atualizada! SKU: ${skuFinal}`
             : 'Cor atualizada com sucesso!',
         });
       } catch (err: any) {
@@ -198,11 +264,14 @@ export function useCores() {
           )
         );
 
-        toast({
-          title: 'Erro',
-          description: err.message || 'Erro ao atualizar cor',
-          variant: 'destructive',
-        });
+        // Só mostrar toast se não for erro de duplicado (já mostrou acima)
+        if (!err.message?.includes('Nome duplicado')) {
+          toast({
+            title: 'Erro',
+            description: err.message || 'Erro ao atualizar cor',
+            variant: 'destructive',
+          });
+        }
 
         throw err;
       }
@@ -250,6 +319,85 @@ export function useCores() {
     [cores, toast]
   );
 
+  /**
+   * Busca cor similar por LAB
+   * Retorna a cor mais próxima se deltaE < limiar
+   */
+  const findSimilar = useCallback(async (lab: LabColor, limiar: number = 3): Promise<Cor | null> => {
+    return findCorByLab(lab, limiar);
+  }, []);
+
+  /**
+   * Busca todas as cores similares por LAB
+   */
+  const findAllSimilar = useCallback(async (lab: LabColor, limiar: number = 5): Promise<Array<{ cor: Cor; deltaE: number }>> => {
+    return findCoresSimilares(lab, limiar);
+  }, []);
+
+  /**
+   * Busca cor por ID (em memória)
+   */
+  const getCorByIdLocal = useCallback((id: string): Cor | undefined => {
+    return cores.find(c => c.id === id);
+  }, [cores]);
+
+  /**
+   * Mescla duas cores: move vínculos da cor origem para a cor destino e deleta a origem
+   * @param corOrigemId - ID da cor que será removida
+   * @param corDestinoId - ID da cor que será mantida
+   * @returns Número de vínculos movidos
+   */
+  const mesclarCores = useCallback(
+    async (corOrigemId: string, corDestinoId: string): Promise<number> => {
+      // Buscar cor destino para pegar os dados
+      const corDestino = await getCorById(corDestinoId);
+      if (!corDestino) {
+        throw new Error('Cor destino não encontrada');
+      }
+
+      toast({
+        title: 'Mesclando...',
+        description: 'Movendo vínculos e removendo cor duplicada...',
+      });
+
+      try {
+        // Mover todos os vínculos da cor origem para a cor destino
+        const vinculosMovidos = await moverVinculosDeCor(
+          corOrigemId,
+          corDestinoId,
+          {
+            corNome: corDestino.nome,
+            corHex: corDestino.codigoHex,
+            corSku: corDestino.sku,
+          }
+        );
+
+        // Deletar a cor origem
+        await deleteCorFirebase(corOrigemId);
+
+        // Recarregar lista de cores
+        await loadCores();
+
+        toast({
+          title: 'Cores mescladas!',
+          description: vinculosMovidos > 0
+            ? `${vinculosMovidos} vínculo(s) movido(s) para "${corDestino.nome}".`
+            : `Cor duplicada removida. "${corDestino.nome}" mantida.`,
+        });
+
+        return vinculosMovidos;
+      } catch (err: any) {
+        toast({
+          title: 'Erro ao mesclar',
+          description: err.message || 'Não foi possível mesclar as cores',
+          variant: 'destructive',
+        });
+        throw err;
+      }
+    },
+    [loadCores, toast]
+  );
+
   return {
     cores,
     loading,
@@ -258,5 +406,10 @@ export function useCores() {
     updateCor,
     deleteCor,
     loadCores,
+    findSimilar,
+    findAllSimilar,
+    getCorById: getCorByIdLocal,
+    mesclarCores,
+    verificarNomeDuplicado,
   };
 }

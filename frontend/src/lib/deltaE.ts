@@ -217,3 +217,127 @@ export function temConflito(
 ): boolean {
   return encontrarConflitos(corCapturada, coresExistentes, limiar) !== null;
 }
+
+/**
+ * Interface para representar um par de cores em conflito
+ */
+export interface ParConflito {
+  cor1: {
+    id: string;
+    nome: string;
+    hex: string;
+    lab: LabColor;
+  };
+  cor2: {
+    id: string;
+    nome: string;
+    hex: string;
+    lab: LabColor;
+  };
+  deltaE: number;
+}
+
+/**
+ * Encontra todos os pares de cores que estão em conflito (deltaE < limiar)
+ * Compara todas as cores entre si e retorna os pares que conflitam
+ * 
+ * @param cores - Lista de todas as cores cadastradas
+ * @param limiar - Limiar de deltaE (padrão: DELTA_E_LIMIAR_CONFLITO)
+ * @returns Lista de pares em conflito, ordenados por deltaE (menor primeiro)
+ */
+export function encontrarTodosConflitos(
+  cores: Cor[],
+  limiar: number = DELTA_E_LIMIAR_CONFLITO
+): ParConflito[] {
+  const conflitos: ParConflito[] = [];
+  
+  if (!cores || cores.length < 2) {
+    return conflitos;
+  }
+
+  // Pré-calcular LAB para todas as cores que têm hex ou lab
+  const coresComLab: Array<{ cor: Cor; lab: LabColor }> = [];
+  
+  for (const cor of cores) {
+    let lab: LabColor | null = null;
+    
+    // Usar LAB diretamente se disponível, senão converter do hex
+    if (cor.lab) {
+      lab = cor.lab;
+    } else if (cor.codigoHex) {
+      lab = hexToLab(cor.codigoHex);
+    }
+    
+    if (lab) {
+      coresComLab.push({ cor, lab });
+    }
+  }
+
+  // Comparar todas as cores entre si (sem duplicar pares)
+  for (let i = 0; i < coresComLab.length; i++) {
+    for (let j = i + 1; j < coresComLab.length; j++) {
+      const { cor: cor1, lab: lab1 } = coresComLab[i];
+      const { cor: cor2, lab: lab2 } = coresComLab[j];
+      
+      const deltaE = deltaE2000(lab1, lab2);
+      
+      if (deltaE < limiar) {
+        conflitos.push({
+          cor1: {
+            id: cor1.id,
+            nome: cor1.nome,
+            hex: cor1.codigoHex || '',
+            lab: lab1,
+          },
+          cor2: {
+            id: cor2.id,
+            nome: cor2.nome,
+            hex: cor2.codigoHex || '',
+            lab: lab2,
+          },
+          deltaE,
+        });
+      }
+    }
+  }
+
+  // Ordenar por deltaE (menor primeiro = mais similar)
+  return conflitos.sort((a, b) => a.deltaE - b.deltaE);
+}
+
+/**
+ * Cria um mapa de conflitos por ID de cor
+ * Útil para saber rapidamente quais cores conflitam com uma cor específica
+ * 
+ * @param conflitos - Lista de pares em conflito
+ * @returns Mapa de ID da cor -> lista de conflitos
+ */
+export function criarMapaConflitos(
+  conflitos: ParConflito[]
+): Map<string, Array<{ corId: string; corNome: string; deltaE: number }>> {
+  const mapa = new Map<string, Array<{ corId: string; corNome: string; deltaE: number }>>();
+  
+  for (const conflito of conflitos) {
+    // Adicionar conflito para cor1
+    if (!mapa.has(conflito.cor1.id)) {
+      mapa.set(conflito.cor1.id, []);
+    }
+    mapa.get(conflito.cor1.id)!.push({
+      corId: conflito.cor2.id,
+      corNome: conflito.cor2.nome,
+      deltaE: conflito.deltaE,
+    });
+    
+    // Adicionar conflito para cor2
+    if (!mapa.has(conflito.cor2.id)) {
+      mapa.set(conflito.cor2.id, []);
+    }
+    mapa.get(conflito.cor2.id)!.push({
+      corId: conflito.cor1.id,
+      corNome: conflito.cor1.nome,
+      deltaE: conflito.deltaE,
+    });
+  }
+  
+  return mapa;
+}

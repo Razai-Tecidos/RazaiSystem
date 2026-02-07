@@ -6,85 +6,69 @@ import {
   addDoc,
   setDoc,
   updateDoc,
-  query,
-  where,
-  orderBy,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
-import { Cor, SkuControlCor, CreateCorData } from '@/types/cor.types';
+import { Cor, SkuControlCor, CreateCorData, LabColor } from '@/types/cor.types';
 
 const CORES_COLLECTION = 'cores';
 const SKU_CONTROL_COR_DOC = 'sku_control_cor';
 const SKU_CONTROL_COR_ID = 'main';
 
 /**
+ * Verifica se já existe uma cor com o mesmo nome (case-insensitive)
+ * @param nome Nome a verificar
+ * @param excludeId ID da cor a excluir da verificação (para edição)
+ * @returns A cor existente com mesmo nome ou null se não existir
+ */
+export async function checkNomeDuplicado(
+  nome: string,
+  excludeId?: string
+): Promise<Cor | null> {
+  const nomeNormalizado = nome.trim().toLowerCase();
+  
+  // Ignorar nomes genéricos
+  if (nomeNormalizado === 'cor capturada' || nomeNormalizado === '') {
+    return null;
+  }
+  
+  const cores = await getCores();
+  
+  const corDuplicada = cores.find(cor => {
+    // Ignorar a própria cor (para edição)
+    if (excludeId && cor.id === excludeId) {
+      return false;
+    }
+    return cor.nome.trim().toLowerCase() === nomeNormalizado;
+  });
+  
+  return corDuplicada || null;
+}
+
+/**
  * Busca todas as cores cadastradas (não excluídas)
  */
 export async function getCores(): Promise<Cor[]> {
   try {
-    const q = query(
-      collection(db, CORES_COLLECTION),
-      where('deletedAt', '==', null),
-      orderBy('createdAt', 'desc')
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Cor[];
+    // Buscar todas as cores e filtrar client-side para evitar problemas
+    // com documentos que não têm o campo deletedAt
+    const snapshot = await getDocs(collection(db, CORES_COLLECTION));
+    
+    const cores = snapshot.docs
+      .filter((doc) => !doc.data().deletedAt) // Filtrar excluídos client-side
+      .map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Cor[];
+    
+    // Ordenar por data de criação (mais recentes primeiro)
+    return cores.sort((a, b) => {
+      const aTime = a.createdAt?.toMillis() || 0;
+      const bTime = b.createdAt?.toMillis() || 0;
+      return bTime - aTime;
+    });
   } catch (error: any) {
-    // Se erro de índice, tentar sem orderBy
-    if (error.code === 'failed-precondition') {
-      // Fallback silencioso: busca sem ordenação e ordena manualmente
-      // O índice composto pode ser criado no Firebase Console se necessário
-      try {
-        const q = query(
-          collection(db, CORES_COLLECTION),
-          where('deletedAt', '==', null)
-        );
-        const snapshot = await getDocs(q);
-        const cores = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Cor[];
-        // Ordenar manualmente
-        return cores.sort((a, b) => {
-          const aTime = a.createdAt?.toMillis() || 0;
-          const bTime = b.createdAt?.toMillis() || 0;
-          return bTime - aTime;
-        });
-      } catch (fallbackError: any) {
-        // Se ainda falhar, tentar buscar sem filtro de deletedAt
-        // (para casos onde a coleção ainda não tem documentos)
-        try {
-          const q = query(
-            collection(db, CORES_COLLECTION),
-            orderBy('createdAt', 'desc')
-          );
-          const snapshot = await getDocs(q);
-          return snapshot.docs
-            .filter((doc) => !doc.data().deletedAt)
-            .map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            })) as Cor[];
-        } catch (finalError: any) {
-          // Último recurso: buscar tudo sem filtros nem ordenação
-          if (finalError.code === 'failed-precondition' || finalError.code === 'unavailable') {
-            const snapshot = await getDocs(collection(db, CORES_COLLECTION));
-            return snapshot.docs
-              .filter((doc) => !doc.data().deletedAt)
-              .map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-              })) as Cor[];
-          }
-          throw finalError;
-        }
-      }
-    }
+    console.error('Erro ao carregar cores:', error);
     
     // Se erro de permissão ou coleção não existe, retornar array vazio
     if (error.code === 'permission-denied' || error.code === 'not-found') {
@@ -115,6 +99,8 @@ export async function getCorById(id: string): Promise<Cor | null> {
 
 /**
  * Cria uma nova cor no Firestore
+ * NOTA: Cores agora são independentes de tecidos
+ * Use cor-tecido.ts para criar vínculos
  */
 export async function createCor(
   data: CreateCorData,
@@ -138,28 +124,20 @@ export async function createCor(
     };
   }
 
+  if (data.labOriginal) {
+    corData.labOriginal = {
+      L: data.labOriginal.L,
+      a: data.labOriginal.a,
+      b: data.labOriginal.b,
+    };
+  }
+
   if (data.rgb) {
     corData.rgb = {
       r: data.rgb.r,
       g: data.rgb.g,
       b: data.rgb.b,
     };
-  }
-
-  if (data.tecidoId) {
-    corData.tecidoId = data.tecidoId;
-  }
-
-  if (data.tecidoNome) {
-    corData.tecidoNome = data.tecidoNome;
-  }
-
-  if (data.tecidoSku) {
-    corData.tecidoSku = data.tecidoSku;
-  }
-
-  if (data.imagemTingida) {
-    corData.imagemTingida = data.imagemTingida;
   }
 
   const docRef = await addDoc(collection(db, CORES_COLLECTION), corData);
@@ -173,6 +151,7 @@ export async function createCor(
 
 /**
  * Atualiza uma cor existente
+ * NOTA: imagemTingida e ajustesReinhard agora ficam em cor_tecido
  */
 export async function updateCor(
   id: string,
@@ -185,10 +164,90 @@ export async function updateCor(
 
   if (data.nome !== undefined) updateData.nome = data.nome;
   if (data.codigoHex !== undefined) updateData.codigoHex = data.codigoHex;
-  if (data.imagemTingida !== undefined) updateData.imagemTingida = data.imagemTingida;
   if (data.sku !== undefined) updateData.sku = data.sku;
+  if (data.lab !== undefined) {
+    updateData.lab = {
+      L: data.lab.L,
+      a: data.lab.a,
+      b: data.lab.b,
+    };
+  }
+  if (data.labOriginal !== undefined) {
+    updateData.labOriginal = {
+      L: data.labOriginal.L,
+      a: data.labOriginal.a,
+      b: data.labOriginal.b,
+    };
+  }
+  if (data.rgb !== undefined) {
+    updateData.rgb = {
+      r: data.rgb.r,
+      g: data.rgb.g,
+      b: data.rgb.b,
+    };
+  }
 
   await updateDoc(docRef, updateData);
+}
+
+/**
+ * Busca cor por valores LAB similares (usando deltaE)
+ * Retorna a cor mais próxima se deltaE < limiar
+ */
+export async function findCorByLab(
+  lab: LabColor,
+  limiarDeltaE: number = 3
+): Promise<Cor | null> {
+  const cores = await getCores();
+  
+  let corMaisProxima: Cor | null = null;
+  let menorDeltaE = Infinity;
+  
+  for (const cor of cores) {
+    if (!cor.lab) continue;
+    
+    // Calcular deltaE simples (CIE76)
+    const deltaL = cor.lab.L - lab.L;
+    const deltaA = cor.lab.a - lab.a;
+    const deltaB = cor.lab.b - lab.b;
+    const deltaE = Math.sqrt(deltaL * deltaL + deltaA * deltaA + deltaB * deltaB);
+    
+    if (deltaE < menorDeltaE && deltaE < limiarDeltaE) {
+      menorDeltaE = deltaE;
+      corMaisProxima = cor;
+    }
+  }
+  
+  return corMaisProxima;
+}
+
+/**
+ * Busca cores similares por LAB
+ * Retorna lista de cores com deltaE menor que o limiar
+ */
+export async function findCoresSimilares(
+  lab: LabColor,
+  limiarDeltaE: number = 5
+): Promise<Array<{ cor: Cor; deltaE: number }>> {
+  const cores = await getCores();
+  const similares: Array<{ cor: Cor; deltaE: number }> = [];
+  
+  for (const cor of cores) {
+    if (!cor.lab) continue;
+    
+    // Calcular deltaE simples (CIE76)
+    const deltaL = cor.lab.L - lab.L;
+    const deltaA = cor.lab.a - lab.a;
+    const deltaB = cor.lab.b - lab.b;
+    const deltaE = Math.sqrt(deltaL * deltaL + deltaA * deltaA + deltaB * deltaB);
+    
+    if (deltaE < limiarDeltaE) {
+      similares.push({ cor, deltaE });
+    }
+  }
+  
+  // Ordenar por deltaE (mais similar primeiro)
+  return similares.sort((a, b) => a.deltaE - b.deltaE);
 }
 
 /**
@@ -324,23 +383,21 @@ export async function gerarSkuPorFamilia(nome: string): Promise<{
   
   // Buscar controle atual
   let control = await getSkuControlCor();
-  if (!control) {
-    control = {
-      familias: {},
-      prefixosReservados: {},
-    };
-  }
+  
+  // Garantir que o controle e seus campos existam
+  const familias = control?.familias || {};
+  const prefixosReservados = control?.prefixosReservados || {};
   
   // Resolver prefixo (evitando conflitos)
-  const prefixo = resolverPrefixo(nomeFamilia, control.prefixosReservados);
+  const prefixo = resolverPrefixo(nomeFamilia, prefixosReservados);
   
   // Incrementar contador da família
-  const numeroAtual = control.familias[prefixo] || 0;
+  const numeroAtual = familias[prefixo] || 0;
   const proximoNumero = numeroAtual + 1;
   
   // Atualizar controle
-  const novasFamilias = { ...control.familias, [prefixo]: proximoNumero };
-  const novosPrefixos = { ...control.prefixosReservados, [prefixo]: nomeFamilia };
+  const novasFamilias = { ...familias, [prefixo]: proximoNumero };
+  const novosPrefixos = { ...prefixosReservados, [prefixo]: nomeFamilia };
   
   await updateSkuControlCor(novasFamilias, novosPrefixos);
   

@@ -7,6 +7,7 @@ import {
   deleteTecido as deleteTecidoFirebase,
   uploadTecidoImage,
 } from '@/lib/firebase/tecidos';
+import { updateTecidoDataInVinculos } from '@/lib/firebase/cor-tecido';
 import { useSku } from './useSku';
 import { useToast } from '@/hooks/use-toast';
 
@@ -198,6 +199,15 @@ export function useTecidos() {
         }
 
         await updateTecidoFirebase(data.id, data, imageUrl);
+
+        // Propagar mudanças para os vínculos (dados denormalizados)
+        const dadosParaVinculos: { tecidoNome?: string; tecidoSku?: string } = {};
+        if (data.nome) dadosParaVinculos.tecidoNome = data.nome;
+        // SKU de tecido não muda após criação, mas incluímos caso seja necessário
+        
+        if (Object.keys(dadosParaVinculos).length > 0) {
+          await updateTecidoDataInVinculos(data.id, dadosParaVinculos);
+        }
 
         // Recarregar tecidos para ter dados atualizados
         await loadTecidos();

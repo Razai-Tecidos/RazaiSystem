@@ -1,14 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "shopee_sku_costs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "shop_id", "order": "ASCENDING" },
-        { "fieldPath": "item_sku", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "shopee_sku_sales",
       "queryScope": "COLLECTION",
       "fields": [
@@ -18,28 +10,60 @@
       ]
     },
     {
-      "collectionGroup": "shopee_price_logs",
+      "collectionGroup": "ml_training_examples",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "shop_id", "order": "ASCENDING" },
-        { "fieldPath": "executadoEm", "order": "DESCENDING" }
+        { "fieldPath": "corId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     },
     {
-      "collectionGroup": "shopee_price_logs",
+      "collectionGroup": "cor_tecido",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "shop_id", "order": "ASCENDING" },
-        { "fieldPath": "item_sku", "order": "ASCENDING" },
-        { "fieldPath": "executadoEm", "order": "DESCENDING" }
+        { "fieldPath": "deletedAt", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
     {
-      "collectionGroup": "shopee_pricing_rules",
+      "collectionGroup": "cor_tecido",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "shop_id", "order": "ASCENDING" },
-        { "fieldPath": "prioridade", "order": "ASCENDING" }
+        { "fieldPath": "corId", "order": "ASCENDING" },
+        { "fieldPath": "deletedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cor_tecido",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "corId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cor_tecido",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tecidoId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cor_tecido",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tecidoId", "order": "ASCENDING" },
+        { "fieldPath": "deletedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cor_tecido",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "corId", "order": "ASCENDING" },
+        { "fieldPath": "tecidoId", "order": "ASCENDING" },
+        { "fieldPath": "deletedAt", "order": "ASCENDING" }
       ]
     }
   ],

@@ -16,10 +16,10 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
 5. **[HOOKS.md](HOOKS.md)** - Documentação de custom hooks
 6. **[SHOPEE.md](SHOPEE.md)** - Documentação da integração Shopee
 7. **[SHOPEE_WEBHOOK_SETUP.md](SHOPEE_WEBHOOK_SETUP.md)** - Guia de configuração do webhook Shopee
-8. **[SHOPEE_PRICING.md](SHOPEE_PRICING.md)** - Módulo de gestão de preços e margens
-9. **[TECIDOS.md](../frontend/src/docs/TECIDOS.md)** - Documentação completa do módulo de Tecidos
-10. **[ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)** - Documentação do módulo de Estampas
-11. **[CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor com Colorímetro
+8. **[TECIDOS.md](../frontend/src/docs/TECIDOS.md)** - Documentação completa do módulo de Tecidos
+9. **[ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)** - Documentação do módulo de Estampas
+10. **[CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor com Colorímetro
+11. **[VINCULOS.md](../frontend/src/docs/VINCULOS.md)** - Documentação do módulo de Vínculos Cor-Tecido
 
 ## Guia Rápido
 
@@ -45,14 +45,24 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
   - SKU automático por família
   - Vinculação com tecidos estampados
 - **Módulo de Captura de Cor**: [CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)
-- **Módulo Shopee Preços**: [SHOPEE_PRICING.md](SHOPEE_PRICING.md)
-  - Gestão de custos por SKU
-  - Cálculo de margens considerando taxas Shopee (20% + R$4)
-  - Dashboard de performance financeira
-  - Regras de automação de preços
-  - Fluxo completo de captura com lista
+  - Captura via colorímetro Bluetooth LS173
   - Validação de conflitos com Delta E 2000
-  - Visualização com algoritmo de Reinhart
+  - Resolução de conflitos (usar existente / criar nova)
+- **Módulo de Vínculos Cor-Tecido**: [VINCULOS.md](../frontend/src/docs/VINCULOS.md)
+  - Separação de Cor e CorTecido
+  - Agrupamento por tecido (expansível/colapsável)
+  - Ajustes Reinhard por vínculo
+  - Imagens PNG em resolução original (sem compressão)
+  - Geração de imagem com marca (logo + nome da cor)
+  - Cache de imagens com marca no Firebase Storage
+  - SKU automático do vínculo (TecidoSKU-CorSKU)
+  - Ações em lote por tecido (copiar SKUs/HEX/Nomes, download ZIP)
+  - Exportação XLSX com imagens como mídia (não URLs)
+  - Barra de progresso visual durante exportação
+- **Algoritmo Reinhard**: [REINHARD.md](../frontend/src/docs/REINHARD.md)
+  - Transferência de cor baseada em CIELAB
+  - Preservação de textura de alta frequência
+  - Saída em PNG sem perda de qualidade
 - **Componentes de Layout**: [COMPONENTS.md](COMPONENTS.md) - Seção "Componentes de Layout"
 - **Autenticação**: [HOOKS.md](HOOKS.md) - Seção "useAuth"
 - **Utilitários de Cor**: [HOOKS.md](HOOKS.md) - Seção "Utilitários de Cor" e "Utilitários de DeltaE"
@@ -67,13 +77,13 @@ docs/
 ├── HOOKS.md               # Custom hooks
 ├── DEPLOY_FIREBASE.md     # Guia de deploy
 ├── SHOPEE.md              # Integração Shopee
-├── SHOPEE_WEBHOOK_SETUP.md # Configuração webhook Shopee
-└── SHOPEE_PRICING.md      # Módulo de preços e margens
+└── SHOPEE_WEBHOOK_SETUP.md # Configuração webhook Shopee
 
 frontend/src/docs/
 ├── TECIDOS.md         # Documentação do módulo Tecidos
 ├── ESTAMPAS.md        # Documentação do módulo Estampas
 ├── CAPTURA_COR.md     # Documentação do módulo Captura de Cor
+├── VINCULOS.md        # Documentação do módulo Vínculos Cor-Tecido
 └── REINHARD.md        # Documentação do algoritmo Reinhard
 
 CONTEXT.md             # Contexto técnico e padrões

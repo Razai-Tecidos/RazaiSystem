@@ -8,6 +8,7 @@ import {
   uploadEstampaImage,
   gerarSkuPorFamiliaEstampa,
   extrairNomeFamiliaEstampa,
+  checkNomeDuplicadoEstampa,
 } from '@/lib/firebase/estampas';
 import { getTecidoById } from '@/lib/firebase/tecidos';
 import { useToast } from './use-toast';
@@ -47,12 +48,36 @@ export function useEstampas() {
   }, [loadEstampas]);
 
   /**
+   * Verifica se um nome de estampa já existe
+   * @param nome Nome a verificar
+   * @param excludeId ID da estampa a excluir (para edição)
+   * @returns A estampa duplicada ou null
+   */
+  const verificarNomeDuplicado = useCallback(
+    async (nome: string, excludeId?: string): Promise<Estampa | null> => {
+      return await checkNomeDuplicadoEstampa(nome, excludeId);
+    },
+    []
+  );
+
+  /**
    * Cria uma nova estampa com UI otimista
    */
   const createEstampa = useCallback(
     async (data: CreateEstampaData): Promise<void> => {
       const tempId = `temp-${Date.now()}`;
       let imageUrl = '';
+
+      // Verificar nome duplicado
+      const estampaDuplicada = await checkNomeDuplicadoEstampa(data.nome);
+      if (estampaDuplicada) {
+        toast({
+          title: 'Nome já existe!',
+          description: `Já existe uma estampa cadastrada com o nome "${estampaDuplicada.nome}". Escolha outro nome.`,
+          variant: 'destructive',
+        });
+        throw new Error(`Nome duplicado: "${data.nome}" já existe`);
+      }
 
       // Buscar nome do tecido base
       let tecidoBaseNome = '';
@@ -116,11 +141,14 @@ export function useEstampas() {
         // Remover temporário em caso de erro
         setEstampas((prev) => prev.filter((e) => e._tempId !== tempId));
 
-        toast({
-          title: 'Erro',
-          description: error.message || 'Não foi possível cadastrar a estampa.',
-          variant: 'destructive',
-        });
+        // Só mostrar toast se não for erro de duplicado (já mostrou acima)
+        if (!error.message?.includes('Nome duplicado')) {
+          toast({
+            title: 'Erro',
+            description: error.message || 'Não foi possível cadastrar a estampa.',
+            variant: 'destructive',
+          });
+        }
 
         throw error;
       }
@@ -141,6 +169,19 @@ export function useEstampas() {
         throw new Error('Estampa não encontrada');
       }
 
+      // Verificar nome duplicado se estiver alterando o nome
+      if (updateData.nome && updateData.nome !== currentEstampa.nome) {
+        const estampaDuplicada = await checkNomeDuplicadoEstampa(updateData.nome, id);
+        if (estampaDuplicada) {
+          toast({
+            title: 'Nome já existe!',
+            description: `Já existe uma estampa cadastrada com o nome "${estampaDuplicada.nome}". Escolha outro nome.`,
+            variant: 'destructive',
+          });
+          throw new Error(`Nome duplicado: "${updateData.nome}" já existe`);
+        }
+      }
+
       // Marcar como salvando
       setEstampas((prev) =>
         prev.map((e) =>
@@ -151,7 +192,6 @@ export function useEstampas() {
       try {
         let imageUrl: string | undefined;
         let tecidoBaseNome: string | undefined;
-        let novoSku: string | null | undefined = undefined;
 
         // Upload nova imagem se for File
         if (updateData.imagem instanceof File) {
@@ -164,22 +204,30 @@ export function useEstampas() {
           tecidoBaseNome = tecido?.nome || '';
         }
 
-        // Se o nome mudou, verificar se precisa gerar novo SKU
-        if (updateData.nome && updateData.nome !== currentEstampa.nome) {
+        // Determinar o SKU final
+        // 1. Se foi passado um SKU manualmente, usar ele
+        // 2. Se o nome mudou e a família mudou, gerar novo SKU
+        // 3. Caso contrário, manter o SKU atual
+        let skuFinal: string | undefined = undefined;
+        
+        if (updateData.sku !== undefined) {
+          // SKU foi passado manualmente
+          skuFinal = updateData.sku;
+        } else if (updateData.nome && updateData.nome !== currentEstampa.nome) {
+          // Nome mudou, verificar se família mudou
           const familiaAtual = extrairNomeFamiliaEstampa(currentEstampa.nome);
           const novaFamilia = extrairNomeFamiliaEstampa(updateData.nome);
           
-          // Se a família mudou, gerar novo SKU
           if (familiaAtual?.toLowerCase() !== novaFamilia?.toLowerCase()) {
             const resultado = await gerarSkuPorFamiliaEstampa(updateData.nome);
-            novoSku = resultado.sku;
+            skuFinal = resultado.sku || undefined;
           }
         }
 
         // Atualizar no Firestore
         await updateEstampaFirebase(
           id, 
-          { ...updateData, sku: novoSku }, 
+          { ...updateData, sku: skuFinal }, 
           imageUrl, 
           tecidoBaseNome
         );
@@ -193,7 +241,7 @@ export function useEstampas() {
                   ...updateData,
                   imagem: imageUrl || (typeof updateData.imagem === 'string' ? updateData.imagem : e.imagem),
                   tecidoBaseNome: tecidoBaseNome || e.tecidoBaseNome,
-                  sku: novoSku || e.sku,
+                  sku: skuFinal !== undefined ? skuFinal : e.sku,
                   _status: undefined,
                 }
               : e
@@ -214,11 +262,14 @@ export function useEstampas() {
           )
         );
 
-        toast({
-          title: 'Erro',
-          description: error.message || 'Não foi possível atualizar a estampa.',
-          variant: 'destructive',
-        });
+        // Só mostrar toast se não for erro de duplicado (já mostrou acima)
+        if (!error.message?.includes('Nome duplicado')) {
+          toast({
+            title: 'Erro',
+            description: error.message || 'Não foi possível atualizar a estampa.',
+            variant: 'destructive',
+          });
+        }
 
         throw error;
       }
@@ -279,6 +330,24 @@ export function useEstampas() {
   const createEstampasBatch = useCallback(
     async (nomes: string[], tecidoBaseId: string): Promise<void> => {
       if (nomes.length === 0) return;
+
+      // Verificar nomes duplicados antes de iniciar
+      const nomesExistentes: string[] = [];
+      for (const nome of nomes) {
+        const duplicada = await checkNomeDuplicadoEstampa(nome);
+        if (duplicada) {
+          nomesExistentes.push(nome);
+        }
+      }
+
+      if (nomesExistentes.length > 0) {
+        toast({
+          title: 'Nomes duplicados!',
+          description: `Os seguintes nomes já existem: ${nomesExistentes.join(', ')}`,
+          variant: 'destructive',
+        });
+        throw new Error(`Nomes duplicados: ${nomesExistentes.join(', ')}`);
+      }
 
       // Buscar nome do tecido base uma vez
       let tecidoBaseNome = '';
@@ -381,5 +450,6 @@ export function useEstampas() {
     createEstampasBatch,
     updateEstampa,
     deleteEstampa,
+    verificarNomeDuplicado,
   };
 }

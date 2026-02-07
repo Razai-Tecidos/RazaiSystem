@@ -3,20 +3,53 @@ service firebase.storage {
   match /b/{bucket}/o {
     // Regras para imagens de tecidos
     match /tecidos/{tecidoId}/{allPaths=**} {
-      // Permite leitura e escrita apenas para usuários autenticados
-      allow read, write: if request.auth != null;
+      // Leitura pública (evita expiração de tokens)
+      // Escrita apenas para usuários autenticados
+      allow read: if true;
+      allow write: if request.auth != null;
     }
     
     // Regras para imagens de cores (tingimentos)
     match /cores/{corId}/{allPaths=**} {
-      // Permite leitura e escrita apenas para usuários autenticados
-      allow read, write: if request.auth != null;
+      // Leitura pública (evita expiração de tokens)
+      // Escrita apenas para usuários autenticados
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Regras para imagens de vínculos cor-tecido (tingidas e com marca)
+    match /cor-tecido/{vinculoId}/{allPaths=**} {
+      // Leitura pública (evita expiração de tokens)
+      // Escrita apenas para usuários autenticados
+      allow read: if true;
+      allow write: if request.auth != null;
     }
     
     // Regras para imagens de estampas
     match /estampas/{estampaId}/{allPaths=**} {
-      // Permite leitura e escrita apenas para usuários autenticados
-      allow read, write: if request.auth != null;
+      // Leitura pública (evita expiração de tokens)
+      // Escrita apenas para usuários autenticados
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Regras para modelos ML (compartilhados entre usuários autenticados)
+    match /ml-models/{modelId}/{allPaths=**} {
+      // Leitura pública para carregar modelo no frontend
+      // Escrita apenas para usuários autenticados
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Arquivos de modelo ML na raiz (weights.bin, model.json)
+    // Necessário porque TensorFlow.js pode resolver paths relativamente
+    match /weights.bin {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /model.json {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
     
     // Negar acesso a todos os outros caminhos por padrão

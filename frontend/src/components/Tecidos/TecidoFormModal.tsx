@@ -213,8 +213,8 @@ export function TecidoFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="flex-shrink-0 px-4 sm:px-6 pt-4 sm:pt-6 pb-3">
           <DialogTitle>
             {tecido ? 'Editar Tecido' : 'Adicionar Tecido'}
           </DialogTitle>
@@ -223,7 +223,7 @@ export function TecidoFormModal({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 space-y-4 pb-4">
           {/* Nome */}
           <div className="space-y-2">
             <Label htmlFor="nome">
@@ -408,27 +408,37 @@ export function TecidoFormModal({
               rows={3}
             />
           </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                onOpenChange(false);
-                resetForm();
-              }}
-              disabled={isSubmitting || loading}
-            >
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={isSubmitting || loading}>
-              {(isSubmitting || loading) && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Salvar
-            </Button>
-          </DialogFooter>
         </form>
+
+        <DialogFooter className="flex-shrink-0 flex-col-reverse sm:flex-row gap-2 px-4 sm:px-6 pb-4 sm:pb-6 pt-4 border-t">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+              resetForm();
+            }}
+            disabled={isSubmitting || loading}
+            className="w-full sm:w-auto"
+          >
+            Cancelar
+          </Button>
+          <Button 
+            type="button" 
+            disabled={isSubmitting || loading} 
+            className="w-full sm:w-auto" 
+            onClick={(e) => {
+              e.preventDefault();
+              const formEvent = e as unknown as React.FormEvent;
+              handleSubmit(formEvent);
+            }}
+          >
+            {(isSubmitting || loading) && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            Salvar
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -1085,29 +1085,50 @@ router.post('/payment/collect-financial-data', authMiddleware, async (req: Reque
 
     console.log(`[CollectFinancial] Buscando dados de ${days_back} dias para loja ${shopId}`);
 
-    // 1. Buscar visão geral
-    const overview = await getIncomeOverview(shopId, releaseTimeFrom, releaseTimeTo);
-    console.log('[CollectFinancial] Overview:', overview);
-
-    // 2. Buscar lista de escrows (com paginação)
-    let allOrders: Array<{ order_sn: string; payout_time: number }> = [];
-    let cursor = '';
-    let hasMore = true;
-
-    while (hasMore) {
-      const escrowList = await getEscrowList(shopId, releaseTimeFrom, releaseTimeTo, 100, cursor);
-      allOrders = [...allOrders, ...escrowList.orders];
-      hasMore = escrowList.more;
-      cursor = escrowList.nextCursor;
-
-      // Limite de segurança
-      if (allOrders.length > 1000) {
-        console.log('[CollectFinancial] Limite de 1000 pedidos atingido');
-        break;
-      }
+    // 1. Buscar visão geral (pode falhar se API de Payment não estiver habilitada)
+    let overview = null;
+    try {
+      overview = await getIncomeOverview(shopId, releaseTimeFrom, releaseTimeTo);
+      console.log('[CollectFinancial] Overview:', overview);
+    } catch (overviewError: any) {
+      console.warn('[CollectFinancial] Não foi possível obter overview (API Payment pode não estar habilitada):', overviewError.message);
     }
 
-    console.log(`[CollectFinancial] Total de pedidos encontrados: ${allOrders.length}`);
+    // 2. Buscar lista de escrows (com paginação) - pode falhar se API de Payment não estiver habilitada
+    let allOrders: Array<{ order_sn: string; payout_time: number }> = [];
+    
+    try {
+      let cursor = '';
+      let hasMore = true;
+
+      while (hasMore) {
+        const escrowList = await getEscrowList(shopId, releaseTimeFrom, releaseTimeTo, 100, cursor);
+        allOrders = [...allOrders, ...escrowList.orders];
+        hasMore = escrowList.more;
+        cursor = escrowList.nextCursor;
+
+        // Limite de segurança
+        if (allOrders.length > 1000) {
+          console.log('[CollectFinancial] Limite de 1000 pedidos atingido');
+          break;
+        }
+      }
+
+      console.log(`[CollectFinancial] Total de pedidos encontrados: ${allOrders.length}`);
+    } catch (escrowError: any) {
+      console.warn('[CollectFinancial] Erro ao buscar escrow list:', escrowError.message);
+      // Retorna dados parciais com aviso
+      return res.json({
+        success: true,
+        data: {
+          overview,
+          period: { from: releaseTimeFrom, to: releaseTimeTo, days: days_back },
+          orders_count: 0,
+          sku_summary: [],
+          warning: 'API de Payment não disponível. Verifique se as permissões estão habilitadas no Shopee Partner Center.',
+        },
+      });
+    }
 
     if (allOrders.length === 0) {
       return res.json({

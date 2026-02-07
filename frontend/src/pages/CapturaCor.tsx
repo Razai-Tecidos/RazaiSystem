@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useColorimetro } from '@/hooks/useColorimetro';
 import { useTecidos } from '@/hooks/useTecidos';
-import { useCapturaLista } from '@/hooks/useCapturaLista';
+import { useCapturaLista, AcaoConflito } from '@/hooks/useCapturaLista';
 import { ColorSwatch } from '@/components/Cores/ColorSwatch';
 import { CapturaListaSimples } from '@/components/CapturaLista/CapturaListaSimples';
 import { TecidoSelecaoModal } from '@/components/TecidoSelecaoModal';
 import { Button } from '@/components/ui/button';
-import { Loader2, Bluetooth, BluetoothOff, AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Bluetooth, BluetoothOff, AlertCircle, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Layout/Header';
 import { BreadcrumbNav } from '@/components/Layout/BreadcrumbNav';
@@ -23,12 +23,9 @@ export function CapturaCor({ onNavigateHome }: CapturaCorProps) {
     connecting,
     capturedColor,
     error,
-    rawData,
-    dataHistory,
     connect,
     disconnect,
     clearCapture,
-    clearRawData,
   } = useColorimetro();
 
   const { tecidos, loading: tecidosLoading } = useTecidos();
@@ -79,7 +76,8 @@ export function CapturaCor({ onNavigateHome }: CapturaCorProps) {
     if (!capturedColor) return;
 
     const data: CreateCapturaData = {
-      lab: capturedColor.lab,
+      lab: capturedColor.lab, // LAB compensado (usado no processo Reinhard)
+      labOriginal: capturedColor.labOriginal, // LAB original capturado
       hex: capturedColor.hex,
       nome: `Cor capturada ${new Date().toLocaleTimeString()}`,
       tecidoId: tecido.id,
@@ -105,12 +103,12 @@ export function CapturaCor({ onNavigateHome }: CapturaCorProps) {
     });
   };
 
-  const handleEnviarCores = async () => {
+  const handleEnviarCores = async (acoesConflito: Map<string, AcaoConflito>) => {
     if (capturas.length === 0) return;
 
     setEnviandoCores(true);
     try {
-      const resultado = await enviarCores();
+      const resultado = await enviarCores(acoesConflito);
       
       if (resultado.falhas === 0) {
         toast({
@@ -305,93 +303,12 @@ export function CapturaCor({ onNavigateHome }: CapturaCorProps) {
             </div>
           )}
 
-          {/* Instruções quando não há cor capturada */}
+          {/* Mensagem quando não há cor capturada */}
           {!capturedColor && connected && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="font-semibold text-blue-900 mb-2">Como usar:</h3>
-              <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
-                <li>Posicione o colorímetro sobre a cor que deseja capturar</li>
-                <li><strong>Pressione o botão físico no colorímetro</strong> para capturar</li>
-                <li>Aguarde a leitura do dispositivo (a cor aparecerá automaticamente)</li>
-                <li>Revise a cor capturada no swatch</li>
-                <li>Clique em "Adicionar à Lista" para associar a um tecido</li>
-                <li>Selecione o tecido no modal que abrir</li>
-                <li>A cor será adicionada à lista com validação automática de conflitos</li>
-                <li>Envie as cores para "Gerenciar Cores" onde poderá editar e ver o preview</li>
-              </ol>
-              <div className="mt-3 p-2 bg-blue-100 rounded text-xs text-blue-900">
-                A captura é automática quando você pressiona o botão físico do colorímetro. Não é necessário clicar em nenhum botão no app.
-              </div>
-            </div>
-          )}
-
-          {/* Debug: Dados brutos recebidos - visível no celular */}
-          {connected && (
-            <div className="bg-gray-900 rounded-lg shadow p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-gray-300">
-                    Debug: Dados Bluetooth
-                  </h3>
-                  <div className={`w-2 h-2 rounded-full ${rawData ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
-                </div>
-                {dataHistory.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearRawData}
-                    className="text-gray-400 hover:text-white h-7 px-2"
-                  >
-                    <Trash2 className="h-3 w-3 mr-1" />
-                    Limpar
-                  </Button>
-                )}
-              </div>
-              
-              {dataHistory.length > 0 ? (
-                <div className="space-y-3">
-                  {/* Histórico de pacotes */}
-                  <div className="max-h-64 overflow-y-auto space-y-2">
-                    {dataHistory.map((entry, index) => (
-                      <pre 
-                        key={index} 
-                        className={`text-xs font-mono whitespace-pre-wrap break-all p-2 rounded ${
-                          index === dataHistory.length - 1 
-                            ? 'bg-green-900/50 text-green-300 border border-green-700' 
-                            : 'bg-black/30 text-gray-400'
-                        }`}
-                      >
-                        {entry}
-                      </pre>
-                    ))}
-                  </div>
-                  
-                  <div className="text-xs text-gray-500 flex items-center justify-between">
-                    <span>{dataHistory.length} pacote(s) recebido(s)</span>
-                    {!capturedColor && (
-                      <span className="text-yellow-500">Formato não reconhecido</span>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-6 border-2 border-dashed border-gray-700 rounded-lg">
-                  <p className="text-gray-500 text-sm">
-                    Aguardando dados do colorímetro...
-                  </p>
-                  <p className="text-gray-600 text-xs mt-1">
-                    Pressione o botão físico no dispositivo
-                  </p>
-                </div>
-              )}
-
-              {/* Legenda dos formatos */}
-              <div className="mt-3 pt-3 border-t border-gray-800">
-                <p className="text-xs text-gray-600">
-                  <strong className="text-gray-500">HEX:</strong> Hexadecimal | 
-                  <strong className="text-gray-500 ml-1">DEC:</strong> Decimal | 
-                  <strong className="text-gray-500 ml-1">ASCII:</strong> Texto
-                </p>
-              </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+              <p className="text-sm text-blue-800">
+                Pressione o botão físico no colorímetro para capturar uma cor
+              </p>
             </div>
           )}
 

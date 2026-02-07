@@ -98,7 +98,65 @@ frontend/src/lib/colorUtils.ts               → utilitários de cor
 
 - Converte LAB → RGB
 - Aplica no canvas
-- Retorna dataURL
+- Retorna dataURL (PNG, resolução original)
+
+---
+
+## Processamento de Imagem
+
+### Resolução e Qualidade
+
+O sistema preserva a resolução original da imagem em todas as etapas:
+
+- **Entrada**: Qualquer resolução (não há limite de pixels)
+- **Processamento**: Canvas com dimensões originais
+- **Saída**: PNG sem compressão de qualidade
+
+### Formato de Saída
+
+```typescript
+// Saída como PNG (sem perda)
+canvas.toBlob(callback, 'image/png', 1.0);
+```
+
+### Fluxo de Imagem
+
+```
+┌─────────────────┐      ┌──────────────┐      ┌─────────────────┐
+│ Imagem Original │ ───► │ Processamento│ ───► │ PNG (resolução  │
+│ (qualquer res.) │      │ Reinhard     │      │ original)       │
+└─────────────────┘      └──────────────┘      └─────────────────┘
+                                                       │
+                                                       ▼
+                                               ┌─────────────────┐
+                                               │ Storage:        │
+                                               │ imagemTingida   │
+                                               └────────┬────────┘
+                                                        │
+                                                        ▼
+                                               ┌─────────────────┐
+                                               │ generateBranded │
+                                               │ (adiciona logo) │
+                                               └────────┬────────┘
+                                                        │
+                                                        ▼
+                                               ┌─────────────────┐
+                                               │ Storage:        │
+                                               │ imagemComMarca  │
+                                               └─────────────────┘
+```
+
+### Crop Quadrado
+
+Para imagens com marca, o crop é quadrado e centralizado:
+
+```typescript
+// Crop mantém resolução original
+await cropToSquare(image, {
+  maxSize: 99999,  // Sem limite
+  quality: 1.0     // Sem perda
+});
+```
 
 ---
 

@@ -291,3 +291,74 @@ function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: n
     b: Math.round(b * 255),
   };
 }
+
+/**
+ * Compensa o desvio do colorímetro baseado no ponto branco de calibração
+ * 
+ * O colorímetro LS173 tem um desvio no ponto branco:
+ * - Ponto branco capturado: L: 97.40, a: -0.69, b: -0.30
+ * - Ponto branco ideal: L: 100, a: 0, b: 0
+ * - Desvio: L: +2.6, a: +0.69, b: +0.30
+ * 
+ * Esta função aplica uma compensação linear no espaço LAB para corrigir
+ * cores mais frias e dessaturadas capturadas pelo colorímetro.
+ * 
+ * @param labOriginal Valores LAB originais capturados pelo colorímetro
+ * @returns Valores LAB compensados
+ */
+export function compensarColorimetro(labOriginal: { L: number; a: number; b: number }): {
+  L: number;
+  a: number;
+  b: number;
+} {
+  // Desvio do ponto branco de calibração
+  const deltaL = 2.6;   // Mais escuro → aumentar luminosidade
+  const deltaA = 0.69;  // Mais verde/azul → aumentar vermelho/magenta
+  const deltaB = 0.30;  // Mais azul → aumentar amarelo
+
+  // Aplicar compensação linear
+  const LCompensado = labOriginal.L + deltaL;
+  const aCompensado = labOriginal.a + deltaA;
+  const bCompensado = labOriginal.b + deltaB;
+
+  // Clampar valores dentro dos ranges válidos
+  return {
+    L: Math.max(0, Math.min(100, LCompensado)),
+    a: Math.max(-128, Math.min(127, aCompensado)),
+    b: Math.max(-128, Math.min(127, bCompensado)),
+  };
+}
+
+/**
+ * Calcula o ângulo cromático (hue angle) no espaço LAB
+ * Baseado no círculo cromático usando coordenadas a e b
+ * 
+ * @param lab Valores LAB (usa a e b)
+ * @returns Ângulo em graus (0-360), onde:
+ *   - 0° = vermelho (+a)
+ *   - 90° = amarelo (+b)
+ *   - 180° = verde (-a)
+ *   - 270° = azul (-b)
+ */
+export function calcularAnguloCromatico(lab: { a: number; b: number }): number {
+  // Calcular ângulo usando atan2 (retorna -180 a 180)
+  let angle = Math.atan2(lab.b, lab.a) * (180 / Math.PI);
+  
+  // Converter para 0-360
+  if (angle < 0) {
+    angle += 360;
+  }
+  
+  return angle;
+}
+
+/**
+ * Calcula a croma (saturação cromática) no espaço LAB
+ * Distância do ponto neutro (a=0, b=0) no plano a-b
+ * 
+ * @param lab Valores LAB (usa a e b)
+ * @returns Croma (0-180 aproximadamente)
+ */
+export function calcularCroma(lab: { a: number; b: number }): number {
+  return Math.sqrt(lab.a * lab.a + lab.b * lab.b);
+}

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { CapturaItem, AjustesCor } from '@/types/captura.types';
+import { useState, useEffect, useRef } from 'react';
+import { CapturaItem } from '@/types/captura.types';
+import { ReinhardConfig } from '@/hooks/useReinhardTingimento';
 import {
   Dialog,
   DialogContent,
@@ -12,15 +13,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
-import { AlertCircle, Loader2, RotateCcw } from 'lucide-react';
+import { AlertCircle, Loader2, RotateCcw, Sparkles } from 'lucide-react';
 import { useReinhardTingimento } from '@/hooks/useReinhardTingimento';
+import { useReinhardML } from '@/hooks/useReinhardML';
 import { hexToRgb } from '@/lib/colorUtils';
+import { calculateImageStats } from '@/lib/imageStats';
+import { saveTrainingExample } from '@/lib/firebase/ml-training';
+import { getTecidoById } from '@/lib/firebase/tecidos';
+import { MLSuggestionBadge } from '@/components/ui/ml-suggestion-badge';
 
 interface CapturaEdicaoModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   captura: CapturaItem | null;
-  onSalvar: (captura: CapturaItem, nome: string, ajustes: AjustesCor) => void;
+  onSalvar: (captura: CapturaItem, nome: string) => void;
   loading?: boolean;
 }
 
@@ -37,45 +43,158 @@ export function CapturaEdicaoModal({
   loading = false,
 }: CapturaEdicaoModalProps) {
   const { aplicarTingimento } = useReinhardTingimento();
+  const { predict, isReady, exampleCount } = useReinhardML();
   const [imagemTingida, setImagemTingida] = useState<string>('');
   const [carregandoImagem, setCarregandoImagem] = useState(false);
   const [nome, setNome] = useState('');
-  const [ajustes, setAjustes] = useState<AjustesCor>({
-    hue: 0,
-    saturation: 0,
-    brightness: 0,
-    contrast: 0,
+  const [configReinhard, setConfigReinhard] = useState<ReinhardConfig>({
+    saturationMultiplier: 0.85,
+    contrastBoost: 0.15,
+    detailAmount: 1.15,
+    darkenAmount: 5,
+    shadowDesaturation: 0.6,
   });
+  const [isMLSuggestion, setIsMLSuggestion] = useState(false);
+  const [sugerindoAjustes, setSugerindoAjustes] = useState(false);
+  
+  // Cache da imagem original e debounce
+  const imagemOriginalUrlCache = useRef<string>('');
+  const imagemOriginalCache = useRef<string>('');
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Resetar ajustes e nome quando captura mudar
+  // Resetar nome e config quando captura mudar
   useEffect(() => {
     if (captura) {
       setNome(captura.nome);
-      setAjustes(captura.ajustes || { hue: 0, saturation: 0, brightness: 0, contrast: 0 });
+      setConfigReinhard({
+        saturationMultiplier: 0.85,
+        contrastBoost: 0.15,
+        detailAmount: 1.15,
+        darkenAmount: 5,
+        shadowDesaturation: 0.6,
+      });
+      setIsMLSuggestion(false);
     }
   }, [captura]);
 
-  // Aplicar tingimento quando captura ou ajustes mudarem
+  // Carregar imagem original uma vez e manter em cache
   useEffect(() => {
-    if (!captura || !open) {
+    if (!captura || !open || !captura.tecidoImagemPadrao) {
+      // Limpar cache se não houver imagem
+      if (imagemOriginalUrlCache.current) {
+        URL.revokeObjectURL(imagemOriginalUrlCache.current);
+        imagemOriginalUrlCache.current = '';
+        imagemOriginalCache.current = '';
+      }
+      return;
+    }
+
+    // Se já temos a imagem em cache e é a mesma URL, não recarregar
+    if (imagemOriginalCache.current === captura.tecidoImagemPadrao && imagemOriginalUrlCache.current) {
+      return;
+    }
+
+    const carregarImagem = async () => {
+      try {
+        let urlLocal = captura.tecidoImagemPadrao;
+        
+        // Limpar URL anterior se existir
+        if (imagemOriginalUrlCache.current) {
+          URL.revokeObjectURL(imagemOriginalUrlCache.current);
+        }
+
+        // Se for URL do Firebase Storage, carregar blob
+        if (urlLocal.includes('firebasestorage.googleapis.com') || urlLocal.includes('storage.googleapis.com')) {
+          try {
+            const { ref, getBlob } = await import('firebase/storage');
+            const { storage } = await import('@/config/firebase');
+            const urlObj = new URL(urlLocal);
+            const pathMatch = urlObj.pathname.match(/\/o\/(.+)$/);
+            
+            if (pathMatch) {
+              const storagePath = decodeURIComponent(pathMatch[1]);
+              const storageRef = ref(storage, storagePath);
+              
+              try {
+                const blob = await getBlob(storageRef);
+                urlLocal = URL.createObjectURL(blob);
+              } catch (sdkError) {
+                console.warn('SDK getBlob falhou, tentando fetch com token:', sdkError);
+                
+                const { getAuth } = await import('firebase/auth');
+                const auth = getAuth();
+                const user = auth.currentUser;
+                
+                if (user) {
+                  const token = await user.getIdToken();
+                  const response = await fetch(urlLocal, {
+                    headers: {
+                      'Authorization': `Bearer ${token}`
+                    }
+                  });
+                  
+                  if (response.ok) {
+                    const blob = await response.blob();
+                    urlLocal = URL.createObjectURL(blob);
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            console.warn('Erro ao carregar imagem do Firebase:', error);
+          }
+        }
+
+        // Atualizar cache
+        imagemOriginalCache.current = captura.tecidoImagemPadrao;
+        imagemOriginalUrlCache.current = urlLocal;
+      } catch (error) {
+        console.error('Erro ao carregar imagem:', error);
+      }
+    };
+
+    carregarImagem();
+
+    // Cleanup: revogar URL quando componente desmontar ou imagem mudar
+    return () => {
+      if (imagemOriginalUrlCache.current) {
+        URL.revokeObjectURL(imagemOriginalUrlCache.current);
+      }
+    };
+  }, [captura, open]);
+
+  // Aplicar tingimento com debounce quando ajustes mudarem
+  useEffect(() => {
+    if (!captura || !open || !imagemOriginalUrlCache.current) {
       setImagemTingida('');
       return;
     }
 
-    const aplicar = async () => {
+    // Limpar timer anterior
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Debounce de 300ms para evitar processamento excessivo
+    debounceTimerRef.current = setTimeout(async () => {
       setCarregandoImagem(true);
       try {
-        const rgb = hexToRgb(captura.hex);
-        if (!rgb) {
+        // Usar LAB diretamente se disponível (já compensado), senão converter de hex
+        const corAlvo = captura.lab || (() => {
+          const rgb = hexToRgb(captura.hex);
+          if (!rgb) return null;
+          return rgb;
+        })();
+
+        if (!corAlvo) {
           setCarregandoImagem(false);
           return;
         }
 
         const dataURL = await aplicarTingimento(
-          captura.tecidoImagemPadrao,
-          rgb,
-          ajustes,
-          { saturationMultiplier: 1.0, detailAmount: 1.05 }
+          imagemOriginalUrlCache.current,
+          corAlvo,
+          configReinhard
         );
         setImagemTingida(dataURL);
       } catch (error) {
@@ -83,19 +202,88 @@ export function CapturaEdicaoModal({
       } finally {
         setCarregandoImagem(false);
       }
+    }, 300);
+
+    // Cleanup
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
     };
+  }, [captura, open, configReinhard, aplicarTingimento]);
 
-    aplicar();
-  }, [captura, ajustes, open, aplicarTingimento]);
-
-  const handleSalvar = () => {
+  const handleSalvar = async () => {
     if (!captura || !nome.trim()) return;
-    onSalvar(captura, nome.trim(), ajustes);
+    
+    // Coletar dados para treinamento ML (em background, não bloqueia salvamento)
+    collectTrainingData(captura, configReinhard).catch((error) => {
+      console.error('Erro ao coletar dados de treinamento:', error);
+      // Não mostrar erro ao usuário, é silencioso
+    });
+    
+    onSalvar(captura, nome.trim());
     onOpenChange(false);
   };
 
-  const handleResetarAjustes = () => {
-    setAjustes({ hue: 0, saturation: 0, brightness: 0, contrast: 0 });
+  /**
+   * Coleta dados de treinamento automaticamente quando usuário salva
+   */
+  const collectTrainingData = async (
+    captura: CapturaItem,
+    ajustes: ReinhardConfig
+  ) => {
+    try {
+      // Buscar informações completas do tecido
+      const tecido = await getTecidoById(captura.tecidoId);
+      
+      // Calcular estatísticas da imagem base
+      const imagemStats = await calculateImageStats(captura.tecidoImagemPadrao);
+      
+      // Salvar exemplo de treinamento
+      await saveTrainingExample({
+        lab: captura.lab,
+        tecidoTipo: tecido?.tipo || 'liso',
+        tecidoComposicao: tecido?.composicao || '',
+        imagemStats,
+        ajustes,
+      });
+    } catch (error) {
+      // Erro silencioso - não afeta experiência do usuário
+      console.error('Erro ao coletar dados de treinamento:', error);
+    }
+  };
+
+  /**
+   * Sugere ajustes usando ML
+   */
+  const handleSugerirAjustes = async () => {
+    if (!captura?.lab) return;
+    
+    setSugerindoAjustes(true);
+    try {
+      // Buscar informações do tecido
+      const tecido = await getTecidoById(captura.tecidoId);
+      
+      // Calcular estatísticas da imagem
+      const imagemStats = await calculateImageStats(captura.tecidoImagemPadrao);
+      
+      // Predizer ajustes
+      const prediction = await predict(
+        captura.lab,
+        tecido?.tipo,
+        tecido?.composicao,
+        imagemStats
+      );
+      
+      if (prediction?.ajustes) {
+        setConfigReinhard(prediction.ajustes);
+        setIsMLSuggestion(true);
+      }
+    } catch (error) {
+      console.error('Erro ao sugerir ajustes:', error);
+    } finally {
+      setSugerindoAjustes(false);
+    }
   };
 
   if (!captura) return null;
@@ -148,58 +336,143 @@ export function CapturaEdicaoModal({
             </div>
           </div>
 
-          {/* Sliders de ajuste - grid em tablet+ */}
-          <div className="space-y-3 sm:space-y-4 border-t pt-3 sm:pt-4">
+          {/* Ajustes do Algoritmo Reinhard */}
+          <div className="space-y-3 border-t pt-3 sm:pt-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-700">Ajustes de Cor</h3>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleResetarAjustes}
-                className="h-8 text-xs hover:bg-gray-100 transition-colors"
-              >
-                <RotateCcw className="h-3 w-3 mr-1.5" />
-                Resetar
-              </Button>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-gray-700">Ajustes do Algoritmo</h3>
+                {isMLSuggestion && <MLSuggestionBadge />}
+              </div>
+              <div className="flex items-center gap-2">
+                {isReady && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSugerirAjustes}
+                    disabled={sugerindoAjustes || !captura?.lab}
+                    className="h-8 text-xs"
+                  >
+                    {sugerindoAjustes ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        Sugerindo...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3 mr-1.5" />
+                        Sugerir Ajustes
+                      </>
+                    )}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setConfigReinhard({
+                      saturationMultiplier: 0.85,
+                      contrastBoost: 0.15,
+                      detailAmount: 1.15,
+                      darkenAmount: 5,
+                      shadowDesaturation: 0.6,
+                    });
+                    setIsMLSuggestion(false);
+                  }}
+                  className="h-8 text-xs hover:bg-gray-100 transition-colors"
+                >
+                  <RotateCcw className="h-3 w-3 mr-1.5" />
+                  Resetar
+                </Button>
+              </div>
             </div>
+            {isReady && exampleCount > 0 && (
+              <p className="text-xs text-gray-500">
+                Modelo treinado com {exampleCount} exemplos
+              </p>
+            )}
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <Slider
-                label="Matiz (Hue)"
-                value={ajustes.hue}
-                onValueChange={(value) => setAjustes({ ...ajustes, hue: value })}
-                min={-180}
-                max={180}
-                step={1}
-              />
+              <div className="space-y-1">
+                <Slider
+                  label="Saturação"
+                  value={configReinhard.saturationMultiplier || 0.85}
+                  onValueChange={(value) => setConfigReinhard({ ...configReinhard, saturationMultiplier: value })}
+                  min={0.5}
+                  max={2.0}
+                  step={0.05}
+                />
+                <p className="text-xs text-gray-500 px-1">
+                  <span className="font-medium">Aumentar:</span> Cores mais vibrantes e intensas
+                  <br />
+                  <span className="font-medium">Diminuir:</span> Cores mais suaves e neutras
+                </p>
+              </div>
 
-              <Slider
-                label="Saturação"
-                value={ajustes.saturation}
-                onValueChange={(value) => setAjustes({ ...ajustes, saturation: value })}
-                min={-100}
-                max={100}
-                step={1}
-              />
+              <div className="space-y-1">
+                <Slider
+                  label="Contraste"
+                  value={configReinhard.contrastBoost || 0.15}
+                  onValueChange={(value) => setConfigReinhard({ ...configReinhard, contrastBoost: value })}
+                  min={0}
+                  max={0.5}
+                  step={0.01}
+                />
+                <p className="text-xs text-gray-500 px-1">
+                  <span className="font-medium">Aumentar:</span> Maior diferença entre áreas claras e escuras
+                  <br />
+                  <span className="font-medium">Diminuir:</span> Imagem mais uniforme e suave
+                </p>
+              </div>
 
-              <Slider
-                label="Brilho"
-                value={ajustes.brightness}
-                onValueChange={(value) => setAjustes({ ...ajustes, brightness: value })}
-                min={-100}
-                max={100}
-                step={1}
-              />
+              <div className="space-y-1">
+                <Slider
+                  label="Detalhe/Textura"
+                  value={configReinhard.detailAmount || 1.15}
+                  onValueChange={(value) => setConfigReinhard({ ...configReinhard, detailAmount: value })}
+                  min={0.5}
+                  max={2.0}
+                  step={0.05}
+                />
+                <p className="text-xs text-gray-500 px-1">
+                  <span className="font-medium">Aumentar:</span> Textura do tecido mais visível e detalhada
+                  <br />
+                  <span className="font-medium">Diminuir:</span> Superfície mais lisa e uniforme
+                </p>
+              </div>
 
-              <Slider
-                label="Contraste"
-                value={ajustes.contrast}
-                onValueChange={(value) => setAjustes({ ...ajustes, contrast: value })}
-                min={-100}
-                max={100}
-                step={1}
-              />
+              <div className="space-y-1">
+                <Slider
+                  label="Escurecimento"
+                  value={configReinhard.darkenAmount || 5}
+                  onValueChange={(value) => setConfigReinhard({ ...configReinhard, darkenAmount: value })}
+                  min={0}
+                  max={30}
+                  step={1}
+                />
+                <p className="text-xs text-gray-500 px-1">
+                  <span className="font-medium">Aumentar:</span> Imagem mais escura e sombria
+                  <br />
+                  <span className="font-medium">Diminuir:</span> Imagem mais clara e iluminada
+                </p>
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <Slider
+                  label="Dessaturação de Sombras"
+                  value={configReinhard.shadowDesaturation || 0.6}
+                  onValueChange={(value) => setConfigReinhard({ ...configReinhard, shadowDesaturation: value })}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                />
+                <p className="text-xs text-gray-500 px-1">
+                  <span className="font-medium">Aumentar:</span> Áreas escuras ficam mais acinzentadas
+                  <br />
+                  <span className="font-medium">Diminuir:</span> Áreas escuras mantêm mais cor
+                </p>
+              </div>
             </div>
           </div>
 

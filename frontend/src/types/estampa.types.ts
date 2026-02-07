@@ -27,4 +27,5 @@ export interface CreateEstampaData {
 
 export interface UpdateEstampaData extends Partial<CreateEstampaData> {
   id: string;
+  sku?: string; // Permite atualização manual do SKU
 }

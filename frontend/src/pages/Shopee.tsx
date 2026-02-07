@@ -15,14 +15,12 @@ import {
   ChevronDown,
   ChevronRight,
   Package,
-  DollarSign,
   ClipboardList,
   ArrowLeft
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { auth } from '@/config/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { ShopeePrecos } from '@/components/Shopee/ShopeePrecos';
 
 interface ShopeeProps {
   onNavigateHome?: () => void;
@@ -170,7 +168,7 @@ function EmptyState({ onConnect, connecting }: { onConnect: () => void; connecti
   );
 }
 
-type ShopeeSubPage = 'menu' | 'estoque' | 'precos' | 'pedidos';
+type ShopeeSubPage = 'menu' | 'estoque' | 'pedidos';
 
 interface SubPageCardProps {
   title: string;
@@ -1017,13 +1015,6 @@ export function Shopee({ onNavigateHome }: ShopeeProps) {
               color="orange"
             />
             <SubPageCard
-              title="Preços"
-              description="Configure custos e margens por SKU"
-              icon={<DollarSign className="w-5 h-5 text-white" />}
-              onClick={() => setSubPage('precos')}
-              color="green"
-            />
-            <SubPageCard
               title="Pedidos"
               description="Visualize e gerencie pedidos"
               icon={<ClipboardList className="w-5 h-5 text-white" />}
@@ -1038,30 +1029,6 @@ export function Shopee({ onNavigateHome }: ShopeeProps) {
     );
   }
 
-  // Subpágina de Preços
-  if (subPage === 'precos') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50/30">
-        <Header onNavigateHome={onNavigateHome} />
-        
-        <BreadcrumbNav
-          items={[
-            { label: 'Home', onClick: onNavigateHome },
-            { label: 'Shopee', onClick: handleBackToMenu },
-            { label: 'Preços' }
-          ]}
-        />
-
-        <main className="container mx-auto px-4 py-8">
-          <ShopeePrecos
-            shopId={Number(shopIdInput) || shops[0]?.shopId}
-            inventoryItems={inventoryItems}
-            onBack={handleBackToMenu}
-          />
-        </main>
-      </div>
-    );
-  }
 
   // Subpágina de Estoque
   return (

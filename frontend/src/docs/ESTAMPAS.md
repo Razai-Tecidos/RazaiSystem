@@ -62,6 +62,7 @@ O SKU é gerado automaticamente no formato `[PREFIXO][NÚMERO]`:
 
 - **Na criação**: Sempre gera novo SKU
 - **Na edição**: Apenas se a família mudar (primeira palavra do nome)
+- **Edição manual**: SKU pode ser editado inline na tabela
 
 ## Hook useEstampas
 
@@ -78,6 +79,7 @@ O SKU é gerado automaticamente no formato `[PREFIXO][NÚMERO]`:
   createEstampasBatch: (nomes: string[], tecidoBaseId: string) => Promise<void>;
   updateEstampa: (data: UpdateEstampaData) => Promise<void>;
   deleteEstampa: (id: string) => Promise<void>;
+  verificarNomeDuplicado: (nome: string, excludeId?: string) => Promise<Estampa | null>;
 }
 ```
 
@@ -108,6 +110,85 @@ await createEstampasBatch(
 - **Cadastro em lote**: Cria múltiplas estampas de uma vez
 - **SKU automático**: Gera SKU baseado na família
 - **Upload de imagem**: Gerencia upload para Firebase Storage (opcional)
+- **Validação de nome duplicado**: Impede criação de estampas com nomes iguais
+
+## Página de Estampas
+
+**Localização**: `frontend/src/pages/Estampas.tsx`
+
+### Funcionalidades da Página
+
+#### 1. Filtros e Busca
+
+- **Campo de busca**: Filtra por nome, SKU ou tecido base
+- **Filtro por tecido**: Dropdown para filtrar por tecido base específico
+- **Limpar filtros**: Botão para resetar todos os filtros
+
+#### 2. Ordenação
+
+Opções de ordenação disponíveis:
+- Mais recentes / Mais antigas (por data de criação)
+- Nome A-Z / Z-A
+- SKU A-Z / Z-A
+- Tecido A-Z
+
+#### 3. Agrupamento
+
+- **Sem agrupamento**: Lista plana
+- **Por família**: Agrupa pela primeira palavra do nome
+- **Por tecido**: Agrupa pelo tecido base
+
+Grupos são colapsáveis (clique no cabeçalho para expandir/colapsar).
+
+#### 4. Visualizações
+
+Toggle entre dois modos de visualização:
+
+- **Tabela**: Visualização tradicional em linhas com todas as informações
+- **Grid**: Cards com imagens maiores, ideal para visualização rápida
+
+#### 5. Contador
+
+Header exibe:
+- Total de estampas cadastradas
+- Total de famílias únicas
+- Quantidade filtrada (quando filtros ativos)
+
+#### 6. Exportação CSV
+
+Botão "Exportar" gera arquivo CSV com:
+- SKU
+- Nome
+- Família
+- Tecido Base
+- Descrição
+
+Arquivo usa encoding UTF-8 com BOM para compatibilidade com Excel.
+
+### Ações na Tabela
+
+#### Edição Inline
+
+- **Nome**: Clique no nome para editar diretamente
+- **SKU**: Clique no SKU para editar diretamente
+- **Enter**: Salva e vai para próximo item
+- **Escape**: Cancela edição
+- **Blur**: Salva automaticamente
+
+#### Botões de Ação
+
+- **Duplicar**: Cria cópia da estampa com sufixo "(cópia)"
+- **Editar**: Abre modal de edição completa
+- **Excluir**: Abre modal de confirmação
+
+### Modal de Confirmação de Exclusão
+
+Modal elegante que substitui o `confirm()` nativo:
+- Preview da estampa (imagem, nome, SKU)
+- Informação do tecido base
+- Botões "Cancelar" e "Excluir"
+
+**Localização**: `frontend/src/components/Estampas/DeleteConfirmModal.tsx`
 
 ## Componentes
 
@@ -158,24 +239,43 @@ Chip minimalista para seleção de tecido.
 
 ### EstampasTable
 
-Tabela responsiva para listagem de estampas.
+Tabela/Grid responsiva para listagem de estampas.
 
 **Props**:
 ```typescript
 interface EstampasTableProps {
-  estampas: Estampa[];
+  estampasAgrupadas: EstampaGrupo[];
+  viewMode: 'table' | 'grid';
+  groupBy: 'none' | 'familia' | 'tecido';
   onEdit: (estampa: Estampa) => void;
-  onDelete: (id: string) => void;
+  onDelete: (estampa: Estampa) => void;
+  onDuplicate: (estampa: Estampa) => void;
+  onUpdateNome: (id: string, nome: string) => Promise<void>;
+  onUpdateSku: (id: string, sku: string) => Promise<void>;
   loading?: boolean;
 }
 ```
 
-**Colunas**:
-- Preview (imagem thumbnail ou placeholder)
-- SKU
-- Nome
-- Tecido Base
-- Ações (Editar, Excluir)
+**Funcionalidades**:
+- Edição inline de nome e SKU
+- Visualização em tabela ou grid
+- Agrupamento com grupos colapsáveis
+- Botões de duplicar, editar e excluir
+- Estados visuais de loading/saving/deleting
+
+### DeleteConfirmModal
+
+Modal de confirmação de exclusão.
+
+**Props**:
+```typescript
+interface DeleteConfirmModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  estampa: Estampa | null;
+}
+```
 
 ## Fluxo de Cadastro em Lote
 
@@ -204,7 +304,29 @@ interface EstampasTableProps {
 **Validação em tempo real**:
 - Nome deve ter pelo menos 2 palavras
 - Nome deve ter pelo menos 3 caracteres
+- Nomes duplicados são rejeitados
 - Nomes inválidos são marcados em vermelho com o erro
+
+## Validação de Nome Duplicado
+
+O sistema impede a criação de estampas com nomes duplicados:
+
+1. **Na criação individual**: Verifica antes de criar
+2. **Na criação em lote**: Verifica todos os nomes antes de iniciar
+3. **Na edição**: Verifica se o novo nome já existe (excluindo a própria estampa)
+
+A comparação é case-insensitive (ignora maiúsculas/minúsculas).
+
+```typescript
+// Verificar manualmente
+const duplicada = await verificarNomeDuplicado('Jardim Pink');
+if (duplicada) {
+  console.log(`Nome já existe: ${duplicada.nome}`);
+}
+
+// Na edição, excluir a própria estampa da verificação
+const duplicada = await verificarNomeDuplicado('Novo Nome', estampaId);
+```
 
 ## Firebase
 
@@ -254,9 +376,21 @@ Estampas são vinculadas a tecidos do tipo "Estampado":
 
 Se não houver tecidos estampados cadastrados, o botão "Adicionar Estampa" fica desabilitado com mensagem explicativa.
 
+## Integração com Catálogo
+
+Estampas podem ser incluídas no catálogo PDF:
+
+1. Na página de Catálogo, selecione a aba "Estampas"
+2. Selecione os tecidos com estampas desejados
+3. Gere o PDF com cores e/ou estampas
+
+O PDF inclui seções separadas para "CORES" e "ESTAMPAS" quando ambos são selecionados.
+
 ## Boas Práticas
 
 1. **Nomenclatura**: Use padrão "Família Variação" (ex: "Jardim Pink", "Floral Azul")
 2. **Imagens**: Opcional, mas recomendado para visualização
 3. **Cadastro em lote**: Ideal para cadastrar variações da mesma família
 4. **Tecido base**: Sempre vincule a um tecido estampado existente
+5. **Nomes únicos**: Evite nomes duplicados para facilitar identificação
+6. **Agrupamento**: Use agrupamento por família para organizar visualmente

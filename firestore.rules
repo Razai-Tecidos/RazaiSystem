@@ -13,6 +13,12 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
     
+    // Regras para coleção de vínculos cor-tecido
+    match /cor_tecido/{vinculoId} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
     // Regras para coleção de estampas
     match /estampas/{estampaId} {
       // Permite leitura e escrita apenas para usuários autenticados
@@ -41,28 +47,36 @@ service cloud.firestore {
       allow write: if false;
     }
     
-    // Regras para custos de SKU (Gestão de Preços)
-    match /shopee_sku_costs/{costId} {
-      // Permite leitura e escrita para usuários autenticados
-      allow read, write: if request.auth != null;
-    }
-    
     // Regras para dados de vendas por SKU
     match /shopee_sku_sales/{salesId} {
       // Permite leitura e escrita para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
-    // Regras para logs de alteração de preço
-    match /shopee_price_logs/{logId} {
-      // Permite leitura e escrita para usuários autenticados
+    // Regras para exemplos de treinamento ML
+    match /ml_training_examples/{exampleId} {
+      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
-    // Regras para regras de precificação automática
-    match /shopee_pricing_rules/{ruleId} {
-      // Permite leitura e escrita para usuários autenticados
+    // Regras para metadados do modelo ML
+    match /ml_model_metadata/{modelId} {
+      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
+    }
+    
+    // Regras para configurações globais do sistema
+    match /system_config/{configId} {
+      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para catálogos compartilháveis
+    match /catalogos/{catalogoId} {
+      // Leitura pública (para links compartilháveis)
+      allow read: if true;
+      // Escrita apenas para usuários autenticados
+      allow write: if request.auth != null;
     }
     
     // Negar acesso a todas as outras coleções por padrão

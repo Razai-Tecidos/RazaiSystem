@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
-import { AjustesCor } from '@/types/captura.types';
+import { LabColor } from '@/types/cor.types';
+import { cropCanvasToSquare } from '@/lib/imageCrop';
 
 /**
  * Método Reinhard — Transferência de Cor no espaço CIELAB
@@ -9,6 +10,7 @@ import { AjustesCor } from '@/types/captura.types';
  * 1. PREPARE: Converte RGB → LAB, calcula estatísticas, extrai textura HF
  * 2. TRANSFER: Aplica transferência Reinhard (média + desvio padrão)
  * 3. TEXTURE: Reaplica textura de alta frequência
+ * 4. CROP: Faz crop central para formato quadrado (1:1)
  */
 
 // ============================================
@@ -35,20 +37,20 @@ interface AdaptiveMetrics {
   hasStrongTexture: boolean;   // textureStdDev > 4
 }
 
-interface ReinhardConfig {
+export interface ReinhardConfig {
   saturationMultiplier?: number;  // Multiplica a, b do alvo (default: 1.0)
   contrastBoost?: number;         // Aumenta contraste de L (default: 0)
   detailAmount?: number;          // Intensidade da textura HF (default: 1.05)
   luminanceSCurve?: number;       // Força da curva S (default: 0.35)
   darkenAmount?: number;          // Escurece a imagem (0-30, default: 0)
   shadowDesaturation?: number;    // Dessatura sombras (0-1, default: 0.5)
+  hueShift?: number;              // Rotação de matiz/hue em graus (-180 a 180, default: 0)
 }
 
 interface UseReinhardTingimentoReturn {
   aplicarTingimento: (
     imagemBase: string,
-    corAlvo: { r: number; g: number; b: number },
-    ajustes?: AjustesCor,
+    corAlvo: { r: number; g: number; b: number } | LabColor,
     config?: ReinhardConfig
   ) => Promise<string>;
 }
@@ -390,13 +392,17 @@ function applyReinhardTransfer(
   config: ReinhardConfig
 ): Array<{ L: number; a: number; b: number }> {
   const {
-        saturationMultiplier = 1.4,
-    contrastBoost = 0.2,
-    detailAmount = 1.2,
+    saturationMultiplier = 0.85,  // Dessatura levemente por padrão (era 1.4)
+    contrastBoost = 0.15,
+    detailAmount = 1.15,
     luminanceSCurve = 0,
-    darkenAmount = 8,
-    shadowDesaturation = 0.8,
+    darkenAmount = 5,
+    shadowDesaturation = 0.6,
+    hueShift = 0,  // Rotação de matiz em graus (default: 0)
   } = config;
+  
+  // Converter graus para radianos para rotação
+  const hueShiftRad = hueShift * (Math.PI / 180);
 
   // Estatísticas do alvo (cor sólida tem std muito baixo)
   // Usamos o std da fonte para preservar a textura
@@ -446,6 +452,16 @@ function applyReinhardTransfer(
     newA *= saturationMultiplier;
     newB *= saturationMultiplier;
 
+    // Aplica rotação de matiz/hue (rotação no plano a-b do espaço LAB)
+    if (hueShiftRad !== 0) {
+      const cosAngle = Math.cos(hueShiftRad);
+      const sinAngle = Math.sin(hueShiftRad);
+      const aRotated = newA * cosAngle - newB * sinAngle;
+      const bRotated = newA * sinAngle + newB * cosAngle;
+      newA = aRotated;
+      newB = bRotated;
+    }
+
     // ===============================
     // 3. Ajustes adaptativos
     // ===============================
@@ -475,110 +491,6 @@ function applyReinhardTransfer(
 }
 
 // ============================================
-// AJUSTES DE COR (HUE, SATURATION, ETC)
-// ============================================
-
-function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  let h = 0;
-  let s = 0;
-  const l = (max + min) / 2;
-
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-    switch (max) {
-      case r:
-        h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-        break;
-      case g:
-        h = ((b - r) / d + 2) / 6;
-        break;
-      case b:
-        h = ((r - g) / d + 4) / 6;
-        break;
-    }
-  }
-
-  return { h: h * 360, s: s * 100, l: l * 100 };
-}
-
-function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
-  h /= 360;
-  s /= 100;
-  l /= 100;
-
-  let r: number, g: number, b: number;
-
-  if (s === 0) {
-    r = g = b = l;
-  } else {
-    const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-
-    r = hue2rgb(p, q, h + 1 / 3);
-    g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1 / 3);
-  }
-
-  return {
-    r: Math.round(r * 255),
-    g: Math.round(g * 255),
-    b: Math.round(b * 255),
-  };
-}
-
-function aplicarAjustesCor(
-  cor: { r: number; g: number; b: number },
-  ajustes: AjustesCor
-): { r: number; g: number; b: number } {
-  let { r, g, b } = cor;
-
-  // Converte para HSL
-  let hsl = rgbToHsl(r, g, b);
-
-  // Aplica ajuste de hue
-  hsl.h = (hsl.h + ajustes.hue) % 360;
-  if (hsl.h < 0) hsl.h += 360;
-
-  // Aplica ajuste de saturation
-  hsl.s = Math.max(0, Math.min(100, hsl.s + ajustes.saturation));
-
-  // Converte de volta para RGB
-  let rgb = hslToRgb(hsl.h, hsl.s, hsl.l);
-
-  // Aplica brightness
-  const brightnessFactor = 1 + ajustes.brightness / 100;
-  rgb.r = Math.max(0, Math.min(255, rgb.r * brightnessFactor));
-  rgb.g = Math.max(0, Math.min(255, rgb.g * brightnessFactor));
-  rgb.b = Math.max(0, Math.min(255, rgb.b * brightnessFactor));
-
-  // Aplica contrast
-  const contrastFactor = (100 + ajustes.contrast) / 100;
-  const midpoint = 128;
-  rgb.r = Math.max(0, Math.min(255, midpoint + (rgb.r - midpoint) * contrastFactor));
-  rgb.g = Math.max(0, Math.min(255, midpoint + (rgb.g - midpoint) * contrastFactor));
-  rgb.b = Math.max(0, Math.min(255, midpoint + (rgb.b - midpoint) * contrastFactor));
-
-  return rgb;
-}
-
-// ============================================
 // HOOK PRINCIPAL
 // ============================================
 
@@ -586,8 +498,7 @@ export function useReinhardTingimento(): UseReinhardTingimentoReturn {
   const aplicarTingimento = useCallback(
     async (
       imagemBase: string,
-      corAlvo: { r: number; g: number; b: number },
-      ajustes?: AjustesCor,
+      corAlvo: { r: number; g: number; b: number } | LabColor,
       config: ReinhardConfig = {}
     ): Promise<string> => {
       return new Promise((resolve, reject) => {
@@ -617,11 +528,15 @@ export function useReinhardTingimento(): UseReinhardTingimentoReturn {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
 
-            // Aplica ajustes na cor alvo se necessário
-            let corFinal = { ...corAlvo };
-            if (ajustes) {
-              corFinal = aplicarAjustesCor(corFinal, ajustes);
-            }
+            // Detectar se corAlvo é LAB ou RGB
+            const isLab = 'L' in corAlvo && 'a' in corAlvo && 'b' in corAlvo;
+            
+            // Converter para LAB se necessário (sem ajustes intermediários)
+            const targetLab: { L: number; a: number; b: number } = isLab
+              ? (corAlvo as LabColor) // Já está em LAB - usar diretamente
+              : rgbToLab((corAlvo as { r: number; g: number; b: number }).r, 
+                         (corAlvo as { r: number; g: number; b: number }).g, 
+                         (corAlvo as { r: number; g: number; b: number }).b); // Converter RGB → LAB
 
             // Converte todos os pixels para LAB e extrai luminância
             const labData: Array<{ L: number; a: number; b: number }> = [];
@@ -670,7 +585,7 @@ export function useReinhardTingimento(): UseReinhardTingimentoReturn {
             // ===============================
             // 2. APPLY_COLOR (Reinhard)
             // ===============================
-            const targetLab = rgbToLab(corFinal.r, corFinal.g, corFinal.b);
+            // targetLab já foi calculado acima (diretamente em LAB ou convertido de RGB)
 
             const resultLab = applyReinhardTransfer(
               labData,
@@ -695,7 +610,12 @@ export function useReinhardTingimento(): UseReinhardTingimentoReturn {
             }
 
             ctx.putImageData(imageData, 0, 0);
-            const dataURL = canvas.toDataURL('image/png');
+            
+            // ===============================
+            // 4. Crop para formato quadrado (1:1)
+            // ===============================
+            const squareCanvas = cropCanvasToSquare(canvas);
+            const dataURL = squareCanvas.toDataURL('image/png');
             resolve(dataURL);
 
           } catch (error) {

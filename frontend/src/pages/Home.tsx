@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { Package, Palette, Camera, ChevronRight, Image as ImageIcon, ShoppingBag } from 'lucide-react';
+import { Package, Palette, Camera, ChevronRight, Image as ImageIcon, ShoppingBag, Brain, Link as LinkIcon, BookOpen } from 'lucide-react';
 import { Tecidos } from './Tecidos';
 import { Estampas } from './Estampas';
 import { Cores } from './Cores';
 import { CapturaCor } from './CapturaCor';
 import { Shopee } from './Shopee';
+import { MLDiagnostico } from './MLDiagnostico';
+import { Vinculos } from './Vinculos';
+import { Catalogo } from './Catalogo';
 import { Header } from '@/components/Layout/Header';
 import { cn } from '@/lib/utils';
 
@@ -66,7 +69,7 @@ interface HomeProps {
 
 export function Home({ initialPage = 'home' }: HomeProps) {
   const { user } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'home' | 'tecidos' | 'estampas' | 'cores' | 'captura-cor' | 'shopee'>(initialPage);
+  const [currentPage, setCurrentPage] = useState<'home' | 'tecidos' | 'estampas' | 'cores' | 'captura-cor' | 'shopee' | 'ml-diagnostico' | 'vinculos' | 'catalogo'>(initialPage);
 
   const handleNavigateHome = () => {
     setCurrentPage('home');
@@ -90,6 +93,18 @@ export function Home({ initialPage = 'home' }: HomeProps) {
 
   if (currentPage === 'shopee') {
     return <Shopee onNavigateHome={handleNavigateHome} />;
+  }
+
+  if (currentPage === 'ml-diagnostico') {
+    return <MLDiagnostico onNavigateHome={handleNavigateHome} />;
+  }
+
+  if (currentPage === 'vinculos') {
+    return <Vinculos onNavigateHome={handleNavigateHome} />;
+  }
+
+  if (currentPage === 'catalogo') {
+    return <Catalogo onNavigateHome={handleNavigateHome} />;
   }
 
   return (
@@ -149,6 +164,33 @@ export function Home({ initialPage = 'home' }: HomeProps) {
             color="orange"
             delay={400}
           />
+          <NavCard
+            title="Vínculos"
+            description="Vincule cores a tecidos"
+            icon={<LinkIcon className="h-6 w-6 text-white" />}
+            onClick={() => setCurrentPage('vinculos')}
+            color="blue"
+            delay={500}
+          />
+          <NavCard
+            title="Catálogo"
+            description="Gere PDF ou link para clientes"
+            icon={<BookOpen className="h-6 w-6 text-white" />}
+            onClick={() => setCurrentPage('catalogo')}
+            color="green"
+            delay={600}
+          />
+        </div>
+
+        {/* Links para ferramentas de desenvolvimento */}
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => setCurrentPage('ml-diagnostico')}
+            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            <Brain className="h-4 w-4" />
+            Diagnóstico ML
+          </button>
         </div>
 
         {/* Info do usuario */}

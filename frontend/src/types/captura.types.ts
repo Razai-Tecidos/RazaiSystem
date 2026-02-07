@@ -4,7 +4,8 @@ import { LabColor } from './cor.types';
 // Lista de captura de cores com associação a tecidos
 export interface CapturaItem {
   id: string;
-  lab: LabColor;
+  lab: LabColor; // Valores LAB compensados (usado no processo Reinhard)
+  labOriginal?: LabColor; // Valores LAB originais capturados pelo colorímetro
   hex: string;
   nome: string;
   tecidoId: string;
@@ -44,7 +45,8 @@ export interface AjustesCor {
 
 // Dados para criar nova captura
 export interface CreateCapturaData {
-  lab: LabColor;
+  lab: LabColor; // Valores LAB compensados (usado no processo Reinhard)
+  labOriginal?: LabColor; // Valores LAB originais capturados pelo colorímetro
   hex: string;
   nome: string;
   tecidoId: string;

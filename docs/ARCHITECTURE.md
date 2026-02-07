@@ -199,11 +199,75 @@ O projeto implementa UI otimista em todas as operações CRUD:
 }
 ```
 
-#### `sku_control` (documento único)
+#### `sku_control` (documento único para tecidos)
 ```typescript
 {
   lastSkuNumber: number;   // Último número usado
   invalidatedSkus: string[]; // SKUs excluídos
+}
+```
+
+#### `cores`
+```typescript
+{
+  id: string;              // Document ID
+  nome: string;
+  hex: string;             // #RRGGBB
+  lab?: { L, a, b };       // Valores LAB originais
+  sku?: string;            // MA001, AZ002, etc. (por família)
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  deletedAt?: Timestamp;   // Soft delete
+}
+```
+
+#### `sku_control_cor` (documento único para cores)
+```typescript
+{
+  familias: {              // Contadores por família de cor
+    MA: number;            // Marrom
+    AZ: number;            // Azul
+    // ...
+  },
+  prefixosReservados: {    // Prefixos já usados
+    MA: string[];          // ["MA001", "MA002"]
+    // ...
+  }
+}
+```
+
+#### `cor_tecido` (Vínculos Cor-Tecido)
+```typescript
+{
+  id: string;              // Document ID
+  sku?: string;            // TecidoSKU-CorSKU (ex: T007-MA001)
+  corId: string;           // Referência à cor
+  corNome: string;         // Denormalizado
+  corHex?: string;         // Denormalizado
+  corSku?: string;         // Denormalizado
+  tecidoId: string;        // Referência ao tecido
+  tecidoNome: string;      // Denormalizado
+  tecidoSku?: string;      // Denormalizado
+  imagemTingida?: string;  // URL PNG (resolução original)
+  imagemComMarca?: string; // URL PNG com logo (cacheada)
+  ajustesReinhard?: {      // Config do algoritmo Reinhard
+    L, a, b, stdL, stdA, stdB, hueShift
+  };
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  deletedAt?: Timestamp;
+}
+```
+
+#### `ml_training_examples` (Exemplos de Treinamento ML)
+```typescript
+{
+  id: string;
+  features: number[];      // LAB + RGB + parâmetros
+  label: number[];         // Ajustes corretos
+  corId?: string;
+  tecidoId?: string;
+  createdAt: Timestamp;
 }
 ```
 
@@ -214,12 +278,35 @@ O projeto implementa UI otimista em todas as operações CRUD:
 tecidos/
   └── {tecidoId}/
       └── {timestamp}-{filename}
+
+cor-tecido/
+  └── {vinculoId}/
+      ├── tingida_{timestamp}.png    # Imagem tingida (Reinhard)
+      └── branded_{timestamp}.png    # Imagem com logo
+
+ml_models/
+  └── reinhard_model_{version}.json  # Modelos de ML treinados
 ```
 
-**Exemplo**:
+**Exemplos**:
 ```
 tecidos/MVdvaD8rVnzepSI36QvN/1770124976638-Branco Neve - Cor.png
+cor-tecido/abc123/tingida_1738784621234.png
+cor-tecido/abc123/branded_1738784621234.png
 ```
+
+### Processamento de Imagens
+
+**Formato de Saída**:
+- PNG sempre (sem perda de qualidade)
+- Resolução original preservada (sem limite de pixels)
+- Sem compressão de qualidade
+
+**Imagem com Marca**:
+- Crop quadrado e centralizado
+- Logo Razai: branco, 25% da largura, 15% do topo
+- Nome da cor: Inter Black, 32px proporcional, letter-spacing -5%
+- Cacheada no Storage (campo `imagemComMarca`)
 
 ## Segurança
 
@@ -257,8 +344,9 @@ tecidos/MVdvaD8rVnzepSI36QvN/1770124976638-Branco Neve - Cor.png
 1. **UI Otimista**: Reduz percepção de latência
 2. **Lazy Loading**: Componentes carregados sob demanda
 3. **Índices Firestore**: Para queries eficientes
-4. **Compressão de Imagens**: (Futuro) Reduzir tamanho de uploads
-5. **Paginação**: (Futuro) Para grandes listas
+4. **Cache de Imagens com Marca**: Evita regeneração repetida
+5. **Debounce em Processamento**: Evita processamento excessivo durante ajustes
+6. **Paginação**: (Futuro) Para grandes listas
 
 ### Considerações
 

@@ -211,30 +211,67 @@ interface TecidoChipProps {
 
 ### EstampasTable
 
-Tabela responsiva para listagem de estampas.
+Tabela/Grid responsiva para listagem de estampas com suporte a agrupamento.
 
 **Localização**: `frontend/src/components/Estampas/EstampasTable.tsx`
 
 **Props**:
 ```typescript
 interface EstampasTableProps {
-  estampas: Estampa[];
+  estampasAgrupadas: EstampaGrupo[];
+  viewMode: 'table' | 'grid';
+  groupBy: 'none' | 'familia' | 'tecido';
   onEdit: (estampa: Estampa) => void;
-  onDelete: (id: string) => void;
+  onDelete: (estampa: Estampa) => void;
+  onDuplicate: (estampa: Estampa) => void;
+  onUpdateNome: (id: string, nome: string) => Promise<void>;
+  onUpdateSku: (id: string, sku: string) => Promise<void>;
   loading?: boolean;
 }
 ```
 
-**Colunas**:
-- Preview (thumbnail ou placeholder)
-- SKU
-- Nome
-- Tecido Base
-- Ações (Editar, Excluir)
+**Funcionalidades**:
+- Visualização em tabela ou grid
+- Agrupamento por família ou tecido (grupos colapsáveis)
+- Edição inline de nome e SKU
+- Botões de duplicar, editar e excluir
+- Estados visuais de loading/saving/deleting
 
-**Estados visuais**:
-- `_status: 'saving'`: Opacidade reduzida
-- `_status: 'deleting'`: Opacidade reduzida + indicador
+**Colunas (modo tabela)**:
+- Preview (thumbnail ou placeholder)
+- SKU (editável inline)
+- Nome (editável inline)
+- Tecido Base
+- Ações (Duplicar, Editar, Excluir)
+
+**Grid View**:
+- Cards com imagem grande
+- Overlay com ações no hover
+- Nome e SKU abaixo da imagem
+
+---
+
+### DeleteConfirmModal
+
+Modal de confirmação de exclusão de estampa.
+
+**Localização**: `frontend/src/components/Estampas/DeleteConfirmModal.tsx`
+
+**Props**:
+```typescript
+interface DeleteConfirmModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  estampa: Estampa | null;
+}
+```
+
+**Funcionalidades**:
+- Preview da estampa (imagem, nome, SKU)
+- Informação do tecido base
+- Botões "Cancelar" e "Excluir" (vermelho)
+- Substitui o confirm() nativo por UX mais elegante
 
 ---
 
@@ -583,6 +620,66 @@ interface CorFormModalProps {
 **Responsividade**:
 - Em mobile: layout de 1 coluna, preview abaixo do formulário
 - Em desktop: layout de 2 colunas lado a lado
+
+---
+
+## Componentes de Vínculos
+
+### Página Vínculos
+
+Página principal de gerenciamento de vínculos cor-tecido.
+
+**Localização**: `frontend/src/pages/Vinculos.tsx`
+
+**Funcionalidades**:
+- Listagem agrupada por tecido (expansível/colapsável)
+- Filtros por tecido, cor e busca textual
+- Ações em lote por grupo de tecido
+- Exportação XLSX com imagens como mídia
+
+**Componentes Internos**:
+
+#### Overlay de Progresso de Exportação
+
+Exibido durante a exportação XLSX com imagens.
+
+```typescript
+interface ExportProgress {
+  isExporting: boolean;  // Se está exportando
+  current: number;       // Imagens processadas
+  total: number;         // Total de imagens
+  currentItem: string;   // Nome do item atual
+}
+```
+
+**Visual**:
+- Overlay escuro cobrindo toda a tela
+- Card central com ícone animado
+- Barra de progresso de 0% a 100%
+- Contador "X de Y imagens processadas"
+- Nome do item sendo processado
+
+**Comportamento**:
+- Aparece automaticamente ao iniciar exportação
+- Atualiza em tempo real durante processamento
+- Some automaticamente ao concluir ou em caso de erro
+
+#### Grupo de Tecido (Cabeçalho)
+
+Cabeçalho expansível para cada grupo de tecido.
+
+**Visual**:
+- Fundo cinza claro (`bg-gray-100`)
+- Ícone de chevron (rotaciona ao expandir/colapsar)
+- Nome do tecido + SKU + contagem de cores
+- Botões de ação em lote à direita
+
+**Ações em Lote**:
+- Copiar SKUs (separados por tab)
+- Copiar HEX (separados por tab)
+- Copiar Nomes (separados por tab)
+- Download Preview (ZIP)
+- Download com Marca (ZIP)
 
 ---
 

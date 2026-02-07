@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useBluetooth } from './useBluetooth';
 import { LabColor } from '@/types/cor.types';
-import { labToHex } from '@/lib/colorUtils';
+import { labToHex, compensarColorimetro } from '@/lib/colorUtils';
 
 interface CapturedColor {
-  lab: LabColor;
+  lab: LabColor; // LAB compensado (usado para exibição e processo Reinhard)
+  labOriginal: LabColor; // LAB original capturado pelo colorímetro
   hex: string;
 }
 
@@ -82,11 +83,17 @@ export function useColorimetro(): UseColorimetroReturn {
         dataBufferRef.current += asciiString;
         
         // Tentar parsear os dados acumulados
-        const lab = parseLabData(dataBufferRef.current, bytes);
+        const labOriginal = parseLabData(dataBufferRef.current, bytes);
         
-        if (lab) {
-          const hex = labToHex(lab);
-          setCapturedColor({ lab, hex });
+        if (labOriginal) {
+          // Aplicar compensação do colorímetro
+          const labCompensado = compensarColorimetro(labOriginal);
+          const hex = labToHex(labCompensado);
+          setCapturedColor({ 
+            lab: labCompensado, 
+            labOriginal,
+            hex 
+          });
           setError(null);
           dataBufferRef.current = ''; // Limpar buffer após parse bem-sucedido
         }

@@ -7,9 +7,6 @@ import {
   setDoc,
   updateDoc,
   serverTimestamp,
-  query,
-  where,
-  orderBy,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { auth, db, storage } from '@/config/firebase';
@@ -25,37 +22,13 @@ const SKU_CONTROL_ID = 'main';
  */
 export async function getTecidos(): Promise<Tecido[]> {
   try {
-    const q = query(
-      collection(db, TECIDOS_COLLECTION),
-      where('deletedAt', '==', null),
-      orderBy('createdAt', 'desc')
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => {
-      const data = doc.data();
-      // Compatibilidade: converter array de composição para string se necessário
-      if (Array.isArray(data.composicao)) {
-        data.composicao = (data.composicao as any[])
-          .map((item: any) => item.nome || item)
-          .join(', ');
-      }
-      return {
-        id: doc.id,
-        ...data,
-      } as Tecido;
-    });
-  } catch (error: any) {
-    // Se erro de índice, tentar sem orderBy
-    if (error.code === 'failed-precondition') {
-      // Fallback silencioso: busca sem ordenação e ordena manualmente
-      // O índice composto pode ser criado no Firebase Console se necessário
-      const q = query(
-        collection(db, TECIDOS_COLLECTION),
-        where('deletedAt', '==', null)
-      );
-      const snapshot = await getDocs(q);
-      const tecidos = snapshot.docs.map((doc) => {
+    // Buscar todos os tecidos e filtrar client-side para evitar problemas
+    // com documentos que não têm o campo deletedAt
+    const snapshot = await getDocs(collection(db, TECIDOS_COLLECTION));
+    
+    const tecidos = snapshot.docs
+      .filter((doc) => !doc.data().deletedAt) // Filtrar excluídos client-side
+      .map((doc) => {
         const data = doc.data();
         // Compatibilidade: converter array de composição para string se necessário
         if (Array.isArray(data.composicao)) {
@@ -68,13 +41,22 @@ export async function getTecidos(): Promise<Tecido[]> {
           ...data,
         } as Tecido;
       });
-      // Ordenar manualmente
-      return tecidos.sort((a, b) => {
-        const aTime = a.createdAt?.toMillis() || 0;
-        const bTime = b.createdAt?.toMillis() || 0;
-        return bTime - aTime;
-      });
+    
+    // Ordenar por data de criação (mais recentes primeiro)
+    return tecidos.sort((a, b) => {
+      const aTime = a.createdAt?.toMillis() || 0;
+      const bTime = b.createdAt?.toMillis() || 0;
+      return bTime - aTime;
+    });
+  } catch (error: any) {
+    console.error('Erro ao carregar tecidos:', error);
+    
+    // Se erro de permissão ou coleção não existe, retornar array vazio
+    if (error.code === 'permission-denied' || error.code === 'not-found') {
+      console.warn('Permissão negada ou coleção não encontrada. Retornando lista vazia.');
+      return [];
     }
+    
     throw error;
   }
 }

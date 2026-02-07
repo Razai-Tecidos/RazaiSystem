@@ -20,6 +20,36 @@ const SKU_CONTROL_DOC = 'sku_control';
 const SKU_CONTROL_ID = 'estampas';
 
 /**
+ * Verifica se já existe uma estampa com o mesmo nome (case-insensitive)
+ * @param nome Nome a verificar
+ * @param excludeId ID da estampa a excluir da verificação (para edição)
+ * @returns A estampa existente com mesmo nome ou null se não existir
+ */
+export async function checkNomeDuplicadoEstampa(
+  nome: string,
+  excludeId?: string
+): Promise<Estampa | null> {
+  const nomeNormalizado = nome.trim().toLowerCase();
+  
+  // Ignorar nomes vazios
+  if (nomeNormalizado === '') {
+    return null;
+  }
+  
+  const estampas = await getEstampas();
+  
+  const estampaDuplicada = estampas.find(estampa => {
+    // Ignorar a própria estampa (para edição)
+    if (excludeId && estampa.id === excludeId) {
+      return false;
+    }
+    return estampa.nome.trim().toLowerCase() === nomeNormalizado;
+  });
+  
+  return estampaDuplicada || null;
+}
+
+/**
  * Busca todas as estampas cadastradas (não excluídas)
  */
 export async function getEstampas(): Promise<Estampa[]> {
