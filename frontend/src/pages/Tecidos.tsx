@@ -3,7 +3,8 @@ import { useTecidos } from '@/hooks/useTecidos';
 import { TecidosTable } from '@/components/Tecidos/TecidosTable';
 import { TecidoFormModal } from '@/components/Tecidos/TecidoFormModal';
 import { Button } from '@/components/ui/button';
-import { Plus, Loader2 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Plus } from 'lucide-react';
 import { Tecido, CreateTecidoData, UpdateTecidoData } from '@/types/tecido.types';
 import { Header } from '@/components/Layout/Header';
 import { BreadcrumbNav } from '@/components/Layout/BreadcrumbNav';
@@ -17,6 +18,8 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
   const { tecidos, loading, createTecido, updateTecido, deleteTecido, loadTecidos } = useTecidos();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTecido, setEditingTecido] = useState<Tecido | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   // Migração única: adicionar tipo 'liso' aos tecidos existentes
   useEffect(() => {
@@ -49,16 +52,20 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
     setModalOpen(true);
   };
 
-  const handleDeleteClick = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este tecido?')) {
-      return;
-    }
+  const handleDeleteClick = (id: string) => {
+    setPendingDeleteId(id);
+    setConfirmOpen(true);
+  };
 
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
+    setConfirmOpen(false);
     try {
-      await deleteTecido(id);
+      await deleteTecido(pendingDeleteId);
     } catch (error) {
       // Erro já é tratado no hook
     }
+    setPendingDeleteId(null);
   };
 
   const handleSubmit = async (data: CreateTecidoData) => {
@@ -111,8 +118,19 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
           </div>
 
           {loading && tecidos.length === 0 ? (
-            <div className="flex justify-center items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="bg-white rounded-lg border p-4 animate-pulse">
+                  <div className="flex items-start gap-3">
+                    <div className="w-14 h-14 bg-gray-200 rounded-lg flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-1/4" />
+                      <div className="h-3 bg-gray-100 rounded w-1/2" />
+                      <div className="h-3 bg-gray-100 rounded w-1/3" />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <TecidosTable
@@ -131,6 +149,16 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
         onSubmit={handleSubmit}
         tecido={editingTecido}
         loading={loading}
+      />
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Excluir tecido"
+        description="Tem certeza que deseja excluir este tecido? Essa ação não pode ser desfeita."
+        confirmLabel="Excluir"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
     </div>
   );

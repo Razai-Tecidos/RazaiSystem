@@ -6,8 +6,10 @@ import { useReinhardML } from '@/hooks/useReinhardML';
 import { CorTecido } from '@/types/cor.types';
 import { Header } from '@/components/Layout/Header';
 import { BreadcrumbNav } from '@/components/Layout/BreadcrumbNav';
+import { EmptyState } from '@/components/Layout/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Table,
   TableBody,
@@ -74,6 +76,18 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
   const [savingSku, setSavingSku] = useState(false);
   const skuInputRef = useRef<HTMLInputElement>(null);
   
+  // Estado para ConfirmDialog genérico
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', description: '', onConfirm: () => {} });
+
+  const showConfirm = useCallback((title: string, description: string, onConfirm: () => void) => {
+    setConfirmDialog({ open: true, title, description, onConfirm });
+  }, []);
+
   // Estado para progresso da exportação XLSX
   const [exportProgress, setExportProgress] = useState<{
     isExporting: boolean;
@@ -116,9 +130,19 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
       partes.push(`${totalVinculos} vínculo(s)`);
     }
     
-    if (!confirm(`Gerar SKU para ${partes.join(' e ')}?`)) {
-      return;
-    }
+    showConfirm(
+      'Gerar SKUs',
+      `Gerar SKU para ${partes.join(' e ')}?`,
+      () => executeGerarSkus(coresSemSku, vinculosSemSku, vinculosFaltandoCorSku)
+    );
+    return;
+  };
+
+  const executeGerarSkus = async (
+    coresSemSku: typeof cores,
+    _vinculosSemSku: typeof vinculos,
+    _vinculosFaltandoCorSku: typeof vinculos
+  ) => {
     
     let coresAtualizadas = 0;
     let vinculosAtualizados = 0;
@@ -634,16 +658,18 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
     }
   };
 
-  const handleDeleteVinculo = async (vinculo: CorTecido) => {
-    if (!confirm(`Remover vínculo "${vinculo.corNome}" + "${vinculo.tecidoNome}"?`)) {
-      return;
-    }
-    
-    try {
-      await deleteVinculo(vinculo.id);
-    } catch (error) {
-      console.error('Erro ao excluir vínculo:', error);
-    }
+  const handleDeleteVinculo = (vinculo: CorTecido) => {
+    showConfirm(
+      'Excluir vínculo',
+      `Remover vínculo "${vinculo.corNome}" + "${vinculo.tecidoNome}"?`,
+      async () => {
+        try {
+          await deleteVinculo(vinculo.id);
+        } catch (error) {
+          console.error('Erro ao excluir vínculo:', error);
+        }
+      }
+    );
   };
 
   // Função auxiliar para converter Blob para Base64
@@ -1035,9 +1061,11 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                       variant="destructive" 
                       size="sm"
                       onClick={() => {
-                        if (confirm(`Deletar vínculo "${v.corNome} + ${v.tecidoNome}"?`)) {
-                          deleteVinculo(v.id);
-                        }
+                        showConfirm(
+                          'Deletar vínculo com problema',
+                          `Deletar vínculo "${v.corNome} + ${v.tecidoNome}"?`,
+                          () => deleteVinculo(v.id)
+                        );
                       }}
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
@@ -1074,53 +1102,58 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
           </div>
 
           {/* Filtros */}
-          <div className="flex flex-col sm:flex-row gap-3 mb-6">
-            <div className="relative flex-1">
+          <div className="space-y-3 mb-6">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 placeholder="Buscar por nome ou SKU..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 min-h-[44px]"
               />
             </div>
             
-            <select
-              value={filtroTecido || ''}
-              onChange={(e) => setFiltroTecido(e.target.value || null)}
-              className="h-10 px-3 rounded-md border border-input bg-background text-sm"
-            >
-              <option value="">Todos os tecidos</option>
-              {tecidos.map(t => (
-                <option key={t.id} value={t.id}>{t.nome}</option>
-              ))}
-            </select>
-            
-            <select
-              value={filtroCor || ''}
-              onChange={(e) => setFiltroCor(e.target.value || null)}
-              className="h-10 px-3 rounded-md border border-input bg-background text-sm"
-            >
-              <option value="">Todas as cores</option>
-              {cores.map(c => (
-                <option key={c.id} value={c.id}>{c.nome}</option>
-              ))}
-            </select>
-            
-            {(filtroTecido || filtroCor || searchTerm) && (
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => {
-                  setFiltroTecido(null);
-                  setFiltroCor(null);
-                  setSearchTerm('');
-                }}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select
+                value={filtroTecido || ''}
+                onChange={(e) => setFiltroTecido(e.target.value || null)}
+                className="h-11 px-3 rounded-md border border-input bg-background text-sm flex-1"
+                aria-label="Filtrar por tecido"
               >
-                <Filter className="mr-1 h-4 w-4" />
-                Limpar
-              </Button>
-            )}
+                <option value="">Todos os tecidos</option>
+                {tecidos.map(t => (
+                  <option key={t.id} value={t.id}>{t.nome}</option>
+                ))}
+              </select>
+              
+              <select
+                value={filtroCor || ''}
+                onChange={(e) => setFiltroCor(e.target.value || null)}
+                className="h-11 px-3 rounded-md border border-input bg-background text-sm flex-1"
+                aria-label="Filtrar por cor"
+              >
+                <option value="">Todas as cores</option>
+                {cores.map(c => (
+                  <option key={c.id} value={c.id}>{c.nome}</option>
+                ))}
+              </select>
+              
+              {(filtroTecido || filtroCor || searchTerm) && (
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  className="min-h-[44px]"
+                  onClick={() => {
+                    setFiltroTecido(null);
+                    setFiltroCor(null);
+                    setSearchTerm('');
+                  }}
+                >
+                  <Filter className="mr-1 h-4 w-4" />
+                  Limpar
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Contagem */}
@@ -1130,18 +1163,33 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
 
           {/* Loading */}
           {loading ? (
-            <div className="flex justify-center items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <div className="space-y-3">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="bg-gray-100 rounded-lg p-4 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 bg-gray-200 rounded" />
+                    <div className="h-4 bg-gray-200 rounded flex-1 max-w-xs" />
+                    <div className="h-3 bg-gray-200 rounded w-16" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : vinculosFiltrados.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <LinkIcon className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-              <p>Nenhum vínculo encontrado.</p>
-              <p className="text-sm mt-2">Crie um novo vínculo para associar uma cor a um tecido.</p>
-            </div>
+            <EmptyState
+              icon={<LinkIcon className="h-8 w-8" />}
+              title="Nenhum vínculo encontrado"
+              description="Crie um novo vínculo para associar uma cor a um tecido."
+              action={
+                <Button onClick={() => setShowNovoVinculo(true)} className="min-h-[44px]">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo Vínculo
+                </Button>
+              }
+            />
           ) : (
             /* Tabela */
             <div className="rounded-lg border overflow-hidden">
+              <div className="scroll-smooth-x">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50/80">
@@ -1459,10 +1507,25 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                   })}
                 </TableBody>
               </Table>
+              </div>
             </div>
           )}
         </div>
       </main>
+
+      {/* ConfirmDialog genérico */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        confirmLabel="Confirmar"
+        variant="destructive"
+        onConfirm={() => {
+          confirmDialog.onConfirm();
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        }}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { Package, Palette, Camera, ChevronRight, Image as ImageIcon, ShoppingBag, Brain, Link as LinkIcon, BookOpen } from 'lucide-react';
+import { Package, Palette, Camera, ChevronRight, Image as ImageIcon, ShoppingBag, Brain, Link as LinkIcon, BookOpen, Ruler, PlusCircle } from 'lucide-react';
 import { Tecidos } from './Tecidos';
 import { Estampas } from './Estampas';
 import { Cores } from './Cores';
@@ -9,7 +9,11 @@ import { Shopee } from './Shopee';
 import { MLDiagnostico } from './MLDiagnostico';
 import { Vinculos } from './Vinculos';
 import { Catalogo } from './Catalogo';
+import { Tamanhos } from './Tamanhos';
+import { AnunciosShopee } from './AnunciosShopee';
+import { CriarAnuncioShopee } from './CriarAnuncioShopee';
 import { Header } from '@/components/Layout/Header';
+import { MobileBottomNav } from '@/components/Layout/MobileBottomNav';
 import { cn } from '@/lib/utils';
 
 interface NavCardProps {
@@ -69,49 +73,87 @@ interface HomeProps {
 
 export function Home({ initialPage = 'home' }: HomeProps) {
   const { user } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'home' | 'tecidos' | 'estampas' | 'cores' | 'captura-cor' | 'shopee' | 'ml-diagnostico' | 'vinculos' | 'catalogo'>(initialPage);
+  const [currentPage, setCurrentPage] = useState<'home' | 'tecidos' | 'estampas' | 'cores' | 'captura-cor' | 'shopee' | 'ml-diagnostico' | 'vinculos' | 'catalogo' | 'tamanhos' | 'anuncios-shopee' | 'criar-anuncio-shopee'>(initialPage);
+  const [editingDraftId, setEditingDraftId] = useState<string | undefined>(undefined);
 
   const handleNavigateHome = () => {
     setCurrentPage('home');
   };
 
+  // Wrapper para adicionar bottom nav em todas as sub-páginas
+  const withBottomNav = (content: React.ReactNode) => (
+    <>
+      <div className="pb-16 md:pb-0">{content}</div>
+      <MobileBottomNav currentPage={currentPage} onNavigate={(page) => { setEditingDraftId(undefined); setCurrentPage(page); }} />
+    </>
+  );
+
   if (currentPage === 'tecidos') {
-    return <Tecidos onNavigateHome={handleNavigateHome} />;
+    return withBottomNav(<Tecidos onNavigateHome={handleNavigateHome} />);
   }
 
   if (currentPage === 'estampas') {
-    return <Estampas onNavigateHome={handleNavigateHome} />;
+    return withBottomNav(<Estampas onNavigateHome={handleNavigateHome} />);
   }
 
   if (currentPage === 'cores') {
-    return <Cores onNavigateHome={handleNavigateHome} />;
+    return withBottomNav(<Cores onNavigateHome={handleNavigateHome} />);
   }
 
   if (currentPage === 'captura-cor') {
-    return <CapturaCor onNavigateHome={handleNavigateHome} />;
+    return withBottomNav(<CapturaCor onNavigateHome={handleNavigateHome} />);
   }
 
   if (currentPage === 'shopee') {
-    return <Shopee onNavigateHome={handleNavigateHome} />;
+    return withBottomNav(<Shopee onNavigateHome={handleNavigateHome} />);
   }
 
   if (currentPage === 'ml-diagnostico') {
-    return <MLDiagnostico onNavigateHome={handleNavigateHome} />;
+    return withBottomNav(<MLDiagnostico onNavigateHome={handleNavigateHome} />);
   }
 
   if (currentPage === 'vinculos') {
-    return <Vinculos onNavigateHome={handleNavigateHome} />;
+    return withBottomNav(<Vinculos onNavigateHome={handleNavigateHome} />);
   }
 
   if (currentPage === 'catalogo') {
-    return <Catalogo onNavigateHome={handleNavigateHome} />;
+    return withBottomNav(<Catalogo onNavigateHome={handleNavigateHome} />);
+  }
+
+  if (currentPage === 'tamanhos') {
+    return withBottomNav(<Tamanhos onNavigateHome={handleNavigateHome} />);
+  }
+
+  if (currentPage === 'anuncios-shopee') {
+    return withBottomNav(
+      <AnunciosShopee 
+        onNavigateHome={handleNavigateHome}
+        onNavigateToCriar={(draftId) => {
+          setEditingDraftId(draftId);
+          setCurrentPage('criar-anuncio-shopee');
+        }}
+      />
+    );
+  }
+
+  if (currentPage === 'criar-anuncio-shopee') {
+    return withBottomNav(
+      <CriarAnuncioShopee 
+        onNavigateHome={handleNavigateHome}
+        onNavigateToAnuncios={() => {
+          setEditingDraftId(undefined);
+          setCurrentPage('anuncios-shopee');
+        }}
+        draftId={editingDraftId}
+      />
+    );
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <Header onNavigateHome={handleNavigateHome} />
 
-      <main className="container mx-auto px-4 py-6 sm:py-8 safe-bottom">
+      <main className="container mx-auto px-4 py-6 sm:py-8 pb-20 md:pb-8 safe-bottom">
         {/* Saudacao */}
         <div className="mb-6 sm:mb-8 animate-fade-in">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">
@@ -180,6 +222,22 @@ export function Home({ initialPage = 'home' }: HomeProps) {
             color="green"
             delay={600}
           />
+          <NavCard
+            title="Tamanhos"
+            description="Gerencie tamanhos de produtos"
+            icon={<Ruler className="h-6 w-6 text-white" />}
+            onClick={() => setCurrentPage('tamanhos')}
+            color="purple"
+            delay={700}
+          />
+          <NavCard
+            title="Criar Anúncio"
+            description="Crie anúncios na Shopee"
+            icon={<PlusCircle className="h-6 w-6 text-white" />}
+            onClick={() => setCurrentPage('anuncios-shopee')}
+            color="orange"
+            delay={800}
+          />
         </div>
 
         {/* Links para ferramentas de desenvolvimento */}
@@ -208,6 +266,8 @@ export function Home({ initialPage = 'home' }: HomeProps) {
           </div>
         </div>
       </main>
+
+      <MobileBottomNav currentPage={currentPage} onNavigate={(page) => { setEditingDraftId(undefined); setCurrentPage(page); }} />
     </div>
   );
 }

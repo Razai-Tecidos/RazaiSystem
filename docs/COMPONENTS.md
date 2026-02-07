@@ -63,6 +63,74 @@ interface BreadcrumbNavProps {
 
 ---
 
+### MobileBottomNav
+
+Barra de navegação inferior para dispositivos mobile.
+
+**Localização**: `frontend/src/components/Layout/MobileBottomNav.tsx`
+
+**Props**:
+```typescript
+interface MobileBottomNavProps {
+  currentPage: string;     // Página atual (para destacar item ativo)
+  onNavigate: (page: PageId) => void; // Callback de navegação
+}
+```
+
+**Funcionalidades**:
+- 4 ícones fixos (Home, Tecidos, Cores, Shopee) + botão "Mais"
+- Menu expansível com módulos adicionais (Estampas, Vínculos, Catálogo, Tamanhos, Anúncios, Capturar Cor)
+- Visível apenas em mobile (`md:hidden`)
+- Acessível com `role="navigation"` e `aria-current`
+
+---
+
+### EmptyState
+
+Componente de estado vazio reutilizável.
+
+**Localização**: `frontend/src/components/Layout/EmptyState.tsx`
+
+**Props**:
+```typescript
+interface EmptyStateProps {
+  icon: ReactNode;      // Ícone grande central
+  title: string;        // Título descritivo
+  description?: string; // Texto auxiliar
+  action?: ReactNode;   // Botão de ação (ex: "Criar primeiro item")
+  className?: string;
+}
+```
+
+---
+
+### ConfirmDialog
+
+Dialog de confirmação que substitui `window.confirm()`.
+
+**Localização**: `frontend/src/components/ui/confirm-dialog.tsx`
+
+**Props**:
+```typescript
+interface ConfirmDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: string;
+  confirmLabel?: string;    // Default: "Confirmar"
+  cancelLabel?: string;     // Default: "Cancelar"
+  variant?: 'default' | 'destructive';
+  onConfirm: () => void;
+}
+```
+
+**Funcionalidades**:
+- Usa AlertDialog do shadcn/ui
+- Mobile-friendly com botões de 44px mínimo
+- Variante destrutiva com cor vermelha
+
+---
+
 ## Componentes de Tecidos
 
 ### TecidosTable
@@ -683,17 +751,219 @@ Cabeçalho expansível para cada grupo de tecido.
 
 ---
 
+## Componentes Shopee
+
+### FieldHint
+
+Componente reutilizável que exibe label com tooltip de ajuda e descrição opcional.
+
+**Localização**: `frontend/src/components/Shopee/FieldHint.tsx`
+
+**Props**:
+```typescript
+interface FieldHintProps {
+  label: string;         // Texto do label
+  hint?: string;         // Texto do tooltip (ícone ?)
+  description?: string;  // Texto auxiliar abaixo do campo
+  required?: boolean;    // Exibe asterisco vermelho
+  children?: ReactNode;  // Campo de input filho
+  className?: string;
+}
+```
+
+**Exemplo**:
+```tsx
+<FieldHint
+  label="Preço Base"
+  required
+  hint="Preço de venda na Shopee. Mínimo R$ 1,00."
+  description="Valor em Reais."
+>
+  <Input type="number" value={preco} onChange={...} />
+</FieldHint>
+```
+
+---
+
+### FiscalInfo
+
+Seção de informações fiscais para anúncio Shopee.
+
+**Localização**: `frontend/src/components/Shopee/FiscalInfo.tsx`
+
+**Props**:
+```typescript
+interface FiscalInfoProps {
+  ncm: string;                   // Código NCM atual
+  onNcmChange: (value: string) => void; // Callback de alteração
+  tecidoNome?: string;           // Para preview do nome na NF
+  corExemplo?: string;           // Cor de exemplo para preview
+  tamanhoExemplo?: string;       // Tamanho de exemplo para preview
+}
+```
+
+**Comportamento**:
+- NCM: campo editável, aceita apenas números, máx 8 caracteres
+- GTIN: exibido como texto fixo "00" (sem input)
+- item_name_in_invoice: preview auto-gerado a partir dos dados do produto
+
+---
+
+### CategoryAttributes
+
+Busca e renderiza atributos obrigatórios da categoria selecionada.
+
+**Localização**: `frontend/src/components/Shopee/CategoryAttributes.tsx`
+
+**Props**:
+```typescript
+interface CategoryAttributesProps {
+  shopId: number;
+  categoryId: number;
+  values: ProductAttributeValue[];
+  onChange: (values: ProductAttributeValue[]) => void;
+}
+```
+
+---
+
+### BrandSelector
+
+Dropdown pesquisável para seleção de marca Shopee.
+
+**Localização**: `frontend/src/components/Shopee/BrandSelector.tsx`
+
+**Props**:
+```typescript
+interface BrandSelectorProps {
+  shopId: number;
+  categoryId: number;
+  value?: number;
+  onChange: (id: number | undefined, nome: string) => void;
+}
+```
+
+---
+
+### ShippingConfig
+
+Configuração de canais de logística (frete).
+
+**Localização**: `frontend/src/components/Shopee/ShippingConfig.tsx`
+
+**Props**:
+```typescript
+interface ShippingConfigProps {
+  shopId: number;
+  value: Array<{ logistic_id: number; enabled: boolean; shipping_fee?: number; is_free?: boolean }>;
+  onChange: (value: Array<...>) => void;
+}
+```
+
+---
+
+### ExtendedDescriptionEditor
+
+Editor de descrição estendida com blocos de texto e imagem (drag-and-drop).
+
+**Localização**: `frontend/src/components/Shopee/ExtendedDescriptionEditor.tsx`
+
+**Props**:
+```typescript
+interface ExtendedDescriptionEditorProps {
+  value?: ExtendedDescription;
+  onChange: (value: ExtendedDescription) => void;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+}
+```
+
+---
+
+### WholesaleConfig
+
+Configuração de faixas de preço para atacado.
+
+**Localização**: `frontend/src/components/Shopee/WholesaleConfig.tsx`
+
+**Props**:
+```typescript
+interface WholesaleConfigProps {
+  value: WholesaleTier[];
+  onChange: (tiers: WholesaleTier[]) => void;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+  basePrice: number;
+}
+```
+
+---
+
+### SizeChartSelector
+
+Verifica suporte e permite seleção de tabela de medidas.
+
+**Localização**: `frontend/src/components/Shopee/SizeChartSelector.tsx`
+
+**Props**:
+```typescript
+interface SizeChartSelectorProps {
+  shopId: number;
+  categoryId: number;
+  value?: number;
+  onChange: (id: number | undefined) => void;
+}
+```
+
+---
+
+### AdPreview
+
+Modal de simulação visual do anúncio na Shopee (carrossel, variações, informações).
+
+**Localização**: `frontend/src/components/Shopee/AdPreview.tsx`
+
+**Props**:
+```typescript
+interface AdPreviewProps {
+  data: {
+    nome: string;
+    descricao: string;
+    preco: number;
+    imagensPrincipais: string[];
+    cores: Array<{ nome: string; hex?: string; imagem?: string }>;
+    tamanhos: string[];
+    peso: number;
+    dimensoes: { comprimento: number; largura: number; altura: number };
+    categoria: string;
+    condition: string;
+    wholesale?: WholesaleTier[];
+  };
+  onClose?: () => void;
+}
+```
+
+**Funcionalidades**:
+- Carrossel de imagens com navegação
+- Seletores de cor e tamanho
+- Informações de preço, envio e condição
+- Suporte a ESC para fechar
+
+---
+
 ## Componentes UI (shadcn/ui)
 
 O projeto utiliza componentes do [shadcn/ui](https://ui.shadcn.com/):
 
 - `Button` - Botões com variantes (default, destructive, outline, ghost)
+- `Checkbox` - Caixas de seleção
 - `Dialog` - Modais e diálogos
 - `Input` - Campos de entrada de texto
 - `Label` - Rótulos para formulários
 - `Textarea` - Área de texto multilinha
 - `Table` - Tabelas responsivas
 - `Toast` / `Toaster` - Notificações toast
+- `Tooltip` - Tooltips com conteúdo rico (usado pelo FieldHint)
 - `Breadcrumb` - Navegação breadcrumb
 - `Slider` - Controle deslizante (customizado para ajustes de cor)
 

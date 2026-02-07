@@ -81,18 +81,20 @@ function TecidoCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-9 w-9"
                 onClick={() => onEdit(tecido)}
                 disabled={isSaving || isDeleting}
+                aria-label={`Editar ${tecido.nome}`}
               >
                 <Edit className="h-4 w-4" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 hover:text-red-600"
+                className="h-9 w-9 hover:text-red-600"
                 onClick={() => onDelete(tecido.id)}
                 disabled={isSaving || isDeleting}
+                aria-label={`Excluir ${tecido.nome}`}
               >
                 {isDeleting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -223,18 +225,20 @@ export function TecidosTable({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 hover:bg-primary/10 hover:text-primary transition-colors"
+                          className="h-9 w-9 hover:bg-primary/10 hover:text-primary transition-colors"
                           onClick={() => onEdit(tecido)}
                           disabled={isSaving || isDeleting}
+                          aria-label={`Editar ${tecido.nome}`}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 hover:bg-red-50 hover:text-red-600 transition-colors"
+                          className="h-9 w-9 hover:bg-red-50 hover:text-red-600 transition-colors"
                           onClick={() => onDelete(tecido.id)}
                           disabled={isSaving || isDeleting}
+                          aria-label={`Excluir ${tecido.nome}`}
                         >
                           {isDeleting ? (
                             <Loader2 className="h-4 w-4 animate-spin" />

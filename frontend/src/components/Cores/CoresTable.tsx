@@ -324,18 +324,20 @@ function CorCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-9 w-9"
                 onClick={() => onEdit(cor)}
                 disabled={isSaving || isDeleting}
+                aria-label={`Editar ${cor.nome}`}
               >
                 <Edit className="h-4 w-4" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 hover:text-red-600"
+                className="h-9 w-9 hover:text-red-600"
                 onClick={() => onDelete(cor.id)}
                 disabled={isSaving || isDeleting}
+                aria-label={`Excluir ${cor.nome}`}
               >
                 {isDeleting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -535,18 +537,20 @@ export function CoresTable({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 hover:bg-primary/10 hover:text-primary transition-colors"
+                          className="h-9 w-9 hover:bg-primary/10 hover:text-primary transition-colors"
                           onClick={() => onEdit(cor)}
                           disabled={isSaving || isDeleting}
+                          aria-label={`Editar ${cor.nome}`}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 hover:bg-red-50 hover:text-red-600 transition-colors"
+                          className="h-9 w-9 hover:bg-red-50 hover:text-red-600 transition-colors"
                           onClick={() => onDelete(cor.id)}
                           disabled={isSaving || isDeleting}
+                          aria-label={`Excluir ${cor.nome}`}
                         >
                           {isDeleting ? (
                             <Loader2 className="h-4 w-4 animate-spin" />

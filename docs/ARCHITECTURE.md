@@ -259,6 +259,69 @@ O projeto implementa UI otimista em todas as operações CRUD:
 }
 ```
 
+#### `shopee_products` (Produtos/Rascunhos Shopee)
+```typescript
+{
+  id: string;
+  user_id: string;
+  shop_id: number;
+  item_id?: number;           // ID na Shopee (após publicação)
+  tecido_id: string;
+  tecido_nome: string;
+  tecido_sku: string;
+  imagens_principais: string[];
+  tier_variations: TierVariation[];
+  modelos: ProductModel[];    // Cada modelo pode ter tax_info { ncm, gtin, item_name_in_invoice }
+  preco_base: number;
+  estoque_padrao: number;
+  categoria_id: number;
+  peso: number;
+  dimensoes: { comprimento, largura, altura };
+  ncm_padrao?: string;        // NCM fiscal padrão
+  status: 'draft' | 'publishing' | 'created' | 'error' | 'syncing';
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+```
+
+#### `shopee_user_preferences` (Preferências Shopee)
+```typescript
+{
+  id: string;                 // UID do usuário
+  preco_base_padrao?: number;
+  estoque_padrao_padrao?: number;
+  categoria_id_padrao?: number;
+  categoria_nome_padrao?: string;
+  peso_padrao?: number;
+  dimensoes_padrao?: { comprimento, largura?, altura };
+  ncm_padrao?: string;
+  descricao_template?: string;
+  ultimos_valores?: { preco_base, estoque_padrao, categoria_id, peso, dimensoes };
+  updated_at: Timestamp;
+}
+```
+
+#### `shopee_categories_cache` (Cache de Categorias)
+```typescript
+{
+  categories: ShopeeCategory[];
+  updated_at: Timestamp;       // Cache expira em 24h
+}
+```
+
+#### `shopee_webhook_logs` (Logs de Webhook)
+```typescript
+{
+  code: number;               // Código do evento (3, 8, 11, 16, 22, 27)
+  event_name: string;
+  shop_id: number;
+  payload: object;
+  processed: boolean;
+  error?: string;
+  received_at: Timestamp;
+}
+```
+
 #### `ml_training_examples` (Exemplos de Treinamento ML)
 ```typescript
 {
@@ -398,3 +461,25 @@ cor-tecido/abc123/branded_1738784621234.png
 - Implementar validação adequada
 - Adicionar feedback visual (toasts)
 - Documentar em `docs/`
+
+---
+
+## Responsividade e UX Mobile
+
+### Componentes de Layout Mobile
+- **MobileBottomNav**: Navegação inferior em mobile (`md:hidden`)
+- **EmptyState**: Estado vazio reutilizável com ícone, título e ação
+- **ConfirmDialog**: Substitui `window.confirm()` com AlertDialog acessível
+
+### Padrões Mobile
+- **Tabelas**: Card view no mobile (`md:hidden`), tabela no desktop (`hidden md:block`)
+- **Modais**: Fullscreen no mobile (`inset-0`), centrado no desktop (`sm:max-w-lg`)
+- **Touch targets**: Mínimo 44px em botões interativos
+- **Navegação**: Bottom nav com 4 itens fixos + menu expansível
+- **Formulários**: 1 coluna no mobile, footer sticky com botões de ação
+
+### Acessibilidade
+- `aria-label` em todos os botões de ícone
+- `role="navigation"` no MobileBottomNav
+- `aria-current="page"` para item ativo
+- Focus visible em elementos interativos

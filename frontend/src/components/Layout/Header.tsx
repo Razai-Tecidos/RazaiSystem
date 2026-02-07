@@ -29,6 +29,7 @@ export function Header({ onNavigateHome }: HeaderProps) {
               "transition-all duration-200",
               onNavigateHome && "hover:opacity-80 active:scale-95 cursor-pointer"
             )}
+            aria-label="Ir para página inicial"
           >
             <img 
               src="/Razai.svg" 
@@ -54,7 +55,8 @@ export function Header({ onNavigateHome }: HeaderProps) {
               onClick={handleLogout}
               variant="outline"
               size="sm"
-              className="transition-all duration-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 active:scale-95"
+              className="transition-all duration-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 active:scale-95 min-h-[44px] sm:min-h-0"
+              aria-label="Sair da conta"
             >
               <LogOut className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Sair</span>

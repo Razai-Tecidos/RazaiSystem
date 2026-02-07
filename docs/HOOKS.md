@@ -743,3 +743,96 @@ interface AjustesCor {
 - Suporte a imagens via URL ou dataURL
 - Retorna dataURL da imagem processada
 - Preserva transparência (alpha channel)
+
+---
+
+## Hooks Shopee
+
+### useShopee
+
+Hook para gerenciar conexão com lojas Shopee.
+
+**Localização**: `frontend/src/hooks/useShopee.ts`
+
+**Retorno**:
+```typescript
+{
+  shops: ShopeeShop[];       // Lojas conectadas
+  loading: boolean;
+  connectShop: () => void;   // Inicia conexão OAuth
+  disconnectShop: (id: string) => Promise<void>;
+}
+```
+
+---
+
+### useShopeeProducts
+
+Hook para CRUD de anúncios Shopee (rascunhos e publicados).
+
+**Localização**: `frontend/src/hooks/useShopeeProducts.ts`
+
+**Retorno**:
+```typescript
+{
+  products: ShopeeProduct[];
+  loading: boolean;
+  saving: boolean;
+  publishing: boolean;
+  currentProduct: ShopeeProduct | null;
+  getProduct: (id: string) => Promise<ShopeeProduct | null>;
+  createProduct: (data: CreateShopeeProductData) => Promise<ShopeeProduct | null>;
+  updateProduct: (id: string, data: Partial<CreateShopeeProductData>) => Promise<ShopeeProduct | null>;
+  deleteProduct: (id: string) => Promise<boolean>;
+  publishProduct: (id: string) => Promise<ShopeeProduct | null>;
+  getDefaultValues: (tecidoLargura?: number) => Promise<DefaultFormValues | null>;
+  getProductsByStatus: (status: ShopeeProductStatus) => ShopeeProduct[];
+  countByStatus: Record<ShopeeProductStatus, number>;
+  setCurrentProduct: (product: ShopeeProduct | null) => void;
+}
+```
+
+**Funcionalidades**:
+- CRUD completo de rascunhos/produtos
+- Publicação na Shopee via API
+- Busca de valores padrão (preferências + sistema)
+- Filtragem por status (draft, publishing, created, error)
+
+---
+
+### useShopeeCategories
+
+Hook para navegação e cache de categorias Shopee.
+
+**Localização**: `frontend/src/hooks/useShopeeCategories.ts`
+
+**Retorno**:
+```typescript
+{
+  loading: boolean;
+  categories: ShopeeCategory[];
+  loadCategories: (shopId: number) => Promise<void>;
+  getRootCategories: () => ShopeeCategory[];
+  getChildCategories: (parentId: number) => ShopeeCategory[];
+}
+```
+
+---
+
+### useTamanhos
+
+Hook para CRUD de tamanhos (P, M, G, etc.).
+
+**Localização**: `frontend/src/hooks/useTamanhos.ts`
+
+**Retorno**:
+```typescript
+{
+  tamanhos: Tamanho[];
+  loading: boolean;
+  createTamanho: (data: CreateTamanhoData) => Promise<void>;
+  updateTamanho: (id: string, data: Partial<CreateTamanhoData>) => Promise<void>;
+  deleteTamanho: (id: string) => Promise<void>;
+  reorderTamanhos: (ids: string[]) => Promise<void>;
+}
+```

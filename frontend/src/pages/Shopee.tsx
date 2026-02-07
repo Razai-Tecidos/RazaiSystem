@@ -3,6 +3,7 @@ import { useShopee } from '@/hooks/useShopee';
 import { Header } from '@/components/Layout/Header';
 import { BreadcrumbNav } from '@/components/Layout/BreadcrumbNav';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { 
@@ -277,11 +278,19 @@ export function Shopee({ onNavigateHome }: ShopeeProps) {
     }
   }, [checkForCallback, handleCallback, processingCallback]);
 
-  const handleDisconnect = async (shopId: number) => {
-    if (!confirm('Tem certeza que deseja desconectar esta loja?')) {
-      return;
-    }
-    await disconnect(shopId);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [pendingDisconnectId, setPendingDisconnectId] = useState<number | null>(null);
+
+  const handleDisconnect = (shopId: number) => {
+    setPendingDisconnectId(shopId);
+    setConfirmDisconnect(true);
+  };
+
+  const doDisconnect = async () => {
+    if (pendingDisconnectId === null) return;
+    setConfirmDisconnect(false);
+    await disconnect(pendingDisconnectId);
+    setPendingDisconnectId(null);
   };
 
   const isProcessing = loading || connecting || processingCallback;
@@ -1474,6 +1483,17 @@ export function Shopee({ onNavigateHome }: ShopeeProps) {
           </div>
         </div>
       </main>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDisconnect}
+        onOpenChange={setConfirmDisconnect}
+        title="Desconectar loja"
+        description="Tem certeza que deseja desconectar esta loja Shopee?"
+        confirmLabel="Desconectar"
+        variant="destructive"
+        onConfirm={doDisconnect}
+      />
     </div>
   );
 }
