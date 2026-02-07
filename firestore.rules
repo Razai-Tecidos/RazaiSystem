@@ -3,71 +3,108 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Regras para coleção de tecidos
     match /tecidos/{tecidoId} {
-      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
     // Regras para coleção de cores
     match /cores/{corId} {
-      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
     // Regras para coleção de vínculos cor-tecido
     match /cor_tecido/{vinculoId} {
-      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
     // Regras para coleção de estampas
     match /estampas/{estampaId} {
-      // Permite leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para coleção de tamanhos
+    match /tamanhos/{tamanhoId} {
       allow read, write: if request.auth != null;
     }
     
     // Regras para controle de SKU de tecidos
     match /sku_control/{document=**} {
-      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
     // Regras para controle de SKU de cores
     match /sku_control_cor/{document=**} {
-      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
     // Regras para lojas Shopee conectadas
-    // Acesso apenas via Backend (Firebase Admin SDK)
-    // O frontend não acessa diretamente - tokens são sensíveis
+    // Escrita apenas via Admin SDK (backend) — tokens são sensíveis
     match /shopee_shops/{shopId} {
-      // Permite apenas leitura para usuários autenticados
-      // Escrita apenas via Admin SDK (backend)
       allow read: if request.auth != null;
       allow write: if false;
     }
     
     // Regras para dados de vendas por SKU
     match /shopee_sku_sales/{salesId} {
-      // Permite leitura e escrita para usuários autenticados
       allow read, write: if request.auth != null;
+    }
+    
+    // Regras para produtos/anúncios Shopee
+    match /shopee_products/{productId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para preferências do usuário Shopee
+    match /shopee_user_preferences/{userId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para templates de anúncios Shopee
+    match /shopee_product_templates/{templateId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para cache de categorias Shopee (apenas leitura pelo frontend)
+    match /shopee_categories_cache/{cacheId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    
+    // Regras para cache de logística Shopee (apenas leitura pelo frontend)
+    match /shopee_logistics_cache/{cacheId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    
+    // Regras para logs de webhook Shopee (apenas backend)
+    match /shopee_webhook_logs/{logId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    
+    // Regras para eventos de pedidos Shopee (apenas backend)
+    match /shopee_order_events/{eventId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    
+    // Regras para cores desabilitadas (estoque Shopee)
+    match /disabled_colors/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
     }
     
     // Regras para exemplos de treinamento ML
     match /ml_training_examples/{exampleId} {
-      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
     // Regras para metadados do modelo ML
     match /ml_model_metadata/{modelId} {
-      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
     // Regras para configurações globais do sistema
     match /system_config/{configId} {
-      // Permite leitura e escrita apenas para usuários autenticados
       allow read, write: if request.auth != null;
     }
     
@@ -75,7 +112,6 @@ service cloud.firestore {
     match /catalogos/{catalogoId} {
       // Leitura pública (para links compartilháveis)
       allow read: if true;
-      // Escrita apenas para usuários autenticados
       allow write: if request.auth != null;
     }
     

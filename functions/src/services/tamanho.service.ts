@@ -127,15 +127,20 @@ export async function createTamanho(data: CreateTamanhoData): Promise<Tamanho> {
   
   const lastOrder = lastOrderDoc.empty ? 0 : (lastOrderDoc.docs[0].data().ordem || 0);
   
-  const tamanhoData = {
+  const tamanhoData: Record<string, unknown> = {
     nome: data.nome,
-    descricao: data.descricao || undefined,
     ordem: data.ordem ?? lastOrder + 1,
     ativo: true,
     sku,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   };
+
+  // Só inclui descricao se tiver valor (Firestore não aceita undefined)
+  if (data.descricao) {
+    tamanhoData.descricao = data.descricao;
+  }
   
   const docRef = await db.collection(TAMANHOS_COLLECTION).add(tamanhoData);
   
@@ -161,7 +166,11 @@ export async function updateTamanho(id: string, data: UpdateTamanhoData): Promis
   };
   
   if (data.nome !== undefined) updateData.nome = data.nome;
-  if (data.descricao !== undefined) updateData.descricao = data.descricao;
+  if (data.descricao !== undefined && data.descricao !== null) {
+    updateData.descricao = data.descricao;
+  } else if (data.descricao === null) {
+    updateData.descricao = admin.firestore.FieldValue.delete();
+  }
   if (data.ordem !== undefined) updateData.ordem = data.ordem;
   if (data.ativo !== undefined) updateData.ativo = data.ativo;
   
