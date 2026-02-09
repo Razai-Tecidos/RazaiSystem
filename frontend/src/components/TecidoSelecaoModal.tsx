@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Tecido } from '@/types/tecido.types';
 import {
   Dialog,
@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Check, Package, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -56,6 +57,7 @@ export function TecidoSelecaoModal({
 }: TecidoSelecaoModalProps) {
   const [tecidoSelecionadoId, setTecidoSelecionadoId] = useState<string | null>(null);
   const [ultimosIds, setUltimosIds] = useState<string[]>([]);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Carregar últimos tecidos quando modal abrir
   useEffect(() => {
@@ -63,6 +65,14 @@ export function TecidoSelecaoModal({
       setTecidoSelecionadoId(null);
       setUltimosIds(getUltimosTecidosIds());
     }
+
+    // Cleanup do timeout ao fechar modal ou desmontar
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
   }, [open]);
 
   // Ordenar tecidos: recentes primeiro, depois alfabético
@@ -94,10 +104,17 @@ export function TecidoSelecaoModal({
     setTecidoSelecionadoId(tecido.id);
     // Salvar como recente
     salvarTecidoRecente(tecido.id);
+
+    // Limpar timeout anterior se existir
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
     // Pequeno delay para mostrar a seleção antes de fechar
-    setTimeout(() => {
+    timeoutRef.current = setTimeout(() => {
       onSelecionar(tecido);
       onOpenChange(false);
+      timeoutRef.current = null;
     }, 150);
   };
 
@@ -117,8 +134,17 @@ export function TecidoSelecaoModal({
         {/* Lista de tecidos */}
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {loading ? (
-            <div className="p-8 text-center text-gray-500">
-              Carregando tecidos...
+            <div className="divide-y">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="p-3 flex items-center gap-3">
+                  <Skeleton className="w-12 h-12 rounded flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <Skeleton className="w-6 h-6 rounded-full" />
+                </div>
+              ))}
             </div>
           ) : tecidos.length === 0 ? (
             <div className="p-8 text-center text-gray-500">

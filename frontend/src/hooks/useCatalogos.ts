@@ -97,28 +97,33 @@ export function useCatalogos(): UseCatalogosReturn {
           return null; // Catálogo não existe ou expirou
         }
 
-        // Carregar cada tecido e seus vínculos
-        const resultados: TecidoComVinculosPublico[] = [];
+        // Carregar todos os tecidos e vínculos em paralelo
+        const tecidosPromises = catalogo.tecidoIds.map(async (tecidoId) => {
+          const [tecido, vinculos] = await Promise.all([
+            getTecidoById(tecidoId),
+            getCorTecidosByTecidoId(tecidoId),
+          ]);
 
-        for (const tecidoId of catalogo.tecidoIds) {
-          const tecido = await getTecidoById(tecidoId);
-          if (!tecido) continue; // Tecido foi excluído
+          // Se tecido não existe ou não tem vínculos com imagem, retornar null
+          if (!tecido) return null;
 
-          // Buscar vínculos (cores) deste tecido
-          const vinculos = await getCorTecidosByTecidoId(tecidoId);
-          
-          // Filtrar apenas vínculos com imagem
           const vinculosComImagem = vinculos.filter(v => v.imagemTingida);
+          if (vinculosComImagem.length === 0) return null;
 
-          if (vinculosComImagem.length > 0) {
-            resultados.push({
-              tecido,
-              vinculos: vinculosComImagem.sort((a, b) => 
-                (a.corNome || '').localeCompare(b.corNome || '')
-              ),
-            });
-          }
-        }
+          return {
+            tecido,
+            vinculos: vinculosComImagem.sort((a, b) =>
+              (a.corNome || '').localeCompare(b.corNome || '')
+            ),
+          };
+        });
+
+        const tecidosCarregados = await Promise.all(tecidosPromises);
+
+        // Filtrar resultados nulos e criar array final
+        const resultados = tecidosCarregados.filter(
+          (item): item is TecidoComVinculosPublico => item !== null
+        );
 
         // Ordenar por nome do tecido
         resultados.sort((a, b) => a.tecido.nome.localeCompare(b.tecido.nome));

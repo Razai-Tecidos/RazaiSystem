@@ -7,6 +7,8 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
+import { Tecido } from '@/types/tecido.types';
+import { CorTecido } from '@/types/cor.types';
 
 const CATALOGOS_COLLECTION = 'catalogos';
 
@@ -114,4 +116,49 @@ export function getDaysUntilExpiration(catalogo: Catalogo): number {
   const diffMs = expiresAt.getTime() - now.getTime();
   const diffDays = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
   return Math.max(0, diffDays);
+}
+
+/**
+ * Tipo para agrupar vínculos por tecido
+ */
+export interface TecidoComVinculos {
+  tecido: Tecido;
+  vinculos: CorTecido[];
+}
+
+/**
+ * Agrupa vínculos (cores) por tecido
+ * Filtra apenas vínculos com imagem tingida e ordena por nome da cor
+ * Reutilizado em Catalogo.tsx e useCatalogos.ts
+ */
+export function agruparVinculosPorTecido(
+  vinculos: CorTecido[],
+  tecidos: Tecido[]
+): TecidoComVinculos[] {
+  const grupos: TecidoComVinculos[] = [];
+
+  // Agrupar vínculos por tecidoId
+  const vinculosPorTecido = new Map<string, CorTecido[]>();
+  vinculos.forEach((vinculo) => {
+    if (!vinculo.imagemTingida) return; // Ignorar vínculos sem imagem
+
+    const lista = vinculosPorTecido.get(vinculo.tecidoId) || [];
+    lista.push(vinculo);
+    vinculosPorTecido.set(vinculo.tecidoId, lista);
+  });
+
+  // Criar grupos com dados do tecido
+  tecidos.forEach((tecido) => {
+    const vinculosDoTecido = vinculosPorTecido.get(tecido.id);
+    if (vinculosDoTecido && vinculosDoTecido.length > 0) {
+      grupos.push({
+        tecido,
+        vinculos: vinculosDoTecido.sort((a, b) =>
+          (a.corNome || '').localeCompare(b.corNome || '')
+        ),
+      });
+    }
+  });
+
+  return grupos.sort((a, b) => a.tecido.nome.localeCompare(b.tecido.nome));
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface UseBluetoothReturn {
   device: BluetoothDevice | null;
@@ -22,6 +22,8 @@ export function useBluetooth(): UseBluetoothReturn {
   const dataCallbackRef = useRef<((data: DataView) => void) | null>(null);
   const notifyCharacteristicRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
   const writeCharacteristicRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
+  const notifyHandlerRef = useRef<((event: Event) => void) | null>(null);
+  const disconnectHandlerRef = useRef<(() => void) | null>(null);
 
   // Verificar suporte do navegador
   const checkBluetoothSupport = useCallback(() => {
@@ -68,16 +70,25 @@ export function useBluetooth(): UseBluetoothReturn {
       // Habilitar notificações
       await notifyCharacteristic.startNotifications();
 
-      // Escutar dados recebidos
-      notifyCharacteristic.addEventListener(
-        'characteristicvaluechanged',
-        (event: Event) => {
-          const characteristic = event.target as BluetoothRemoteGATTCharacteristic;
-          if (characteristic.value && dataCallbackRef.current) {
-            dataCallbackRef.current(characteristic.value);
-          }
+      // Remover listener anterior se existir
+      if (notifyHandlerRef.current && notifyCharacteristicRef.current) {
+        notifyCharacteristicRef.current.removeEventListener(
+          'characteristicvaluechanged',
+          notifyHandlerRef.current
+        );
+      }
+
+      // Criar e armazenar novo handler
+      const notifyHandler = (event: Event) => {
+        const characteristic = event.target as BluetoothRemoteGATTCharacteristic;
+        if (characteristic.value && dataCallbackRef.current) {
+          dataCallbackRef.current(characteristic.value);
         }
-      );
+      };
+      notifyHandlerRef.current = notifyHandler;
+
+      // Escutar dados recebidos
+      notifyCharacteristic.addEventListener('characteristicvaluechanged', notifyHandler);
 
       notifyCharacteristicRef.current = notifyCharacteristic;
 
@@ -87,13 +98,22 @@ export function useBluetooth(): UseBluetoothReturn {
 
       writeCharacteristicRef.current = writeCharacteristic;
 
-      // Escutar desconexão
-      bluetoothDevice.addEventListener('gattserverdisconnected', () => {
+      // Remover listener de desconexão anterior se existir
+      if (disconnectHandlerRef.current && device) {
+        device.removeEventListener('gattserverdisconnected', disconnectHandlerRef.current);
+      }
+
+      // Criar e armazenar handler de desconexão
+      const disconnectHandler = () => {
         setConnected(false);
         setDevice(null);
         notifyCharacteristicRef.current = null;
         writeCharacteristicRef.current = null;
-      });
+      };
+      disconnectHandlerRef.current = disconnectHandler;
+
+      // Escutar desconexão
+      bluetoothDevice.addEventListener('gattserverdisconnected', disconnectHandler);
 
       setConnected(true);
       setConnecting(false);
@@ -117,6 +137,20 @@ export function useBluetooth(): UseBluetoothReturn {
 
   const disconnect = useCallback(async () => {
     try {
+      // Remover event listeners antes de desconectar
+      if (notifyHandlerRef.current && notifyCharacteristicRef.current) {
+        notifyCharacteristicRef.current.removeEventListener(
+          'characteristicvaluechanged',
+          notifyHandlerRef.current
+        );
+        notifyHandlerRef.current = null;
+      }
+
+      if (disconnectHandlerRef.current && device) {
+        device.removeEventListener('gattserverdisconnected', disconnectHandlerRef.current);
+        disconnectHandlerRef.current = null;
+      }
+
       if (device?.gatt?.connected) {
         await device.gatt.disconnect();
       }
@@ -163,6 +197,28 @@ export function useBluetooth(): UseBluetoothReturn {
   const onDataReceived = useCallback((callback: (data: DataView) => void) => {
     dataCallbackRef.current = callback;
   }, []);
+
+  // Cleanup ao desmontar componente
+  useEffect(() => {
+    return () => {
+      // Remover event listeners
+      if (notifyHandlerRef.current && notifyCharacteristicRef.current) {
+        notifyCharacteristicRef.current.removeEventListener(
+          'characteristicvaluechanged',
+          notifyHandlerRef.current
+        );
+      }
+
+      if (disconnectHandlerRef.current && device) {
+        device.removeEventListener('gattserverdisconnected', disconnectHandlerRef.current);
+      }
+
+      // Desconectar dispositivo
+      if (device?.gatt?.connected) {
+        device.gatt.disconnect();
+      }
+    };
+  }, [device]);
 
   return {
     device,

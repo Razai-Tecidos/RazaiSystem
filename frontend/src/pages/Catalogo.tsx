@@ -1,10 +1,9 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { useCorTecido } from '@/hooks/useCorTecido';
 import { useTecidos } from '@/hooks/useTecidos';
 import { useEstampas } from '@/hooks/useEstampas';
 import { useCatalogos } from '@/hooks/useCatalogos';
-import { CorTecido } from '@/types/cor.types';
 import { Tecido } from '@/types/tecido.types';
 import { Estampa } from '@/types/estampa.types';
 import { TecidoCheckboxList } from '@/components/Catalogo/TecidoCheckboxList';
@@ -15,17 +14,13 @@ import { Header } from '@/components/Layout/Header';
 import { BreadcrumbNav } from '@/components/Layout/BreadcrumbNav';
 import { Button } from '@/components/ui/button';
 import { Loader2, FileDown, Link2, Copy, Check, Palette, Image as ImageIcon } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { agruparVinculosPorTecido, TecidoComVinculos } from '@/lib/firebase/catalogos';
 
 interface CatalogoProps {
   onNavigateHome?: () => void;
-}
-
-// Tipo para agrupar vínculos por tecido
-export interface TecidoComVinculos {
-  tecido: Tecido;
-  vinculos: CorTecido[];
 }
 
 // Tipo para agrupar estampas por tecido base
@@ -49,38 +44,15 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const pdfBlobUrlRef = useRef<string | null>(null);
 
   const loading = loadingVinculos || loadingTecidos || loadingEstampas;
 
-  // Agrupa vínculos por tecido (apenas tecidos que têm vínculos)
-  const tecidosComVinculos = useMemo(() => {
-    const grupos: TecidoComVinculos[] = [];
-    
-    // Agrupar vínculos por tecidoId
-    const vinculosPorTecido = new Map<string, CorTecido[]>();
-    vinculos.forEach((vinculo) => {
-      if (!vinculo.imagemTingida) return; // Ignorar vínculos sem imagem
-      
-      const lista = vinculosPorTecido.get(vinculo.tecidoId) || [];
-      lista.push(vinculo);
-      vinculosPorTecido.set(vinculo.tecidoId, lista);
-    });
-
-    // Criar grupos com dados do tecido
-    tecidos.forEach((tecido) => {
-      const vinculosDoTecido = vinculosPorTecido.get(tecido.id);
-      if (vinculosDoTecido && vinculosDoTecido.length > 0) {
-        grupos.push({
-          tecido,
-          vinculos: vinculosDoTecido.sort((a, b) => 
-            (a.corNome || '').localeCompare(b.corNome || '')
-          ),
-        });
-      }
-    });
-
-    return grupos.sort((a, b) => a.tecido.nome.localeCompare(b.tecido.nome));
-  }, [vinculos, tecidos]);
+  // Agrupa vínculos por tecido usando função extraída
+  const tecidosComVinculos = useMemo(
+    () => agruparVinculosPorTecido(vinculos, tecidos),
+    [vinculos, tecidos]
+  );
 
   // Agrupa estampas por tecido base
   const tecidosComEstampas = useMemo(() => {
@@ -183,6 +155,16 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
   // Verificar se há algo selecionado
   const hasSelection = selectedTecidosComVinculos.length > 0 || selectedTecidosComEstampas.length > 0;
 
+  // Cleanup do blob URL ao desmontar ou antes de criar novo
+  useEffect(() => {
+    return () => {
+      if (pdfBlobUrlRef.current) {
+        URL.revokeObjectURL(pdfBlobUrlRef.current);
+        pdfBlobUrlRef.current = null;
+      }
+    };
+  }, []);
+
   // Gerar PDF
   const handleGeneratePdf = useCallback(async () => {
     if (!hasSelection) {
@@ -197,24 +179,39 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
     setGeneratingPdf(true);
 
     try {
+      // Revogar blob URL anterior se existir
+      if (pdfBlobUrlRef.current) {
+        URL.revokeObjectURL(pdfBlobUrlRef.current);
+        pdfBlobUrlRef.current = null;
+      }
+
       const blob = await pdf(
-        <CatalogoPdfDocument 
+        <CatalogoPdfDocument
           tecidosComVinculos={selectedTecidosComVinculos}
           tecidosComEstampas={selectedTecidosComEstampas}
         />
       ).toBlob();
 
       const url = URL.createObjectURL(blob);
+      pdfBlobUrlRef.current = url;
+
       const link = document.createElement('a');
       link.href = url;
-      
+
       const date = new Date().toISOString().split('T')[0];
       link.download = `catalogo_${date}.pdf`;
-      
+
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+
+      // Revogar URL após pequeno delay para garantir que o download iniciou
+      setTimeout(() => {
+        if (pdfBlobUrlRef.current) {
+          URL.revokeObjectURL(pdfBlobUrlRef.current);
+          pdfBlobUrlRef.current = null;
+        }
+      }, 100);
 
       const partes = [];
       if (totalCoresSelecionadas > 0) partes.push(`${totalCoresSelecionadas} cores`);
@@ -300,8 +297,32 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
           </div>
 
           {loading ? (
-            <div className="flex justify-center items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Skeleton da coluna esquerda */}
+              <div className="space-y-4">
+                <Skeleton className="h-10 w-full" />
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 border rounded-lg">
+                      <Skeleton className="h-5 w-5" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-3/4" />
+                        <Skeleton className="h-3 w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Skeleton da coluna direita */}
+              <div className="space-y-4">
+                <Skeleton className="h-6 w-1/3" />
+                <Skeleton className="h-64 w-full" />
+                <div className="flex gap-3 pt-4">
+                  <Skeleton className="h-10 flex-1" />
+                  <Skeleton className="h-10 flex-1" />
+                </div>
+              </div>
             </div>
           ) : !hasContent ? (
             <div className="text-center py-12 text-gray-500">

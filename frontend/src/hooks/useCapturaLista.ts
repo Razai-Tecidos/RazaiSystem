@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import { CapturaItem, CreateCapturaData } from '@/types/captura.types';
 import { encontrarConflitos } from '@/lib/deltaE';
@@ -29,9 +29,15 @@ interface UseCapturaListaReturn {
  */
 export function useCapturaLista(): UseCapturaListaReturn {
   const [capturas, setCapturas] = useState<CapturaItem[]>([]);
+  const capturasRef = useRef<CapturaItem[]>([]);
   const { cores, createCor, findSimilar } = useCores();
   const { createVinculo, vinculoExists } = useCorTecido();
   const { deltaELimiar } = useConfig();
+
+  // Sincronizar ref com estado
+  useEffect(() => {
+    capturasRef.current = capturas;
+  }, [capturas]);
 
   /**
    * Valida conflitos de todas as capturas com cores existentes
@@ -227,7 +233,6 @@ export function useCapturaLista(): UseCapturaListaReturn {
         // Verificar ação escolhida para conflitos
         const acaoConflito = acoesConflito?.get(captura.id);
 
-        console.log(`[Captura ${captura.nome}] Status: ${captura.status}, Ação: ${acaoConflito}, CorConflitoId: ${captura.corConflitoId}`);
 
         // Se tem conflito e a ação é usar a cor existente
         if (captura.status === 'conflito' && captura.corConflitoId && acaoConflito === 'usar_existente') {
@@ -239,7 +244,6 @@ export function useCapturaLista(): UseCapturaListaReturn {
             cor = cores.find(c => c.id === captura.corConflitoId) || null;
           }
           
-          console.log(`[Captura ${captura.nome}] Usando cor existente:`, cor?.id, cor?.nome);
           
           // Se encontrou a cor existente, NÃO criar nova - ir direto para criar vínculo
           if (cor) {
@@ -265,7 +269,6 @@ export function useCapturaLista(): UseCapturaListaReturn {
           // Como não temos acesso direto ao ID, usar findSimilar com deltaE muito baixo
           cor = await findSimilar(captura.lab, 0.5);
           
-          console.log(`[Captura ${captura.nome}] Nova cor criada:`, cor?.id, cor?.nome);
         }
 
         // Se ainda não encontrou/criou a cor, falha

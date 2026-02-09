@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useCatalogos, TecidoComVinculosPublico } from '@/hooks/useCatalogos';
-import { Loader2, AlertCircle, Clock } from 'lucide-react';
+import { Loader2, AlertCircle, Clock, RefreshCw, Wifi } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface CatalogoPublicoProps {
   catalogoId: string;
@@ -14,37 +16,97 @@ interface CatalogoPublicoProps {
 export function CatalogoPublico({ catalogoId }: CatalogoPublicoProps) {
   const { loadCatalogoTecidos, loading } = useCatalogos();
   const [tecidosComVinculos, setTecidosComVinculos] = useState<TecidoComVinculosPublico[] | null>(null);
-  const [error, setError] = useState<'not_found' | 'expired' | null>(null);
+  const [error, setError] = useState<'not_found' | 'expired' | 'network' | 'timeout' | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
-  useEffect(() => {
-    async function load() {
-      const resultado = await loadCatalogoTecidos(catalogoId);
-      
+  const load = async () => {
+    setError(null);
+    setTecidosComVinculos(null);
+
+    try {
+      // Timeout de 15 segundos
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 15000)
+      );
+
+      const resultado = await Promise.race([
+        loadCatalogoTecidos(catalogoId),
+        timeoutPromise
+      ]);
+
       if (resultado === null) {
         setError('not_found');
       } else if (resultado.length === 0) {
         setError('expired');
       } else {
         setTecidosComVinculos(resultado);
+        setRetryCount(0); // Reset contador de retry em caso de sucesso
+      }
+    } catch (err: any) {
+      if (err.message === 'timeout') {
+        setError('timeout');
+      } else if (err.message?.includes('network') || err.message?.includes('fetch')) {
+        setError('network');
+      } else {
+        setError('not_found');
       }
     }
+  };
 
+  const handleRetry = () => {
+    setRetryCount(prev => prev + 1);
     load();
-  }, [catalogoId, loadCatalogoTecidos]);
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogoId]);
 
   // Loading
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-500">Carregando catálogo...</p>
-        </div>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header skeleton */}
+        <header className="bg-white border-b shadow-sm sticky top-0 z-10">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+              <Skeleton className="h-4 w-16" />
+            </div>
+          </div>
+        </header>
+
+        {/* Content skeleton */}
+        <main className="container mx-auto px-4 py-8">
+          <div className="space-y-10">
+            {[1, 2].map((section) => (
+              <section key={section} className="space-y-4">
+                <div className="flex items-center gap-3 pb-2 border-b">
+                  <Skeleton className="h-5 w-32" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {[1, 2, 3, 4, 5, 6].map((item) => (
+                    <div key={item} className="space-y-2">
+                      <Skeleton className="aspect-square w-full rounded-lg" />
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
 
-  // Erro: não encontrado ou expirado
+  // Erro: não encontrado, expirado, ou erro de rede
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -55,19 +117,57 @@ export function CatalogoPublico({ catalogoId }: CatalogoPublicoProps) {
               <h1 className="text-xl font-semibold text-gray-900 mb-2">
                 Catálogo não encontrado
               </h1>
-              <p className="text-gray-500">
+              <p className="text-gray-500 mb-4">
                 Este link de catálogo não existe ou foi removido.
               </p>
             </>
-          ) : (
+          ) : error === 'expired' ? (
             <>
               <Clock className="h-16 w-16 text-amber-400 mx-auto mb-4" />
               <h1 className="text-xl font-semibold text-gray-900 mb-2">
                 Catálogo expirado
               </h1>
-              <p className="text-gray-500">
+              <p className="text-gray-500 mb-4">
                 Este catálogo expirou. Solicite um novo link ao fornecedor.
               </p>
+            </>
+          ) : error === 'timeout' ? (
+            <>
+              <Clock className="h-16 w-16 text-orange-400 mx-auto mb-4" />
+              <h1 className="text-xl font-semibold text-gray-900 mb-2">
+                Tempo de espera esgotado
+              </h1>
+              <p className="text-gray-500 mb-4">
+                A conexão está demorando muito. Verifique sua internet e tente novamente.
+              </p>
+              <Button onClick={handleRetry} variant="outline" className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Tentar novamente
+              </Button>
+              {retryCount > 0 && (
+                <p className="text-xs text-gray-400 mt-2">
+                  Tentativa {retryCount + 1}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <Wifi className="h-16 w-16 text-red-400 mx-auto mb-4" />
+              <h1 className="text-xl font-semibold text-gray-900 mb-2">
+                Erro de conexão
+              </h1>
+              <p className="text-gray-500 mb-4">
+                Não foi possível carregar o catálogo. Verifique sua conexão com a internet.
+              </p>
+              <Button onClick={handleRetry} variant="outline" className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Tentar novamente
+              </Button>
+              {retryCount > 0 && (
+                <p className="text-xs text-gray-400 mt-2">
+                  Tentativa {retryCount + 1}
+                </p>
+              )}
             </>
           )}
         </div>
