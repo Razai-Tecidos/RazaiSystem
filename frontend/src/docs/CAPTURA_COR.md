@@ -1,5 +1,7 @@
 # Módulo de Captura de Cor com Colorímetro
 
+> **Nota**: Para regras críticas do projeto (Firestore, Delta E, soft-delete, etc.), consulte [CLAUDE.md](../../../CLAUDE.md) e [CONTEXT.md](../../../CONTEXT.md).
+
 ## Visão Geral
 
 O módulo de Captura de Cor permite capturar cores diretamente de um colorímetro LS173 da Linshang via Bluetooth. O sistema oferece um fluxo simplificado:

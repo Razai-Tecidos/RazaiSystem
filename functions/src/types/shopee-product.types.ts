@@ -196,6 +196,7 @@ export interface CreateShopeeProductData {
   video_url?: string;
   atributos?: ProductAttributeValue[];
   brand_id?: number;
+  brand_nome?: string;
   condition?: ProductCondition;
   is_pre_order?: boolean;
   days_to_ship?: number;
@@ -227,6 +228,32 @@ export interface ShopeeAddItemResponse {
   message?: string;
   response?: {
     item_id: number;
+  };
+}
+
+/**
+ * Resposta da API init_tier_variation na Shopee
+ */
+export interface ShopeeInitTierResponse {
+  error?: string;
+  message?: string;
+  warning?: string;
+  request_id?: string;
+  response?: {
+    tier_variation?: Array<{
+      name: string;
+      option_list: Array<{
+        option: string;
+        image?: { image_url: string };
+      }>;
+    }>;
+    model?: Array<{
+      model_id: number;
+      tier_index: number[];
+      model_sku: string;
+      price_info: Array<{ original_price: number }>;
+      seller_stock: Array<{ location_id?: string; stock: number }>;
+    }>;
   };
 }
 

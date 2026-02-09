@@ -1,5 +1,7 @@
 # Documentação: Módulo de Tecidos
 
+> **Nota**: Para regras críticas do projeto (Firestore, formatação brasileira, etc.), consulte [CLAUDE.md](../../../CLAUDE.md) e [CONTEXT.md](../../../CONTEXT.md).
+
 ## Visão Geral
 
 O módulo de Tecidos implementa um sistema completo de gerenciamento de tecidos com UI otimista, permitindo operações CRUD (Create, Read, Update, Delete) com feedback rápido para o usuário enquanto as operações são processadas em segundo plano no Firebase.

@@ -55,8 +55,10 @@ export interface UpdateShopeePreferencesData {
  * Valores padrão do sistema
  */
 export const SYSTEM_DEFAULTS = {
-  peso: 0.1, // kg
-  comprimento: 100, // cm
-  altura: 1, // cm
+  peso: 0.3, // kg
+  comprimento: 30, // cm
+  largura: 30, // cm
+  altura: 10, // cm
+  estoque_padrao: 100,
   usar_imagens_publicas: true,
 };

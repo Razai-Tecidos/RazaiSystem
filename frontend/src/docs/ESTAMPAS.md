@@ -1,5 +1,7 @@
 # Documentação do Módulo de Estampas
 
+> **Nota**: Para regras críticas (SKU, formatação, Firestore), consulte [CLAUDE.md](../../../CLAUDE.md) e [CONTEXT.md](../../../CONTEXT.md).
+
 ## Visão Geral
 
 O módulo de Estampas permite o gerenciamento de estampas vinculadas a tecidos do tipo "Estampado". Cada estampa possui um SKU gerado automaticamente baseado no nome (primeira palavra = família).

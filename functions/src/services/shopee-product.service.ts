@@ -1,16 +1,19 @@
 import admin from '../config/firebase';
-import { 
-  ShopeeProduct, 
-  CreateShopeeProductData, 
+import {
+  ShopeeProduct,
+  CreateShopeeProductData,
   TierVariation,
   ProductModel,
   ShopeeAddItemResponse,
+  ShopeeInitTierResponse,
   ShopeeUploadImageResponse,
 } from '../types/shopee-product.types';
 import { callShopeeApi, ensureValidToken, uploadImageToShopeeMultipart } from './shopee.service';
 import * as preferencesService from './shopee-preferences.service';
 import * as imageCompressor from './image-compressor.service';
 import * as logisticsService from './shopee-logistics.service';
+import { applyBrandOverlay } from './brand-overlay.service';
+import axios from 'axios';
 import { 
   validateProductForPublish, 
   formatItemName, 
@@ -83,63 +86,79 @@ async function uploadImageToShopee(
   if (response.error) {
     throw new Error(`Erro ao fazer upload de imagem: ${response.error} - ${response.message}`);
   }
-  
-  return response.response?.image_info?.image_url || imageUrl;
+
+  const imageId = response.response?.image_info?.image_id;
+  if (!imageId) {
+    throw new Error('Upload de imagem não retornou image_id');
+  }
+
+  return imageId;
+}
+
+/**
+ * Faz upload de uma imagem de variação com overlay de marca (logo Razai + nome da cor)
+ * Pipeline: download raw → applyBrandOverlay → comprimir → upload
+ */
+async function uploadVariationImageToShopee(
+  shopId: number,
+  accessToken: string,
+  imageUrl: string,
+  colorName: string
+): Promise<string> {
+  // 1. Download da imagem original
+  const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 30000 });
+  const rawBuffer = Buffer.from(response.data);
+
+  // 2. Aplicar overlay (logo + nome da cor)
+  console.log(`[uploadVariationImage] Aplicando overlay para "${colorName}"`);
+  const overlaidBuffer = await applyBrandOverlay(rawBuffer, colorName);
+
+  // 3. Comprimir (target 1.99MB)
+  const { buffer, wasCompressed, originalSize, finalSize } =
+    await imageCompressor.compressImageToTarget(overlaidBuffer, 'image/png');
+  if (wasCompressed) {
+    console.log(`[uploadVariationImage] Comprimido: ${(originalSize / 1024 / 1024).toFixed(2)}MB -> ${(finalSize / 1024 / 1024).toFixed(2)}MB`);
+  }
+
+  // 4. Upload para Shopee
+  const filename = `variation_${colorName.replace(/\s+/g, '_')}.png`;
+  const uploadResponse = await uploadImageToShopeeMultipart(
+    shopId, accessToken, buffer, filename
+  ) as ShopeeUploadImageResponse;
+
+  if (uploadResponse.error) {
+    throw new Error(`Erro upload imagem variacao: ${uploadResponse.error} - ${uploadResponse.message}`);
+  }
+  const imageId = uploadResponse.response?.image_info?.image_id;
+  if (!imageId) throw new Error('Upload de imagem de variacao nao retornou image_id');
+  return imageId;
 }
 
 /**
  * Processa imagens para publicação
- * Se usar_imagens_publicas = true, usa URLs diretas
- * Se usar_imagens_publicas = false, faz upload para Shopee
+ * Sempre faz upload para Shopee Media Space para obter image_id
+ * Retorna lista de image_ids
  */
 async function processImagesForPublish(
   shopId: number,
   accessToken: string,
   imageUrls: string[],
-  usarImagensPublicas: boolean
+  _usarImagensPublicas: boolean = false
 ): Promise<string[]> {
-  if (usarImagensPublicas) {
-    // Usa URLs públicas diretamente
-    // Mas ainda verifica se precisam de compressão e faz upload se > 2MB
-    const processedUrls: string[] = [];
-    
-    for (const url of imageUrls) {
-      try {
-        const { buffer } = await imageCompressor.downloadAndCompressImage(url);
-        
-        // Se a imagem original era > 2MB, precisamos fazer upload da versão comprimida
-        if (buffer.length > 1.99 * 1024 * 1024) {
-          // Não deveria acontecer após compressão, mas por segurança
-          const uploadedUrl = await uploadImageToShopee(shopId, accessToken, url);
-          processedUrls.push(uploadedUrl);
-        } else {
-          // Usa URL original se está dentro do limite
-          processedUrls.push(url);
-        }
-      } catch (error) {
-        console.error(`Erro ao processar imagem ${url}:`, error);
-        // Tenta usar URL original em caso de erro
-        processedUrls.push(url);
-      }
+  const imageIds: string[] = [];
+
+  for (const url of imageUrls) {
+    try {
+      const imageId = await uploadImageToShopee(shopId, accessToken, url);
+      imageIds.push(imageId);
+      console.log(`[processImages] Upload OK: ${url.substring(0, 80)}... -> image_id=${imageId}`);
+    } catch (error: any) {
+      console.error(`[processImages] FALHA upload ${url.substring(0, 80)}...: ${error.message}`);
+      throw error;
     }
-    
-    return processedUrls;
-  } else {
-    // Faz upload de todas as imagens para Shopee
-    const uploadedUrls: string[] = [];
-    
-    for (const url of imageUrls) {
-      try {
-        const uploadedUrl = await uploadImageToShopee(shopId, accessToken, url);
-        uploadedUrls.push(uploadedUrl);
-      } catch (error) {
-        console.error(`Erro ao fazer upload de imagem ${url}:`, error);
-        throw error;
-      }
-    }
-    
-    return uploadedUrls;
   }
+
+  return imageIds;
 }
 
 /**
@@ -184,24 +203,25 @@ async function getCorTecidoData(tecidoId: string, corIds: string[]): Promise<Arr
     corSku?: string;
     imagemTingida?: string;
   }> = [];
-  
+
+  // Busca TODOS os vínculos do tecido (apenas 1 WHERE para evitar erro de índice composto)
+  const snapshot = await db.collection(COR_TECIDO_COLLECTION)
+    .where('tecidoId', '==', tecidoId)
+    .get();
+
+  console.log(`[getCorTecidoData] tecidoId=${tecidoId}, corIds=[${corIds.join(',')}], snapshot.size=${snapshot.size}`);
+
+  // Filtra no código por corId e deletedAt
   for (const corId of corIds) {
-    const snapshot = await db.collection(COR_TECIDO_COLLECTION)
-      .where('tecidoId', '==', tecidoId)
-      .where('corId', '==', corId)
-      .limit(5)
-      .get();
-    
-    // Filtra no código: aceita documentos sem deletedAt OU com deletedAt == null
-    const activeDoc = snapshot.docs.find(doc => {
+    const doc = snapshot.docs.find(doc => {
       const data = doc.data();
-      return !data.deletedAt;
+      return data.corId === corId && !data.deletedAt;
     });
-    
-    if (activeDoc) {
-      const data = activeDoc.data();
+
+    if (doc) {
+      const data = doc.data();
       vinculos.push({
-        id: activeDoc.id,
+        id: doc.id,
         corId: data.corId,
         corNome: data.corNome || '',
         corSku: data.corSku,
@@ -209,7 +229,9 @@ async function getCorTecidoData(tecidoId: string, corIds: string[]): Promise<Arr
       });
     }
   }
-  
+
+  console.log(`[getCorTecidoData] vinculos encontrados: ${vinculos.length}/${corIds.length}`);
+
   return vinculos;
 }
 
@@ -479,7 +501,8 @@ export async function createProduct(
     estoque_padrao: data.estoque_padrao,
     categoria_id: data.categoria_id,
     atributos: data.atributos || [],
-    brand_id: data.brand_id || null,
+    brand_id: data.brand_id ?? null,
+    brand_nome: data.brand_nome || null,
     peso: data.peso,
     dimensoes: data.dimensoes,
     descricao,
@@ -552,7 +575,11 @@ export async function updateProduct(
     if (tecido) {
       const corIds = (data.cores || existingData.modelos.map(m => m.cor_id!)).filter(Boolean) as string[];
       const vinculos = await getCorTecidoData(tecidoId, corIds);
-      
+
+      if (vinculos.length === 0) {
+        throw new Error('Nenhum vínculo cor-tecido encontrado para as cores selecionadas');
+      }
+
       const tamanhoIds = data.tamanhos || existingData.tier_variations
         .find(t => t.tier_name === 'Tamanho')?.options
         .map((_, i) => existingData.modelos.find(m => m.tier_index[1] === i)?.tamanho_id)
@@ -625,11 +652,13 @@ export async function deleteProduct(id: string, userId: string): Promise<boolean
 
 /**
  * Publica um rascunho na Shopee
+ * Se dryRun=true, retorna o payload sem chamar a API (para debug)
  */
 export async function publishProduct(
   id: string,
-  userId: string
-): Promise<ShopeeProduct> {
+  userId: string,
+  dryRun: boolean = false
+): Promise<ShopeeProduct | Record<string, unknown>> {
   const docRef = db.collection(PRODUCTS_COLLECTION).doc(id);
   const doc = await docRef.get();
   
@@ -691,15 +720,17 @@ export async function publishProduct(
     console.warn('Avisos de validação:', validation.warnings);
   }
   
-  // Atualiza status para publishing
-  await docRef.update({
-    status: 'publishing',
-    updated_at: admin.firestore.Timestamp.now(),
-  });
+  // Atualiza status para publishing (pula no dry-run)
+  if (!dryRun) {
+    await docRef.update({
+      status: 'publishing',
+      updated_at: admin.firestore.Timestamp.now(),
+    });
+  }
   
   try {
-    const accessToken = await ensureValidToken(product.shop_id);
-    
+    const accessToken = dryRun ? 'DRY_RUN' : await ensureValidToken(product.shop_id);
+
     // Busca canais de logística habilitados
     console.log('Buscando canais de logística...');
     const logisticInfo = await logisticsService.buildLogisticInfoForProduct(
@@ -708,54 +739,68 @@ export async function publishProduct(
       product.dimensoes
     );
     console.log(`${logisticInfo.length} canais de logística configurados`);
-    
-    // Processa imagens principais (comprime se necessário)
-    console.log('Processando imagens principais...');
-    const processedMainImages = await processImagesForPublish(
-      product.shop_id,
-      accessToken,
-      product.imagens_principais,
-      product.usar_imagens_publicas
-    );
-    
-    // Processa imagens de variação (cores)
-    console.log('Processando imagens de variação...');
-    const processedTierVariations = await Promise.all(
-      product.tier_variations.map(async (tier) => {
-        const processedOptions = await Promise.all(
-          tier.options.map(async (opt) => {
-            if (opt.imagem_url) {
-              try {
-                const [processedUrl] = await processImagesForPublish(
-                  product.shop_id,
-                  accessToken,
-                  [opt.imagem_url],
-                  product.usar_imagens_publicas
-                );
-                return {
-                  option: opt.option_name,
-                  image: { image_url: processedUrl },
-                };
-              } catch (error) {
-                console.error(`Erro ao processar imagem de variação ${opt.option_name}:`, error);
-                return {
-                  option: opt.option_name,
-                  image: opt.imagem_url ? { image_url: opt.imagem_url } : undefined,
-                };
+
+    let processedMainImages: string[];
+    let processedTierVariations: Array<{ name: string; option_list: Array<{ option: string; image?: { image_id: string } }> }>;
+
+    if (dryRun) {
+      // Dry-run: usa placeholders sem fazer upload
+      processedMainImages = product.imagens_principais.map((_, i) => `DRY_RUN_IMAGE_${i}`);
+      processedTierVariations = product.tier_variations.map((tier, tierIndex) => ({
+        name: tier.tier_name,
+        option_list: tier.options.map((opt) => ({
+          option: opt.option_name,
+          ...(tierIndex === 0 && opt.imagem_url ? { image: { image_id: `DRY_RUN_VAR_${opt.option_name}` } } : {}),
+        })),
+      }));
+      console.log('[publishProduct] DRY-RUN: imagens substituídas por placeholders');
+    } else {
+      // Processa imagens principais (comprime se necessário)
+      console.log('Processando imagens principais...');
+      processedMainImages = await processImagesForPublish(
+        product.shop_id,
+        accessToken,
+        product.imagens_principais,
+        product.usar_imagens_publicas
+      );
+
+      // Processa imagens de variação (cores) - apenas tier 1
+      // Shopee exige: se uma opção do tier 1 tem imagem, TODAS devem ter
+      console.log('Processando imagens de variação...');
+      processedTierVariations = await Promise.all(
+        product.tier_variations.map(async (tier, tierIndex) => {
+          const processedOptions = await Promise.all(
+            tier.options.map(async (opt) => {
+              // Apenas tier 1 (index 0) pode ter imagens
+              if (tierIndex === 0 && opt.imagem_url) {
+                try {
+                  const imageId = await uploadVariationImageToShopee(
+                    product.shop_id,
+                    accessToken,
+                    opt.imagem_url,
+                    opt.option_name
+                  );
+                  return {
+                    option: opt.option_name,
+                    image: { image_id: imageId },
+                  };
+                } catch (error: any) {
+                  console.error(`[publishProduct] FALHA imagem variacao ${opt.option_name}: ${error.message}`);
+                  throw error; // Se uma falhar, todas falham (obrigatoriedade)
+                }
               }
-            }
-            return {
-              option: opt.option_name,
-              image: undefined,
-            };
-          })
-        );
-        return {
-          name: tier.tier_name,
-          option_list: processedOptions,
-        };
-      })
-    );
+              return {
+                option: opt.option_name,
+              };
+            })
+          );
+          return {
+            name: tier.tier_name,
+            option_list: processedOptions,
+          };
+        })
+      );
+    }
     
     // Monta payload para API Shopee
     const shopeePayload: Record<string, unknown> = {
@@ -763,6 +808,9 @@ export async function publishProduct(
       description: formattedDescription,
       item_sku: product.tecido_sku,
       original_price: product.preco_base,
+      seller_stock: [{
+        stock: product.estoque_padrao,
+      }],
       category_id: product.categoria_id,
       weight: product.peso,
       dimension: {
@@ -771,36 +819,9 @@ export async function publishProduct(
         package_height: product.dimensoes.altura,
       },
       image: {
-        image_url_list: processedMainImages,
+        image_id_list: processedMainImages,
       },
-      tier_variation: processedTierVariations,
-      model: product.modelos.map(modelo => {
-        const ncm = product.ncm_padrao || modelo.tax_info?.ncm || '';
-        const gtin = '00';
-        const invoiceName = `Tecido ${product.tecido_nome} ${modelo.cor_nome || ''} ${modelo.tamanho_nome || ''}`.trim();
-        
-        const modelPayload: Record<string, unknown> = {
-          model_sku: modelo.model_sku,
-          tier_index: modelo.tier_index,
-          original_price: modelo.preco || product.preco_base,
-          stock_info_v2: {
-            seller_stock: [{
-              stock: modelo.estoque,
-            }],
-          },
-        };
-        
-        // Inclui tax_info se NCM estiver preenchido
-        if (ncm) {
-          modelPayload.tax_info = {
-            ncm,
-            gtin,
-            item_name_in_invoice: invoiceName.substring(0, 120),
-          };
-        }
-        
-        return modelPayload;
-      }),
+      // tier_variation e model NAO vao no add_item — sao enviados via init_tier_variation
       logistic_info: logisticInfo,
       condition: product.condition || 'NEW',
       item_status: 'NORMAL',
@@ -808,8 +829,18 @@ export async function publishProduct(
         is_pre_order: product.is_pre_order || false,
         ...(product.is_pre_order && product.days_to_ship ? { days_to_ship: product.days_to_ship } : {}),
       },
-      ...(product.is_pre_order ? {} : { days_to_ship: product.days_to_ship || 2 }),
     };
+
+    // tax_info no nivel do item (NAO por model)
+    if (product.ncm_padrao) {
+      shopeePayload.tax_info = {
+        ncm: product.ncm_padrao,
+        same_state_cfop: '',
+        diff_state_cfop: '',
+        csosn: '',
+        origin: '',
+      };
+    }
     
     // Adiciona vídeo se disponível
     if (product.video_url) {
@@ -823,10 +854,18 @@ export async function publishProduct(
       shopeePayload.attribute_list = product.atributos;
     }
     
-    // Adiciona marca se disponível
-    if (product.brand_id) {
+    // Adiciona marca (brand_id + original_brand_name são obrigatórios dentro do objeto brand)
+    // brand_id=0 + original_brand_name="No Brand" quando sem marca
+    if (product.brand_id !== null && product.brand_id !== undefined) {
       shopeePayload.brand = {
         brand_id: product.brand_id,
+        original_brand_name: product.brand_nome || (product.brand_id === 0 ? 'No Brand' : ''),
+      };
+    } else {
+      // Se brand_id não foi definido, envia "Sem marca" por padrão
+      shopeePayload.brand = {
+        brand_id: 0,
+        original_brand_name: 'No Brand',
       };
     }
     
@@ -848,7 +887,35 @@ export async function publishProduct(
     
     // Remove valores undefined do payload (Firestore/Shopee não aceitam)
     const cleanPayload = removeUndefinedValues(shopeePayload);
-    
+
+    console.log('[publishProduct] Payload add_item:', JSON.stringify(cleanPayload, null, 2));
+
+    // Modo dry-run: retorna payload sem chamar API (para debug/teste)
+    if (dryRun) {
+      return {
+        add_item: cleanPayload,
+        init_tier_variation: {
+          item_id: 'DRY_RUN_ITEM_ID',
+          standardise_tier_variation: processedTierVariations.map((tier, tierIndex) => ({
+            variation_id: 0,
+            variation_group_id: 0,
+            variation_name: tier.name,
+            variation_option_list: tier.option_list.map(opt => ({
+              variation_option_id: 0,
+              variation_option_name: opt.option,
+              ...(tierIndex === 0 && opt.image ? { image_id: opt.image.image_id } : {}),
+            })),
+          })),
+          model: product.modelos.map(m => ({
+            tier_index: m.tier_index,
+            model_sku: m.model_sku,
+            original_price: m.preco || product.preco_base,
+            seller_stock: [{ stock: m.estoque }],
+          })),
+        },
+      };
+    }
+
     const response = await callShopeeApi({
       path: '/api/v2/product/add_item',
       method: 'POST',
@@ -856,8 +923,9 @@ export async function publishProduct(
       accessToken,
       body: cleanPayload,
     }) as ShopeeAddItemResponse;
-    
+
     if (response.error) {
+      console.error('[publishProduct] Resposta Shopee ERRO:', JSON.stringify(response));
       throw new Error(`Erro Shopee: ${response.error} - ${response.message}`);
     }
     
@@ -866,7 +934,51 @@ export async function publishProduct(
     if (!itemId) {
       throw new Error('Shopee não retornou item_id');
     }
-    
+
+    // === INIT TIER VARIATION ===
+    // Shopee recomenda aguardar >= 5s após add_item antes de criar variantes
+    console.log('[publishProduct] Aguardando 5s antes de init_tier_variation...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Transforma processedTierVariations (formato { name, option_list }) para
+    // standardise_tier_variation (formato { variation_name, variation_option_list })
+    const initTierPayload = {
+      item_id: itemId,
+      standardise_tier_variation: processedTierVariations.map((tier, tierIndex) => ({
+        variation_id: 0,
+        variation_group_id: 0,
+        variation_name: tier.name,
+        variation_option_list: tier.option_list.map(opt => ({
+          variation_option_id: 0,
+          variation_option_name: opt.option,
+          ...(tierIndex === 0 && opt.image ? { image_id: opt.image.image_id } : {}),
+        })),
+      })),
+      model: product.modelos.map(modelo => ({
+        tier_index: modelo.tier_index,
+        model_sku: modelo.model_sku,
+        original_price: modelo.preco || product.preco_base,
+        seller_stock: [{ stock: modelo.estoque }],
+      })),
+    };
+
+    console.log('[publishProduct] Chamando init_tier_variation...', JSON.stringify(initTierPayload, null, 2));
+
+    const tierResponse = await callShopeeApi({
+      path: '/api/v2/product/init_tier_variation',
+      method: 'POST',
+      shopId: product.shop_id,
+      accessToken,
+      body: removeUndefinedValues(initTierPayload),
+    }) as ShopeeInitTierResponse;
+
+    if (tierResponse.error && tierResponse.error !== '' && tierResponse.error !== '-') {
+      console.error('[publishProduct] init_tier_variation ERRO:', JSON.stringify(tierResponse));
+      throw new Error(`Erro ao criar variações: ${tierResponse.error} - ${tierResponse.message}`);
+    }
+
+    console.log(`[publishProduct] init_tier_variation OK - ${tierResponse.response?.model?.length || 0} modelos criados`);
+
     // Atualiza produto com sucesso
     const now = admin.firestore.Timestamp.now();
     await docRef.update({

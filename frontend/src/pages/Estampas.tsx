@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/select';
 import {
   Plus,
-  Loader2,
   Search,
   Filter,
   ArrowUpDown,

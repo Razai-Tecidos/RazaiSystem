@@ -1,5 +1,7 @@
 # Módulo de Vínculos Cor-Tecido
 
+> **Nota**: Para regras críticas (SKU, separação Cor vs CorTecido, Firestore), consulte [CLAUDE.md](../../../CLAUDE.md) e [CONTEXT.md](../../../CONTEXT.md).
+
 ## Visão Geral
 
 O módulo de Vínculos gerencia a associação entre cores e tecidos no sistema RazaiSystem. Cada vínculo (`CorTecido`) representa uma combinação específica de cor + tecido, armazenando a imagem tingida e os ajustes do algoritmo Reinhard.

@@ -1,4 +1,5 @@
-import { TecidoComVinculos, TecidoComEstampas } from '@/pages/Catalogo';
+import { TecidoComVinculos } from '@/lib/firebase/catalogos';
+import { TecidoComEstampas } from '@/pages/Catalogo';
 import { Palette, Image as ImageIcon } from 'lucide-react';
 
 interface CatalogoPreviewProps {
@@ -90,7 +91,7 @@ export function CatalogoPreview({
 
                   {/* Grid de cores */}
                   <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
-                    {vinculos.map((vinculo) => (
+                    {vinculos.map((vinculo: any) => (
                       <div key={vinculo.id} className="text-center">
                         <div className="aspect-square rounded-md overflow-hidden bg-gray-100 mb-1">
                           {vinculo.imagemTingida ? (

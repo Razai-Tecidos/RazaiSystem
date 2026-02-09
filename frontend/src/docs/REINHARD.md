@@ -1,5 +1,7 @@
 # Método Reinhard — Transferência de Cor no RazaiSystem
 
+> **Nota**: Para processamento de imagens e regras de Storage, consulte [CLAUDE.md](../../../CLAUDE.md) e [CONTEXT.md](../../../CONTEXT.md).
+
 ## Visão Geral
 
 O **método Reinhard** é baseado no artigo seminal de Erik Reinhard et al. (2001): *"Color Transfer between Images"*. É uma técnica de transferência de cor que equaliza as estatísticas de luminância e crominância entre uma imagem fonte e uma cor/imagem alvo no espaço de cor **CIELAB**.

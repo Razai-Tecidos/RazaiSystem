@@ -106,7 +106,10 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 // Exportar como Cloud Function
-export const api = functions.https.onRequest(app);
+// Timeout de 540s (9min) para suportar publish com muitos uploads de imagem
+export const api = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onRequest(app);
 
 // Exportar funções agendadas
 export { maintainDisabledColors } from './scheduled/maintain-disabled-colors';

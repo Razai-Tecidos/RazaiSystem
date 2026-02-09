@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useCatalogos, TecidoComVinculosPublico } from '@/hooks/useCatalogos';
-import { Loader2, AlertCircle, Clock, RefreshCw, Wifi } from 'lucide-react';
+import { AlertCircle, Clock, RefreshCw, Wifi } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 

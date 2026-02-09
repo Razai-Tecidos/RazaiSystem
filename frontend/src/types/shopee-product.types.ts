@@ -149,6 +149,7 @@ export interface CreateShopeeProductData {
   video_url?: string;
   atributos?: ProductAttributeValue[];
   brand_id?: number;
+  brand_nome?: string;
   condition?: ProductCondition;
   is_pre_order?: boolean;
   days_to_ship?: number;

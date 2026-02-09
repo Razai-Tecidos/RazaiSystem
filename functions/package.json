@@ -16,6 +16,7 @@
   },
   "main": "lib/index.js",
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "@types/sharp": "^0.31.1",
     "axios": "^1.13.4",
     "cors": "^2.8.5",

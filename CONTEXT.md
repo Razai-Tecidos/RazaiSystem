@@ -47,11 +47,71 @@
 - Largura: número em metros (armazenado como float)
 - SKU: formato T001, T002, etc. (não reutiliza SKUs excluídos)
 
+### Regras Críticas do Firestore
+
+⚠️ **NUNCA enviar `undefined` para Firestore**
+- Firestore rejeita valores `undefined` e retorna erro
+- **Solução**: Use `null` ou omita o campo completamente
+- **Helper**: `removeUndefinedValues(obj)` limpa payloads antes de salvar
+
+⚠️ **Soft-Delete Obrigatório**
+- SEMPRE incluir `deletedAt: null` ao criar documentos
+- Para deletar: `deletedAt: serverTimestamp()`
+- Todas as queries DEVEM filtrar: `where('deletedAt', '==', null)`
+- Collections: `tecidos`, `cores`, `cor_tecido`, `estampas`, `tamanhos`, `shopee_products`
+
+⚠️ **Índices Compostos Requeridos**
+- Query com `where` + `orderBy` em campos DIFERENTES exige índice composto
+- Copie o link do erro e crie índice, ou adicione em `firestore.indexes.json`
+- Deploy: `firebase deploy --only firestore:indexes`
+
+### Arquitetura Backend
+
+**Produção**: Cloud Functions (`functions/src/`)
+- Express app exportado como `functions.https.onRequest(app)`
+- Rotas acessíveis em `/api/**` via rewrite do Firebase Hosting
+- Node.js 20 runtime
+- Funções agendadas: `maintainDisabledColors`, `scheduledSyncShopeeProducts`
+
+**Desenvolvimento**: Backend local (`backend/src/`)
+- Express standalone em `http://localhost:5000`
+- Mesmo código das rotas, mas sem wrapper de Cloud Functions
+- Útil para desenvolvimento rápido e debugging
+
 ### Validação de TO-DOs
 - **OBRIGATÓRIO**: Após executar qualquer plano, sempre validar se todos os TO-DOs foram marcados como `completed`
 - Usar `todo_write` durante execução para atualizar status
 - Nunca finalizar plano sem marcar todos os TO-DOs
 - Ver regra completa em `.cursor/rules/todo-validation.mdc`
+
+## Ambiente de Desenvolvimento
+
+### Windows/PowerShell
+
+Projeto desenvolvido em ambiente Windows com PowerShell.
+
+**Comandos encadeados**:
+- ✅ **Use ponto-e-vírgula**: `cd functions; npm run build; cd ..`
+- ❌ **NÃO use &&**: `cd functions && npm run build` (sintaxe Bash/Unix)
+
+**Firebase CLI**:
+```powershell
+# Correto
+cd frontend; npm run build; cd ..; firebase deploy --only hosting
+
+# Incorreto (não funciona no PowerShell)
+cd frontend && npm run build && cd .. && firebase deploy --only hosting
+```
+
+### Collections e Documentação
+
+**Collections Principais**:
+- `tecidos`, `cores`, `cor_tecido`, `estampas`, `tamanhos` → Com soft-delete
+- `shopee_products` → Rascunhos e publicados, com soft-delete
+- `shopee_shops` → Tokens OAuth, backend-only
+- `shopee_categories_cache`, `shopee_logistics_cache` → Caches, backend-only
+- `catalogos` → Públicos, read-only para usuários não-autenticados
+- `sku_control` → Controle de SKUs sequenciais
 
 ## Quando Atualizar Este Arquivo
 
@@ -62,12 +122,14 @@ Atualize CONTEXT.md sempre que:
 - [ ] Regra de negócio crítica é implementada
 - [ ] Mudança que afeta como código deve ser escrito
 - [ ] Novo processo ou workflow é estabelecido
+- [ ] Nova integração externa é adicionada
 
 ### Processo de Atualização
 
 1. **Durante desenvolvimento**: Ao fazer mudanças importantes, atualizar CONTEXT.md imediatamente
 2. **Ao finalizar features**: Revisar se novas decisões precisam ser documentadas
 3. **Revisão periódica**: Verificar se CONTEXT.md reflete o estado atual do projeto
+4. **Após merge de features grandes**: Documentar padrões e decisões importantes
 
 ### Exemplos do que Documentar
 
@@ -76,8 +138,10 @@ Atualize CONTEXT.md sempre que:
 - Convenções de código (nomenclatura, estrutura, etc.)
 - Padrões técnicos (UI otimista, estrutura de dados, etc.)
 - Regras de negócio importantes
+- Gotchas de integrações externas (Shopee, Bluetooth, etc.)
+- Limitações conhecidas e workarounds
 
-**Última atualização**: 2026-02-06 (atualizado com novas funcionalidades de edição inline, validação de duplicados e geração de SKU)
+**Última atualização**: 2026-02-09 (Shopee add_item validado em produção, regras seller_stock/brand/image corrigidas)
 
 ## Processamento de Imagens
 
@@ -176,6 +240,86 @@ Uma cor pode ter múltiplos vínculos com diferentes tecidos, cada um com seus p
 - Header: `AB 44`
 - L, a, b: int16 little-endian dividido por 100
 - Offsets: L=8, a=10, b=12
+
+## Integração Shopee
+
+### Regras Críticas da API (Validadas em Produção 2026-02-09)
+
+⚠️ **seller_stock — OBRIGATÓRIO EM DOIS NÍVEIS**
+```typescript
+// Top-level do item:
+seller_stock: [{ stock: N }]
+// Dentro de CADA model:
+seller_stock: [{ stock: N }]
+// NÃO usar stock_info_v2 (campo de update_stock, não de add_item)
+```
+
+⚠️ **brand — AMBOS CAMPOS OBRIGATÓRIOS**
+```typescript
+// Sem marca:
+brand: { brand_id: 0, original_brand_name: "No Brand" }
+// Omitir original_brand_name causa erro!
+```
+
+⚠️ **image — Usar image_id, NÃO URL**
+```typescript
+// Item: image_id_list (IDs do upload)
+image: { image_id_list: ["sg-11134201-xxxx"] }
+// Variação: image_id (singular)
+image: { image_id: "sg-11134201-xxxx" }
+```
+
+⚠️ **Upload de Imagem**: `multipart/form-data`, NÃO JSON
+- Endpoint: `/api/v2/mediaspace/upload_image` (sem underscore em "mediaspace")
+- Compressão obrigatória: máx 2MB, JPG/PNG, Sharp comprime antes do upload
+
+⚠️ **Limpar Payloads**: SEMPRE rodar `removeUndefinedValues()` antes de `add_item`
+
+### Endpoints que NÃO existem
+- `get_attributes` → correto: **`get_attribute_tree`**
+- `support_size_chart` (só em `globalproductcb_seller_only`)
+- `media_space/upload_image` → correto: **`mediaspace/upload_image`**
+
+### Modelo de Preços
+
+**IMPORTANTE**: Preço é definido por TAMANHO, não por cor!
+- Collection `tamanhos`: define largura × altura + preço
+- Tier 1 = Cor (com imagem), Tier 2 = Tamanho (com preço)
+- Preço vem de `tamanhos.preco`, não de cor
+
+### Fluxo de Publicação (`publishProduct`)
+```
+1. Lê rascunho → 2. Verifica permissão → 3. Busca dados tecido
+4. Valida payload → 5. Status "publishing" → 6. ensureValidToken
+7. Busca logística → 8. Upload imagens principais → 9. Upload imagens variação
+10. Monta payload → 11. removeUndefinedValues() → 12. POST add_item
+13. Atualiza Firestore (item_id, status="created")
+```
+Dry-run: `POST /:id/publish?dry_run=true` (passos 1-11, retorna payload sem chamar API)
+
+### Configuração da Loja (803215808)
+- **Multi-warehouse**: NÃO (whitelist error)
+- **Logísticas**: SPX Entrega Rápida (90033), Shopee Xpress (91003), Retirada (90024)
+
+### OAuth e Tokens
+- Fluxo OAuth 2.0 completo em `Shopee.tsx`
+- Tokens em `shopee_shops` (backend write-only), refresh automático
+
+### Caches
+- `shopee_categories_cache`, `shopee_logistics_cache`: TTL 7 dias, backend-only
+
+### Referência Completa
+- `docs/SHOPEE_API_REFERENCIA.md` — Payload validado, regras e endpoints
+
+## Sistema de Catálogos
+
+### Catálogos Públicos
+
+- Collection: `catalogos`
+- Acesso: Read público (sem autenticação)
+- Link compartilhável: `/catalogo-publico/:id`
+- Conteúdo: Preview de tecidos com cores tingidas
+- Geração: Usuário autenticado cria, qualquer um visualiza
 
 ## Compatibilidade com Dados Antigos
 

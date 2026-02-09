@@ -7,8 +7,9 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
 ### Documentação Principal
 
 1. **[README.md](../README.md)** - Visão geral do projeto, instalação e configuração
-2. **[CONTEXT.md](../CONTEXT.md)** - Contexto técnico e padrões do projeto
-3. **[ARCHITECTURE.md](ARCHITECTURE.md)** - Arquitetura detalhada e fluxos de dados
+2. **[CLAUDE.md](../CLAUDE.md)** - Guia completo para Claude Code (comandos, arquitetura, regras críticas)
+3. **[CONTEXT.md](../CONTEXT.md)** - Contexto técnico e padrões do projeto
+4. **[ARCHITECTURE.md](ARCHITECTURE.md)** - Arquitetura detalhada e fluxos de dados
 
 ### Documentação Técnica
 
@@ -26,16 +27,18 @@ Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação
 ### Para Desenvolvedores Novos
 
 1. Comece pelo [README.md](../README.md) para entender a estrutura e instalação
-2. Leia [ARCHITECTURE.md](ARCHITECTURE.md) para entender a arquitetura
-3. Consulte [CONTEXT.md](../CONTEXT.md) para padrões e convenções
-4. Explore [COMPONENTS.md](COMPONENTS.md) e [HOOKS.md](HOOKS.md) para entender os componentes
+2. Leia [CLAUDE.md](../CLAUDE.md) para comandos essenciais e regras críticas
+3. Consulte [ARCHITECTURE.md](ARCHITECTURE.md) para entender a arquitetura
+4. Veja [CONTEXT.md](../CONTEXT.md) para padrões e convenções
+5. Explore [COMPONENTS.md](COMPONENTS.md) e [HOOKS.md](HOOKS.md) para entender os componentes
 
 ### Para Trabalhar em Features
 
-1. Consulte [CONTEXT.md](../CONTEXT.md) para padrões do projeto
-2. Veja exemplos em [COMPONENTS.md](COMPONENTS.md) e [HOOKS.md](HOOKS.md)
-3. Siga os padrões de UI otimista documentados em [ARCHITECTURE.md](ARCHITECTURE.md)
-4. Documente novas features seguindo o formato existente
+1. Leia [CLAUDE.md](../CLAUDE.md) para regras críticas (Firestore undefined, soft-delete, etc.)
+2. Consulte [CONTEXT.md](../CONTEXT.md) para padrões do projeto
+3. Veja exemplos em [COMPONENTS.md](COMPONENTS.md) e [HOOKS.md](HOOKS.md)
+4. Siga os padrões de UI otimista documentados em [ARCHITECTURE.md](ARCHITECTURE.md)
+5. Documente novas features seguindo o formato existente
 
 ### Para Entender um Módulo Específico
 

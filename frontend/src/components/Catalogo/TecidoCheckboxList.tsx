@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TecidoComVinculos } from '@/pages/Catalogo';
+import { TecidoComVinculos } from '@/lib/firebase/catalogos';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
@@ -90,7 +90,7 @@ export function TecidoCheckboxList({
 
               {/* Preview das cores (mini swatches) */}
               <div className="flex -space-x-1">
-                {vinculos.slice(0, 5).map((vinculo, idx) => (
+                {vinculos.slice(0, 5).map((vinculo: any, idx: number) => (
                   <div
                     key={vinculo.id}
                     className="w-6 h-6 rounded-full border-2 border-white shadow-sm"

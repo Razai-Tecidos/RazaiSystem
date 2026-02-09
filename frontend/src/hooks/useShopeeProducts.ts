@@ -264,11 +264,12 @@ export function useShopeeProducts() {
       console.error('Erro ao buscar valores padrão:', err);
       // Retorna valores padrão do sistema
       return {
-        peso: 0.1,
+        peso: 0.3,
+        estoque_padrao: 100,
         dimensoes: {
-          comprimento: 100,
-          largura: tecidoLargura ? tecidoLargura * 100 : 150,
-          altura: 1,
+          comprimento: 30,
+          largura: 30,
+          altura: 10,
         },
         usar_imagens_publicas: true,
       };

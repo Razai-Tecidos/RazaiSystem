@@ -370,16 +370,27 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
       return;
     }
     
-    const product = await productService.publishProduct(id, userId);
-    
+    const dryRun = req.query.dry_run === 'true';
+    const result = await productService.publishProduct(id, userId, dryRun);
+
+    if (dryRun) {
+      res.json({
+        success: true,
+        dry_run: true,
+        payload: result,
+        message: 'Dry-run: payload gerado sem chamar API Shopee',
+      });
+      return;
+    }
+
     res.json({
       success: true,
-      data: product,
+      data: result,
       message: 'Produto publicado com sucesso na Shopee',
     });
   } catch (error: any) {
-    console.error('Erro ao publicar produto:', error);
-    
+    console.error('[publish] ERRO:', error.message);
+
     if (error.message.includes('permissão')) {
       res.status(403).json({
         success: false,

@@ -1,24 +1,40 @@
 # RazaiSystem
 
-Projeto full-stack desenvolvido com Node.js, TypeScript, Firebase e React.
+Sistema completo de gerenciamento de tecidos, cores e estampas com integração ao marketplace Shopee. Desenvolvido com Firebase, TypeScript e React.
 
 ## Stack Tecnológica
 
-- **Backend**: Node.js + Express + TypeScript + Firebase Admin SDK
-- **Frontend**: React + Vite + TypeScript + Firebase Client SDK + shadcn/ui + Tailwind CSS
-- **Banco de Dados**: Firestore
+- **Backend**: Firebase Cloud Functions + Express + TypeScript
+- **Frontend**: React 18 + Vite + TypeScript + shadcn/ui + Tailwind CSS
+- **Banco de Dados**: Cloud Firestore
 - **Autenticação**: Firebase Authentication (Google Sign-In)
-- **Storage**: Firebase Storage
+- **Storage**: Firebase Cloud Storage
+- **Processamento de Imagens**: Sharp (Node.js)
+- **Integração Externa**: Shopee Open Platform API v2
 
 ## Estrutura do Projeto
 
 ```
 RazaiSystem/
-├── frontend/          # Aplicação React com Vite + shadcn/ui
-├── backend/          # API Node.js + Express + TypeScript
-│   └── config/       # Arquivos de configuração
-├── .cursor/         # Configurações do Cursor
-└── README.md
+├── functions/         # Firebase Cloud Functions (Backend API)
+│   └── src/
+│       ├── routes/    # 11 arquivos de rotas Express
+│       ├── services/  # Lógica de negócio
+│       ├── scheduled/ # Funções agendadas
+│       └── types/     # Tipos TypeScript
+├── frontend/          # Aplicação React + Vite
+│   └── src/
+│       ├── pages/     # 18 páginas React
+│       ├── components/# Componentes organizados por feature
+│       ├── hooks/     # 22 custom hooks
+│       └── lib/       # Utilitários e helpers
+├── backend/           # Backend local (desenvolvimento)
+├── docs/              # Documentação completa
+├── .cursor/           # Configurações e skills do Cursor IDE
+├── firestore.rules    # Regras de segurança Firestore
+├── firestore.indexes.json  # Índices compostos
+├── storage.rules      # Regras de segurança Storage
+└── firebase.json      # Configuração Firebase
 ```
 
 ## Pré-requisitos
@@ -40,81 +56,115 @@ firebase login
 ### 2. Instalar Dependências
 
 ```bash
-# Instalar dependências de todos os projetos (raiz, backend e frontend)
+# Instalar dependências de todos os projetos
 npm run install:all
 ```
 
 Ou instalar separadamente:
 
-```bash
-# Backend
-cd backend && npm install && cd ..
+```powershell
+# Cloud Functions (Backend)
+cd functions; npm install; cd ..
 
 # Frontend
-cd frontend && npm install && cd ..
+cd frontend; npm install; cd ..
+
+# Backend local (desenvolvimento)
+cd backend; npm install; cd ..
 ```
 
 ### 3. Rodar o Projeto
 
-**Opção 1: Rodar tudo junto (Recomendado)**
+**Desenvolvimento Local (Recomendado)**
 
 ```bash
-# Na raiz do projeto
+# Na raiz do projeto - inicia backend e frontend simultaneamente
 npm run dev
 ```
 
-Isso iniciará backend e frontend simultaneamente:
-- Backend: `http://localhost:5000`
-- Frontend: `http://localhost:3000`
+Isso iniciará:
+- **Backend local**: `http://localhost:5000`
+- **Frontend**: `http://localhost:3000`
 
-**Opção 2: Rodar separadamente**
+**Desenvolvimento com Cloud Functions (Emulador)**
 
-```bash
-# Terminal 1 - Backend
-npm run dev:backend
+```powershell
+# Terminal 1 - Emulador de Cloud Functions
+cd functions; npm run serve
 
 # Terminal 2 - Frontend
-npm run dev:frontend
+cd frontend; npm run dev
 ```
 
-### 4. Configurar Autenticação Google
+**Rodar separadamente**
+
+```powershell
+# Backend local
+cd backend; npm run dev
+
+# Frontend
+cd frontend; npm run dev
+```
+
+### 4. Configurar Firebase
 
 1. Acesse o [Firebase Console](https://console.firebase.google.com/)
-2. Vá em **Authentication** → **Sign-in method**
-3. Habilite **Google** como provedor de autenticação
-4. Configure o email autorizado em `backend/src/config/authorizedEmails.ts`
+2. Crie um novo projeto ou use um existente
+3. Configure os serviços:
+   - **Authentication** → Habilite Google Sign-In
+   - **Firestore Database** → Crie banco de dados
+   - **Storage** → Ative o Cloud Storage
+4. Baixe as credenciais:
+   - **Frontend**: Copie as configurações web para `.env` no frontend
+   - **Backend**: Baixe `firebase-adminsdk.json` e coloque em `backend/config/`
 
-### 5. Adicionar Seu Email Autorizado
+### 5. Deploy de Regras e Índices
 
-Edite o arquivo `backend/src/config/authorizedEmails.ts` e adicione seu email:
-
-```typescript
-const AUTHORIZED_EMAILS: string[] = [
-  'seu-email@gmail.com'  // Adicione seu email aqui
-];
+```bash
+# Deploy regras de segurança e índices
+firebase deploy --only firestore:rules,firestore:indexes,storage:rules
 ```
+
+### 6. Configurar Email Autorizado
+
+A autenticação é restrita por email. Configure emails autorizados no Firebase Console ou via código (detalhes em produção).
 
 ## Scripts
 
 ### Na Raiz do Projeto
 
-- `npm run dev` - Inicia backend e frontend simultaneamente
-- `npm run dev:backend` - Inicia apenas o backend
+- `npm run dev` - Inicia backend local e frontend simultaneamente
+- `npm run dev:backend` - Inicia apenas o backend local
 - `npm run dev:frontend` - Inicia apenas o frontend
 - `npm run build` - Compila backend e frontend
+- `npm run build:backend` - Compila apenas o backend
+- `npm run build:frontend` - Compila apenas o frontend
 - `npm run install:all` - Instala dependências de todos os projetos
 
-### Backend (dentro de `backend/`)
+### Cloud Functions (dentro de `functions/`)
+
+- `npm run build` - Compila TypeScript para Cloud Functions
+- `npm run serve` - Inicia emulador local de Cloud Functions
+- `npm run deploy` - Deploy das functions para produção
+- `npm test` - Executa testes
+
+### Backend Local (dentro de `backend/`)
 
 - `npm run dev` - Inicia servidor em modo desenvolvimento
 - `npm run build` - Compila TypeScript
 - `npm start` - Inicia servidor em produção
+- `npm test` - Executa testes
+- `npm run test:watch` - Testes em modo watch
+- `npm run test:coverage` - Testes com cobertura
 
 ### Frontend (dentro de `frontend/`)
 
 - `npm run dev` - Inicia servidor de desenvolvimento Vite
 - `npm run build` - Build de produção
 - `npm run preview` - Preview do build
+- `npm test` - Executa testes
+- `npm run test:watch` - Testes em modo watch
+- `npm run test:coverage` - Testes com cobertura
 
 ## Autenticação
 
@@ -144,17 +194,17 @@ app.get('/api/rota-protegida', authMiddleware, (req, res) => {
 
 ## Variáveis de Ambiente
 
-### Backend (.env)
+### Backend Local (.env em `backend/`)
 
-```
+```env
 PORT=5000
 NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
 ```
 
-### Frontend (.env)
+### Frontend (.env em `frontend/`)
 
-```
+```env
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=...
 VITE_FIREBASE_PROJECT_ID=razaisystem
@@ -163,6 +213,15 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
 VITE_FIREBASE_MEASUREMENT_ID=...
 ```
+
+### Cloud Functions
+
+Variáveis de ambiente configuradas via Firebase Console ou Firebase CLI:
+- Configurações Shopee (partner_id, partner_key, shop_id)
+- URLs de callback OAuth
+- Outras configurações sensíveis
+
+**Nota**: Cloud Functions não usa arquivo `.env`, use `firebase functions:config:set`
 
 ## Segurança
 
@@ -183,24 +242,37 @@ O projeto está configurado com:
 
 ## Estrutura Detalhada
 
-### Backend
+### Cloud Functions (Backend Principal)
 ```
-backend/
-├── config/              # Arquivos de configuração
-│   ├── firebase-adminsdk.json  # Credenciais Firebase (não commitado)
-│   └── authorizedEmails.ts     # Lista de emails autorizados
+functions/
 ├── src/
-│   ├── config/         # Configurações (Firebase, etc)
-│   │   ├── firebase.ts         # Inicialização Firebase Admin SDK
-│   │   └── authorizedEmails.ts # Lista de emails autorizados
-│   ├── routes/         # Rotas da API
-│   │   └── tecidos.routes.ts  # Rotas CRUD de tecidos
-│   ├── middleware/     # Middlewares
-│   │   └── auth.middleware.ts # Middleware de autenticação
-│   ├── types/          # Tipos TypeScript compartilhados
-│   │   └── tecido.types.ts    # Tipos relacionados a tecidos
-│   └── index.ts        # Entry point do servidor Express
-├── .env                # Variáveis de ambiente
+│   ├── routes/         # Rotas Express (11 arquivos)
+│   │   ├── tecidos.routes.ts         # CRUD de tecidos
+│   │   ├── cores.routes.ts           # CRUD de cores
+│   │   ├── tamanhos.routes.ts        # CRUD de tamanhos
+│   │   ├── shopee.routes.ts          # API Shopee (OAuth, produtos)
+│   │   ├── shopee-webhook.routes.ts  # Webhooks Shopee
+│   │   ├── shopee-products.routes.ts # Gerenciamento produtos
+│   │   ├── shopee-categories.routes.ts
+│   │   ├── shopee-logistics.routes.ts
+│   │   ├── shopee-preferences.routes.ts
+│   │   ├── shopee-templates.routes.ts
+│   │   └── shopee-item-limit.routes.ts
+│   ├── services/       # Lógica de negócio (11 arquivos)
+│   │   ├── shopee.service.ts         # Cliente API Shopee
+│   │   ├── shopee-product.service.ts # Gestão produtos
+│   │   ├── shopee-sync.service.ts    # Sincronização
+│   │   ├── shopee-webhook.service.ts # Processamento webhooks
+│   │   ├── image-compressor.service.ts # Compressão Sharp
+│   │   └── tamanho.service.ts
+│   ├── scheduled/      # Funções agendadas (cron)
+│   │   ├── maintain-disabled-colors.ts
+│   │   └── sync-shopee-products.ts
+│   ├── middleware/     # Middlewares Express
+│   │   └── auth.middleware.ts
+│   ├── types/          # Tipos TypeScript (6 arquivos)
+│   ├── config/         # Configurações Firebase e Shopee
+│   └── index.ts        # Entry point e export de functions
 └── package.json
 ```
 
@@ -208,172 +280,315 @@ backend/
 ```
 frontend/
 ├── src/
-│   ├── components/     # Componentes React
-│   │   ├── Layout/    # Componentes de layout
-│   │   │   ├── Header.tsx      # Header compartilhado
-│   │   │   └── BreadcrumbNav.tsx # Navegação breadcrumb
-│   │   ├── Tecidos/  # Componentes do módulo Tecidos
-│   │   │   ├── TecidosTable.tsx    # Tabela de tecidos
-│   │   │   └── TecidoFormModal.tsx # Modal de formulário
-│   │   └── ui/        # Componentes shadcn/ui
-│   │       ├── button.tsx
-│   │       ├── dialog.tsx
-│   │       ├── input.tsx
-│   │       ├── table.tsx
-│   │       ├── toast.tsx
-│   │       └── breadcrumb.tsx
-│   ├── pages/         # Páginas da aplicação
-│   │   ├── Login.tsx  # Página de login
-│   │   ├── Home.tsx   # Página inicial (protegida)
-│   │   └── Tecidos.tsx # Página de gerenciamento de tecidos
-│   ├── hooks/         # Custom hooks
-│   │   ├── useAuth.ts      # Hook de autenticação
-│   │   ├── useTecidos.ts   # Hook CRUD de tecidos
-│   │   ├── useSku.ts       # Hook de gerenciamento de SKU
-│   │   └── use-toast.ts   # Hook de notificações toast
-│   ├── context/       # Context API
-│   │   └── AuthContext.tsx  # Context de autenticação
-│   ├── lib/           # Utilitários
-│   │   ├── firebase/  # Funções Firebase
-│   │   │   └── tecidos.ts  # CRUD de tecidos no Firestore/Storage
-│   │   └── utils.ts   # Funções utilitárias
-│   ├── config/        # Configurações
-│   │   └── firebase.ts # Inicialização Firebase Client SDK
-│   ├── types/         # Tipos TypeScript
-│   │   └── tecido.types.ts # Tipos relacionados a tecidos
-│   ├── docs/          # Documentação
-│   │   └── TECIDOS.md # Documentação do módulo Tecidos
-│   ├── App.tsx        # Componente principal (roteamento)
-│   └── main.tsx       # Entry point
-├── .env               # Variáveis de ambiente Firebase
+│   ├── pages/          # Páginas React (18 arquivos)
+│   │   ├── Login.tsx
+│   │   ├── Home.tsx
+│   │   ├── Tecidos.tsx
+│   │   ├── Cores.tsx
+│   │   ├── EditarCor.tsx
+│   │   ├── Vinculos.tsx            # Gestão vínculos cor-tecido
+│   │   ├── EditarVinculo.tsx       # Editor Reinhard
+│   │   ├── CapturaCor.tsx          # Bluetooth colorímetro
+│   │   ├── Estampas.tsx
+│   │   ├── Tamanhos.tsx
+│   │   ├── Catalogo.tsx
+│   │   ├── CatalogoPublico.tsx
+│   │   ├── Shopee.tsx              # OAuth Shopee
+│   │   ├── AnunciosShopee.tsx      # Listagem anúncios
+│   │   ├── CriarAnuncioShopee.tsx  # Criar anúncio
+│   │   ├── PreferenciasShopee.tsx
+│   │   ├── TemplatesShopee.tsx
+│   │   ├── MLDiagnostico.tsx       # Diagnóstico ML
+│   │   └── Funcionarios/           # Módulo funcionários
+│   ├── components/     # Componentes organizados por feature
+│   │   ├── Layout/     # Header, BreadcrumbNav
+│   │   ├── Tecidos/    # Componentes tecidos
+│   │   ├── Cores/      # Componentes cores
+│   │   ├── Estampas/   # Componentes estampas
+│   │   ├── Shopee/     # Componentes integração Shopee
+│   │   ├── Catalogo/   # Componentes catálogo
+│   │   └── ui/         # shadcn/ui (37 componentes)
+│   ├── hooks/          # Custom hooks (22 arquivos)
+│   │   ├── useAuth.ts
+│   │   ├── useTecidos.ts
+│   │   ├── useCores.ts
+│   │   ├── useEstampas.ts
+│   │   ├── useTamanhos.ts
+│   │   ├── useCapturaCor.ts        # Bluetooth colorímetro
+│   │   ├── useShopee.ts            # Integração Shopee
+│   │   ├── useCatalogo.ts
+│   │   └── use-toast.ts
+│   ├── lib/            # Utilitários
+│   │   ├── firebase/   # CRUD Firestore
+│   │   ├── utils.ts    # Helpers gerais
+│   │   ├── colorUtils.ts  # Conversões RGB/LAB/HEX
+│   │   └── deltaE.ts   # Delta E 2000
+│   ├── context/        # React Context
+│   │   └── AuthContext.tsx
+│   ├── types/          # Tipos TypeScript (10 arquivos)
+│   ├── config/         # Configuração Firebase
+│   └── docs/           # Documentação features
+│       ├── TECIDOS.md
+│       ├── ESTAMPAS.md
+│       ├── CAPTURA_COR.md
+│       ├── REINHARD.md
+│       └── VINCULOS.md
+└── package.json
+```
+
+### Backend Local (Desenvolvimento)
+```
+backend/
+├── config/
+│   └── firebase-adminsdk.json  # Credenciais (gitignored)
+├── src/
+│   ├── config/         # Firebase e autorizações
+│   ├── routes/         # Rotas API
+│   ├── middleware/     # Auth middleware
+│   ├── services/       # Lógica de negócio
+│   └── types/          # Tipos compartilhados
 └── package.json
 ```
 
 ## Módulos Principais
 
-### Módulo de Tecidos
+### 1. Gerenciamento de Tecidos
 
-Sistema completo de gerenciamento de tecidos com:
-- CRUD completo (Create, Read, Update, Delete)
-- Tipos de tecido: Liso e Estampado
-- UI otimista para feedback rápido
+Sistema completo de CRUD de tecidos:
+- Tipos: Liso e Estampado
 - Upload de imagens para Firebase Storage
-- Sistema de SKU único e sequencial
-- Validação de formulários
-- Formatação brasileira (vírgula para decimais)
+- SKU automático sequencial (T001, T002...)
+- Formatação brasileira (vírgula para decimais, largura em metros)
+- Soft-delete (deletedAt)
 
-**Documentação completa**: `frontend/src/docs/TECIDOS.md`
+**Documentação**: `frontend/src/docs/TECIDOS.md`
 
-### Módulo de Estampas
+### 2. Sistema de Cores e Vínculos
 
-Sistema de gerenciamento de estampas vinculadas a tecidos estampados:
+**Captura de Cor via Bluetooth**
+- Integração com colorímetro LS173 via Web Bluetooth API
+- Captura automática de valores LAB
+- Validação de duplicatas com Delta E 2000
+- Resolução de conflitos (usar existente ou criar nova)
+
+**Gestão de Cores**
+- CRUD de cores (nome, HEX, LAB, SKU)
+- SKU automático por família (ex: "Azul Royal" → "AZ001")
+- Validação de nomes duplicados
+
+**Vínculos Cor-Tecido**
+- Relacionamento N:N entre cores e tecidos
+- SKU do vínculo: `TecidoSKU-CorSKU` (ex: "T007-AZ001")
+- Editor de tingimento Reinhard com sliders ajustáveis
+- Exportação XLSX com imagens embedded
+- Download ZIP de previews
+- Geração em lote de SKUs
+
+**Documentação**: `frontend/src/docs/CAPTURA_COR.md`, `frontend/src/docs/VINCULOS.md`, `frontend/src/docs/REINHARD.md`
+
+### 3. Estampas
+
+Sistema de gerenciamento de padrões estampados:
 - Cadastro individual ou em lote
-- SKU automático por família (primeira palavra do nome)
-- Vinculação com tecidos do tipo "Estampado"
-- Upload de imagens opcional
-- Seleção de tecido via chips interativos
-- Validação em tempo real no modo lote
+- SKU automático por família
+- Vinculação com tecidos estampados
+- Upload de imagens
 
-**Documentação completa**: `frontend/src/docs/ESTAMPAS.md`
+**Documentação**: `frontend/src/docs/ESTAMPAS.md`
 
-### Sistema de Navegação
+### 4. Tamanhos e Preços
 
-- **Header**: Componente compartilhado com logo clicável, informações do usuário e logout
-- **Breadcrumb**: Navegação hierárquica posicionada abaixo do header, na área cinza
-- Navegação entre páginas através de estado local
+- Definição de tamanhos personalizados (largura × altura)
+- Preços por tamanho (não por cor!)
+- Usado na criação de anúncios Shopee
 
-**Documentação de componentes**: `docs/COMPONENTS.md`
+### 5. Integração Shopee
 
-### Sistema de Autenticação
+**OAuth e Conexão**
+- Fluxo OAuth 2.0 completo
+- Refresh automático de tokens
+- Suporte multi-loja
 
-- Login com Google através do Firebase Authentication
-- Restrição de acesso por email autorizado
-- Proteção de rotas no backend
-- Context API para gerenciamento de estado de autenticação
+**Gerenciamento de Produtos**
+- Criação de anúncios com múltiplas variações
+- Upload automático de imagens (compressão Sharp)
+- Sincronização de estoque
+- Webhooks para atualizações em tempo real
+- Templates de anúncios reutilizáveis
 
-**Documentação de hooks**: `docs/HOOKS.md`
+**Funções Agendadas**
+- Sincronização diária de produtos
+- Manutenção de cores desabilitadas
+
+**Documentação**: `docs/SHOPEE*.md`
+
+### 6. Catálogos Públicos
+
+- Geração de catálogos compartilháveis
+- Links públicos (sem autenticação)
+- Preview de tecidos com cores tingidas
+
+### 7. Sistema de Navegação e UX
+
+- Header compartilhado com informações do usuário
+- Breadcrumb navegação hierárquica
+- UI otimista para feedback instantâneo
+- Toasts para notificações
+- Responsividade mobile
+
+**Documentação**: `docs/COMPONENTS.md`, `docs/HOOKS.md`, `docs/UX_RESPONSIVIDADE.md`
 
 ## Troubleshooting
 
-### Erro ao compilar frontend: "Property 'env' does not exist on type 'ImportMeta'"
-- **Solução**: O arquivo `src/vite-env.d.ts` já está criado com os tipos necessários
-- Se o erro persistir, verifique se o arquivo existe e está no lugar correto
+### Erro: Firestore "Cannot write 'undefined' to Firestore"
+- **Causa**: Firestore não aceita valores `undefined`
+- **Solução**: Use `null` ou omita o campo completamente
+- **Prevenção**: Use helper `removeUndefinedValues()` antes de salvar
 
-### Backend não inicia
-- Verifique se o arquivo `backend/config/firebase-adminsdk.json` existe
-- Verifique se o arquivo `.env` do backend está configurado
-- Verifique se a porta 5000 está disponível
+### Erro: "Missing Index" ao fazer query Firestore
+- **Causa**: Query com `where` + `orderBy` em campos diferentes exige índice composto
+- **Solução**: Copie o link do erro e crie o índice no Firebase Console, ou adicione em `firestore.indexes.json`
+
+### Cloud Functions não fazem deploy
+```powershell
+# Certifique-se de compilar primeiro
+cd functions
+npm run build
+cd ..
+firebase deploy --only functions
+```
 
 ### Frontend não conecta ao backend
-- Verifique se o backend está rodando na porta 5000
-- Verifique se o proxy no `vite.config.ts` está configurado corretamente
-- Verifique o CORS no backend
+- **Desenvolvimento local**: Backend deve estar em `http://localhost:5000`
+- **Produção**: API é servida via Cloud Functions em `/api/**`
+- Verifique o proxy no `vite.config.ts`
+- Verifique CORS nas Cloud Functions
 
-### Firebase não inicializa
-- **Backend**: Verifique se `backend/config/firebase-adminsdk.json` existe e é válido
-- **Frontend**: Verifique se todas as variáveis `VITE_FIREBASE_*` estão no arquivo `.env`
-- Verifique se as credenciais estão corretas no Firebase Console
+### Shopee OAuth não funciona
+- Verifique se as URLs de callback estão corretas no Partner Portal Shopee
+- Verifique se partner_id e partner_key estão configurados
+- Verifique logs das Cloud Functions para erros de API
+
+### Colorímetro Bluetooth não conecta
+- **Requisito**: Navegador com suporte Web Bluetooth (Chrome/Edge)
+- **HTTPS**: Web Bluetooth exige HTTPS (ou localhost)
+- Verifique se o dispositivo está ligado e em modo de pareamento
+- Verifique permissões do navegador
 
 ### Erro "Acesso negado" ao fazer login
-- Verifique se seu email está na lista de emails autorizados em `backend/src/config/authorizedEmails.ts`
-- Verifique se o Google Sign-In está habilitado no Firebase Console
+- Verifique se Google Sign-In está habilitado no Firebase Console
+- Verifique configuração de emails autorizados
+- Verifique regras do Firestore (`firestore.rules`)
 
-### Erros de import com paths (@/components)
-- Verifique se o `tsconfig.json` tem os paths configurados
-- Verifique se o `vite.config.ts` tem o alias `@` configurado
-- Reinicie o servidor de desenvolvimento
+### Erros de import com paths (@/components, @/lib)
+- Verifique `tsconfig.json` com paths configurados
+- Verifique `vite.config.ts` com alias `@` configurado
+- Reinicie o servidor de desenvolvimento (`npm run dev`)
+
+### Imagens não carregam do Storage
+- Verifique regras do Storage (`storage.rules`)
+- Verifique se usuário está autenticado
+- Verifique estrutura de pastas no Storage (ex: `tecidos/{id}/...`)
 
 ## Documentação Adicional
 
+### Arquitetura e Padrões
+- **[CLAUDE.md](CLAUDE.md)** - Guia completo para Claude Code (comandos, arquitetura, regras críticas)
+- **[CONTEXT.md](CONTEXT.md)** - Contexto técnico e decisões de design
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Arquitetura detalhada do sistema
+
+### Componentes e Código
 - **[COMPONENTS.md](docs/COMPONENTS.md)** - Documentação de componentes React
-- **[HOOKS.md](docs/HOOKS.md)** - Documentação de custom hooks
-- **[TECIDOS.md](frontend/src/docs/TECIDOS.md)** - Documentação completa do módulo de Tecidos
-- **[ESTAMPAS.md](frontend/src/docs/ESTAMPAS.md)** - Documentação do módulo de Estampas
-- **[CAPTURA_COR.md](frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor
-- **[REINHARD.md](frontend/src/docs/REINHARD.md)** - Documentação do algoritmo de tingimento
-- **[CONTEXT.md](CONTEXT.md)** - Contexto técnico e padrões do projeto
+- **[HOOKS.md](docs/HOOKS.md)** - Custom hooks React (22 hooks)
+- **[UX_RESPONSIVIDADE.md](docs/UX_RESPONSIVIDADE.md)** - Padrões de UX e responsividade
+
+### Features
+- **[TECIDOS.md](frontend/src/docs/TECIDOS.md)** - Módulo de tecidos
+- **[ESTAMPAS.md](frontend/src/docs/ESTAMPAS.md)** - Módulo de estampas
+- **[CAPTURA_COR.md](frontend/src/docs/CAPTURA_COR.md)** - Captura Bluetooth e gestão de cores
+- **[VINCULOS.md](frontend/src/docs/VINCULOS.md)** - Vínculos cor-tecido
+- **[REINHARD.md](frontend/src/docs/REINHARD.md)** - Algoritmo de tingimento
+
+### Shopee
+- **[SHOPEE.md](docs/SHOPEE.md)** - Visão geral da integração
+- **[SHOPEE_API_REFERENCIA.md](docs/SHOPEE_API_REFERENCIA.md)** - Referência completa da API
+- **[SHOPEE_ANUNCIOS.md](docs/SHOPEE_ANUNCIOS.md)** - Sistema de anúncios
+- **[SHOPEE_WEBHOOK_SETUP.md](docs/SHOPEE_WEBHOOK_SETUP.md)** - Configuração de webhooks
+- **[SHOPEE_STOCK_REVIEW.md](docs/SHOPEE_STOCK_REVIEW.md)** - Gestão de estoque
+
+### Deploy
+- **[DEPLOY_FIREBASE.md](docs/DEPLOY_FIREBASE.md)** - Guia completo de deploy Firebase
+- **[DEPLOY.md](docs/DEPLOY.md)** - Instruções gerais de deploy
 
 ## Regras de Segurança Firebase
 
-O projeto inclui arquivos de regras de segurança:
+O projeto inclui arquivos de regras de segurança versionados:
 
-- **firestore.rules**: Regras do Firestore
-  - Usuários autenticados podem ler/escrever em `tecidos`, `cores`, `estampas` e `sku_control`
-- **storage.rules**: Regras do Firebase Storage
-  - Usuários autenticados podem fazer upload/download em:
-    - `tecidos/{tecidoId}/...`
-    - `cores/{corId}/...`
-    - `estampas/{estampaId}/...`
+### firestore.rules
+Controla acesso ao Firestore:
+- **Collections com autenticação**: `tecidos`, `cores`, `cor_tecido`, `estampas`, `tamanhos`, `shopee_products`, `sku_control`
+- **Collections backend-only**: `shopee_shops`, `shopee_categories_cache`, `shopee_logistics_cache`
+- **Collections públicas**: `catalogos` (read-only)
+- **Soft-delete**: Todas as queries filtram `deletedAt == null`
 
-**Importante**: Aplique essas regras no Firebase Console após configurar o projeto.
+### storage.rules
+Controla acesso ao Cloud Storage:
+- Usuários autenticados podem upload/download em:
+  - `tecidos/{tecidoId}/**`
+  - `cores/{corId}/**`
+  - `estampas/{estampaId}/**`
+  - `catalogos/**` (read público)
+
+### firestore.indexes.json
+Define índices compostos necessários para queries complexas.
+
+**Deploy de regras:**
+```bash
+firebase deploy --only firestore:rules,firestore:indexes,storage:rules
+```
 
 ## Deploy em Produção
 
-O projeto está configurado para deploy completo no **Firebase Hosting**:
+O projeto é totalmente hospedado no **Firebase**:
 
-- **Frontend**: Servido via Firebase Hosting
-- **Backend**: Executado via Firebase Cloud Functions
-- **Banco de Dados**: Firebase Firestore
-- **Storage**: Firebase Storage
+- **Frontend**: Firebase Hosting (`frontend/dist/`)
+- **Backend**: Cloud Functions (Node.js 20)
+- **Banco de Dados**: Cloud Firestore
+- **Storage**: Cloud Storage
+- **Auth**: Firebase Authentication
 
-### Guia Completo de Deploy
+### Deploy Completo
 
-Consulte **[docs/DEPLOY_FIREBASE.md](docs/DEPLOY_FIREBASE.md)** para instruções detalhadas de deploy.
+```powershell
+# 1. Build do frontend
+cd frontend
+npm run build
+cd ..
 
-**Comandos rápidos:**
+# 2. Build das Cloud Functions
+cd functions
+npm run build
+cd ..
 
-```bash
-# Build e deploy completo
-npm run build:frontend
-npm run build:functions
+# 3. Deploy tudo
 firebase deploy
 
-# Ou apenas hosting
+# Ou deploy seletivo
 firebase deploy --only hosting
-
-# Ou apenas functions
 firebase deploy --only functions
+firebase deploy --only firestore:rules,firestore:indexes
+firebase deploy --only storage:rules
 ```
+
+### Primeira Configuração
+
+1. Crie projeto no Firebase Console
+2. Configure domínio personalizado (opcional)
+3. Configure Shopee OAuth callbacks para domínio de produção
+4. Deploy de regras e índices primeiro
+5. Deploy de functions e hosting
+
+**Documentação completa**: [docs/DEPLOY_FIREBASE.md](docs/DEPLOY_FIREBASE.md)
 
 ## Links Úteis
 
@@ -384,6 +599,35 @@ firebase deploy --only functions
 - [React Documentation](https://react.dev/)
 - [Tailwind CSS](https://tailwindcss.com/)
 
+## Notas Importantes
+
+### Ambiente Windows/PowerShell
+Este projeto é desenvolvido em ambiente Windows com PowerShell. Ao encadear comandos:
+- ✅ **Use ponto-e-vírgula**: `cd functions; npm run build; cd ..`
+- ❌ **NÃO use &&**: `cd functions && npm run build && cd ..` (sintaxe Bash)
+
+### Collections Firestore
+Todas as collections usam **soft-delete**:
+- Ao criar: `deletedAt: null`
+- Ao deletar: `deletedAt: serverTimestamp()`
+- Queries sempre filtram `where('deletedAt', '==', null)`
+
+### Valores no Firestore
+⚠️ **CRÍTICO**: Firestore rejeita valores `undefined`
+- Use `null` ou omita o campo
+- Use helper `removeUndefinedValues()` em payloads
+
+### SKU System
+- **Tecidos**: T001, T002, ... (sequencial simples)
+- **Cores**: AZ001, VE001, ... (família + sequencial)
+- **Vínculos**: T007-AZ001 (tecidoSKU-corSKU)
+- **Estampas**: Primeira palavra do nome + sequencial
+
+### Formatação Brasileira
+- **Decimais**: Vírgula para exibição, ponto para storage
+- **Largura**: Sempre em metros (não cm)
+- **Preços**: Por tamanho, não por cor
+
 ## Licença
 
-[Adicione sua licença aqui]
+ISC License

@@ -23,6 +23,7 @@ import { ExtendedDescriptionEditor } from '@/components/Shopee/ExtendedDescripti
 import { WholesaleConfig } from '@/components/Shopee/WholesaleConfig';
 import { SizeChartSelector } from '@/components/Shopee/SizeChartSelector';
 import { AdPreview } from '@/components/Shopee/AdPreview';
+import { generateBrandOverlay } from '@/lib/brandOverlay';
 import { FieldHint } from '@/components/Shopee/FieldHint';
 import { FiscalInfo } from '@/components/Shopee/FiscalInfo';
 import { 
@@ -96,11 +97,11 @@ export function CriarAnuncioShopee({
   const [selectedTamanhos, setSelectedTamanhos] = useState<string[]>([]);
   const [precoUnico, setPrecoUnico] = useState<number>(0);
   const [precosPorTamanho, setPrecosPorTamanho] = useState<Record<string, number>>({});
-  const [estoquePadrao, setEstoquePadrao] = useState<number>(0);
+  const [estoquePadrao, setEstoquePadrao] = useState<number>(100);
   const [categoriaId, setCategoriaId] = useState<number | null>(null);
   const [categoriaNome, setCategoriaNome] = useState<string>('');
-  const [peso, setPeso] = useState<number>(0.1);
-  const [dimensoes, setDimensoes] = useState({ comprimento: 100, largura: 150, altura: 1 });
+  const [peso, setPeso] = useState<number>(0.3);
+  const [dimensoes, setDimensoes] = useState({ comprimento: 30, largura: 30, altura: 10 });
   const [descricaoCustomizada, setDescricaoCustomizada] = useState<string>('');
   const [usarImagensPublicas, setUsarImagensPublicas] = useState<boolean>(true);
   const [imagensPrincipais, setImagensPrincipais] = useState<string[]>([]);
@@ -109,7 +110,7 @@ export function CriarAnuncioShopee({
   
   // Novos campos opcionais
   const [atributos, setAtributos] = useState<ProductAttributeValue[]>([]);
-  const [brandId, setBrandId] = useState<number | undefined>(undefined);
+  const [brandId, setBrandId] = useState<number | undefined>(0);
   const [brandNome, setBrandNome] = useState<string>('');
   const [logisticInfo, setLogisticInfo] = useState<Array<{ logistic_id: number; enabled: boolean; shipping_fee?: number; is_free?: boolean }>>([]);
   const [extendedDescEnabled, setExtendedDescEnabled] = useState(false);
@@ -118,7 +119,8 @@ export function CriarAnuncioShopee({
   const [wholesaleTiers, setWholesaleTiers] = useState<WholesaleTier[]>([]);
   const [sizeChartId, setSizeChartId] = useState<number | undefined>(undefined);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  
+  const [overlayImages, setOverlayImages] = useState<Record<string, string>>({});
+
   // Informações fiscais
   const [ncmPadrao, setNcmPadrao] = useState<string>('58013600');
   
@@ -254,7 +256,7 @@ export function CriarAnuncioShopee({
 
   // Quando vínculos são carregados, configura cores filtrando pelo tecido selecionado
   useEffect(() => {
-    if (vinculos.length > 0 && selectedTecido && !productId) {
+    if (vinculos.length > 0 && selectedTecido && !productId && coresConfig.length === 0) {
       const vinculosDoTecido = vinculos.filter(v => v.tecidoId === selectedTecido.id);
       const cores = vinculosDoTecido.map(v => ({
         cor_id: v.corId,
@@ -266,7 +268,7 @@ export function CriarAnuncioShopee({
       }));
       setCoresConfig(cores);
     }
-  }, [vinculos, selectedTecido, estoquePadrao, productId]);
+  }, [vinculos, selectedTecido, productId, estoquePadrao, coresConfig.length]);
 
   // Toggle seleção de cor
   const toggleCorSelection = (corId: string) => {
@@ -398,6 +400,7 @@ export function CriarAnuncioShopee({
       imagens_principais: imagensPrincipais.length > 0 ? imagensPrincipais : undefined,
       atributos: atributos.length > 0 ? atributos : undefined,
       brand_id: brandId,
+      brand_nome: brandNome || undefined,
       size_chart_id: sizeChartId,
       description_type: extendedDescEnabled ? 'extended' : 'normal',
       extended_description: extendedDescEnabled ? extendedDescription : undefined,
@@ -500,6 +503,20 @@ export function CriarAnuncioShopee({
     }
     return 100;
   }, [currentStep, selectedTecido, selectedCores, temPrecoValido, estoquePadrao, categoriaId, peso, dimensoes]);
+
+  // Gerar overlays de marca quando entrar no preview
+  useEffect(() => {
+    if (currentStep !== 'preview') return;
+    selectedCores.forEach(cor => {
+      if (cor.imagem_url && !overlayImages[cor.cor_id]) {
+        generateBrandOverlay(cor.imagem_url, cor.cor_nome).then(dataUrl => {
+          setOverlayImages(prev => ({ ...prev, [cor.cor_id]: dataUrl }));
+        }).catch(() => {
+          // Silencioso: se falhar, mostra imagem original
+        });
+      }
+    });
+  }, [currentStep, selectedCores]);
 
   // Filtrar categorias por busca
   const filteredCategories = useMemo(() => {
@@ -1555,17 +1572,17 @@ export function CriarAnuncioShopee({
                   {/* Imagens */}
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <h3 className="font-medium mb-2">Imagens das Variações</h3>
-                    <div className="grid grid-cols-4 gap-2">
-                      {selectedCores.slice(0, 8).map(cor => (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                      {selectedCores.map(cor => (
                         <div key={cor.cor_id} className="relative group">
                           {cor.imagem_url ? (
                             <img
-                              src={cor.imagem_url}
+                              src={overlayImages[cor.cor_id] || cor.imagem_url}
                               alt={cor.cor_nome}
-                              className="w-full h-16 object-cover rounded"
+                              className="w-full aspect-square object-cover rounded"
                             />
                           ) : (
-                            <div className="w-full h-16 bg-red-50 border border-red-200 rounded flex items-center justify-center">
+                            <div className="w-full aspect-square bg-red-50 border border-red-200 rounded flex items-center justify-center">
                               <ImageIcon className="w-6 h-6 text-red-400" />
                             </div>
                           )}

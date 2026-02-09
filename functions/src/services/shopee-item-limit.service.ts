@@ -165,41 +165,20 @@ export async function getSizeCharts(shopId: number): Promise<Array<{
 }
 
 /**
- * Verifica se a categoria suporta size chart via API support_size_chart
+ * Verifica se a categoria suporta size chart
+ * Nota: A API /api/v2/product/support_size_chart nao existe no modulo product
+ * (apenas em globalproductcb_seller_only). Retornamos true por padrao
+ * e deixamos a validacao para a API add_item.
  */
 export async function checkSizeChartSupport(shopId: number, categoryId: number): Promise<{
   supported: boolean;
   sizeChartType?: string;
 }> {
-  try {
-    const accessToken = await ensureValidToken(shopId);
-    
-    const response = await callShopeeApi({
-      path: '/api/v2/product/support_size_chart',
-      method: 'GET',
-      shopId,
-      accessToken,
-      query: {
-        category_id: categoryId,
-      },
-    }) as {
-      error?: string;
-      response?: {
-        support_size_chart: boolean;
-        size_chart_type?: string;
-      };
-    };
-    
-    if (response.error) {
-      return { supported: false };
-    }
-    
-    return {
-      supported: response.response?.support_size_chart || false,
-      sizeChartType: response.response?.size_chart_type,
-    };
-  } catch (error: any) {
-    console.warn('Erro ao verificar suporte a size chart:', error.message);
-    return { supported: false };
-  }
+  // A API support_size_chart nao existe no modulo product (apenas cross-border)
+  // Retornamos supported=true para permitir selecao de size chart
+  // A API add_item validara se o size chart e aplicavel
+  return {
+    supported: true,
+    sizeChartType: undefined,
+  };
 }

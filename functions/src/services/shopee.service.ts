@@ -197,10 +197,11 @@ export async function ensureValidToken(shopId: number): Promise<string> {
   const expiresAt = shopData.tokenExpiresAt.toMillis();
 
   if (now < expiresAt) {
+    console.log(`[ensureValidToken] Token valido para loja ${shopId}, expira em ${Math.round((expiresAt - now) / 60000)} min`);
     return shopData.accessToken;
   }
 
-  console.log(`Renovando token para loja ${shopId}...`);
+  console.log(`[ensureValidToken] Token EXPIRADO para loja ${shopId}, renovando...`);
 
   const tokenResponse = await refreshAccessToken(shopId, shopData.refreshToken);
 
@@ -263,12 +264,17 @@ export async function callShopeeApi(request: ShopeeApiRequest): Promise<unknown>
 
     return response.data;
   } catch (error: any) {
-    console.error(`[ShopeeAPI] ${request.path} - Request failed:`, {
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message,
-    });
-    throw error;
+    const shopeeError = error.response?.data?.error || '';
+    const shopeeMessage = error.response?.data?.message || error.message;
+    const httpStatus = error.response?.status || 'N/A';
+
+    console.error(`[ShopeeAPI] ${request.path} - FALHOU: status=${httpStatus}, error=${shopeeError}, message=${shopeeMessage}`);
+
+    // Propaga mensagem clara ao invés do objeto axios inteiro
+    const errorMsg = shopeeError
+      ? `Erro Shopee (${request.path}): ${shopeeError} - ${shopeeMessage}`
+      : `Erro ao chamar Shopee API (${request.path}): ${shopeeMessage}`;
+    throw new Error(errorMsg);
   }
 }
 
@@ -302,6 +308,7 @@ export async function uploadImageToShopeeMultipart(
     filename,
     contentType: 'image/jpeg', // Shopee aceita JPEG, PNG
   });
+  formData.append('scene', 'normal');
 
   // Parâmetros da query (assinatura HMAC)
   const params = {
@@ -329,12 +336,15 @@ export async function uploadImageToShopeeMultipart(
 
     return response.data;
   } catch (error: any) {
-    console.error(`[ShopeeAPI] ${path} - Request failed:`, {
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message,
-    });
-    throw error;
+    const shopeeError = error.response?.data?.error || '';
+    const shopeeMessage = error.response?.data?.message || error.message;
+    const httpStatus = error.response?.status || 'N/A';
+    console.error(`[ShopeeAPI] ${path} - FALHOU: status=${httpStatus}, error=${shopeeError}, message=${shopeeMessage}`);
+
+    const errorMsg = shopeeError
+      ? `Erro Shopee upload (${path}): ${shopeeError} - ${shopeeMessage}`
+      : `Erro upload imagem (${path}): HTTP ${httpStatus} - ${shopeeMessage}`;
+    throw new Error(errorMsg);
   }
 }
 

@@ -134,29 +134,26 @@ export async function getDefaultValues(
   const preco_base = preferences?.preco_base_padrao 
     ?? preferences?.ultimos_valores?.preco_base;
   
-  const estoque_padrao = preferences?.estoque_padrao_padrao 
-    ?? preferences?.ultimos_valores?.estoque_padrao;
-  
-  const categoria_id = preferences?.categoria_id_padrao 
+  const estoque_padrao = preferences?.estoque_padrao_padrao
+    ?? preferences?.ultimos_valores?.estoque_padrao
+    ?? SYSTEM_DEFAULTS.estoque_padrao;
+
+  const categoria_id = preferences?.categoria_id_padrao
     ?? preferences?.ultimos_valores?.categoria_id;
-  
-  const peso = preferences?.peso_padrao 
-    ?? preferences?.ultimos_valores?.peso 
+
+  const peso = preferences?.peso_padrao
+    ?? preferences?.ultimos_valores?.peso
     ?? SYSTEM_DEFAULTS.peso;
-  
-  // Para largura: preferência > tecido > último valor > padrão
-  const largura = preferences?.dimensoes_padrao?.largura 
-    ?? (tecidoLargura ? tecidoLargura * 100 : undefined) // Converte metros para cm
-    ?? preferences?.ultimos_valores?.dimensoes?.largura 
-    ?? 150; // Padrão 1.5m em cm
-  
+
   const dimensoes = {
-    comprimento: preferences?.dimensoes_padrao?.comprimento 
-      ?? preferences?.ultimos_valores?.dimensoes?.comprimento 
+    comprimento: preferences?.dimensoes_padrao?.comprimento
+      ?? preferences?.ultimos_valores?.dimensoes?.comprimento
       ?? SYSTEM_DEFAULTS.comprimento,
-    largura,
-    altura: preferences?.dimensoes_padrao?.altura 
-      ?? preferences?.ultimos_valores?.dimensoes?.altura 
+    largura: preferences?.dimensoes_padrao?.largura
+      ?? preferences?.ultimos_valores?.dimensoes?.largura
+      ?? SYSTEM_DEFAULTS.largura,
+    altura: preferences?.dimensoes_padrao?.altura
+      ?? preferences?.ultimos_valores?.dimensoes?.altura
       ?? SYSTEM_DEFAULTS.altura,
   };
   

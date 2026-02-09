@@ -86,8 +86,8 @@ export function BrandSelector({ shopId, categoryId, value, onChange }: BrandSele
           className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm cursor-pointer flex items-center justify-between"
           onClick={() => setIsOpen(!isOpen)}
         >
-          <span className={selectedBrand ? 'text-gray-900' : 'text-gray-400'}>
-            {selectedBrand ? selectedBrand.display_brand_name : 'Selecione a marca...'}
+          <span className={selectedBrand || value === 0 ? 'text-gray-900' : 'text-gray-400'}>
+            {value === 0 ? 'Sem marca' : selectedBrand ? selectedBrand.display_brand_name : 'Selecione a marca...'}
           </span>
           <Search className="w-4 h-4 text-gray-400" />
         </div>
@@ -103,18 +103,18 @@ export function BrandSelector({ shopId, categoryId, value, onChange }: BrandSele
               />
             </div>
             <div className="max-h-48 overflow-y-auto">
-              {!isMandatory && (
-                <div
-                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm text-gray-500"
-                  onClick={() => {
-                    onChange(undefined, '');
-                    setIsOpen(false);
-                    setSearchTerm('');
-                  }}
-                >
-                  Nenhuma marca
-                </div>
-              )}
+              <div
+                className={`px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm ${
+                  value === 0 ? 'bg-blue-50 text-blue-800' : 'text-gray-500'
+                }`}
+                onClick={() => {
+                  onChange(0, 'No Brand');
+                  setIsOpen(false);
+                  setSearchTerm('');
+                }}
+              >
+                Sem marca
+              </div>
               {filteredBrands.map(brand => (
                 <div
                   key={brand.brand_id}

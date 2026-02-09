@@ -55,7 +55,7 @@ async function fetchCategoriesFromShopee(shopId: number): Promise<ShopeeCategory
     shopId,
     accessToken,
     query: {
-      language: 'pt',
+      language: 'pt-BR',
     },
   }) as {
     error?: string;
@@ -174,13 +174,13 @@ export async function getCategoryAttributes(shopId: number, categoryId: number):
   const accessToken = await ensureValidToken(shopId);
   
   const response = await callShopeeApi({
-    path: '/api/v2/product/get_attributes',
+    path: '/api/v2/product/get_attribute_tree',
     method: 'GET',
     shopId,
     accessToken,
     query: {
       category_id: categoryId,
-      language: 'pt',
+      language: 'pt-BR',
     },
   }) as {
     error?: string;
@@ -227,7 +227,7 @@ export async function getCategoryBrands(
       status,
       page_size: pageSize,
       offset,
-      language: 'pt',
+      language: 'pt-BR',
     },
   }) as {
     error?: string;

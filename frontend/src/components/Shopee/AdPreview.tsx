@@ -11,6 +11,7 @@ import {
   ShoppingCart,
 } from 'lucide-react';
 import { WholesaleTier } from '@/types/shopee-product.types';
+import { generateBrandOverlay } from '@/lib/brandOverlay';
 
 interface AdPreviewData {
   nome: string;
@@ -35,6 +36,7 @@ export function AdPreview({ data, onClose }: AdPreviewProps) {
   const [currentImage, setCurrentImage] = useState(0);
   const [selectedCor, setSelectedCor] = useState(0);
   const [selectedTamanho, setSelectedTamanho] = useState(0);
+  const [overlayImages, setOverlayImages] = useState<Record<number, string>>({});
 
   // Fechar com ESC
   useEffect(() => {
@@ -47,9 +49,26 @@ export function AdPreview({ data, onClose }: AdPreviewProps) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  // Gerar overlays de marca nas imagens de variação
+  useEffect(() => {
+    data.cores.forEach((cor, i) => {
+      if (cor.imagem && !overlayImages[i]) {
+        generateBrandOverlay(cor.imagem, cor.nome).then(dataUrl => {
+          setOverlayImages(prev => ({ ...prev, [i]: dataUrl }));
+        }).catch(() => {
+          // Silencioso: se falhar, mostra imagem original
+        });
+      }
+    });
+  }, [data.cores]);
+
+  const corImages = data.cores
+    .map((c, i) => (c.imagem ? (overlayImages[i] || c.imagem) : null))
+    .filter((url): url is string => url !== null);
+
   const allImages = [
     ...data.imagensPrincipais,
-    ...data.cores.filter(c => c.imagem).map(c => c.imagem!),
+    ...corImages,
   ];
 
   const nextImage = () => {

@@ -17,13 +17,13 @@ import { Loader2, FileDown, Link2, Copy, Check, Palette, Image as ImageIcon } fr
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { agruparVinculosPorTecido, TecidoComVinculos } from '@/lib/firebase/catalogos';
+import { agruparVinculosPorTecido } from '@/lib/firebase/catalogos';
 
 interface CatalogoProps {
   onNavigateHome?: () => void;
 }
 
-// Tipo para agrupar estampas por tecido base
+// Tipo para agrupar estampas por tecido base (exportado para uso em componentes)
 export interface TecidoComEstampas {
   tecido: Tecido;
   estampas: Estampa[];

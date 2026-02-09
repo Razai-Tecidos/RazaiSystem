@@ -141,42 +141,51 @@ export async function buildLogisticInfoForProduct(
   }
   
   const logisticInfo: LogisticsInfo[] = [];
-  
+
+  console.log(`[buildLogisticInfo] peso=${peso}kg, dimensoes=${JSON.stringify(dimensoes)}, enabledChannels=${enabledChannels.length}`);
+
   for (const channel of enabledChannels) {
+    let skipped = false;
+
     // Verifica se o produto está dentro dos limites de peso
+    // Shopee API retorna weight_limit em kg (mesma unidade do produto)
     if (channel.weight_limit) {
-      const pesoGramas = peso * 1000;
-      if (pesoGramas < channel.weight_limit.item_min_weight || 
-          pesoGramas > channel.weight_limit.item_max_weight) {
-        continue; // Pula este canal se o peso não está dentro dos limites
+      if (peso < channel.weight_limit.item_min_weight ||
+          peso > channel.weight_limit.item_max_weight) {
+        console.log(`[buildLogisticInfo] Canal ${channel.logistics_channel_name} (${channel.logistics_channel_id}) - PESO fora: ${peso}kg vs min=${channel.weight_limit.item_min_weight}, max=${channel.weight_limit.item_max_weight}`);
+        skipped = true;
       }
     }
-    
+
     // Verifica se o produto está dentro dos limites de dimensão
-    if (channel.item_max_dimension) {
+    if (!skipped && channel.item_max_dimension) {
       if (dimensoes.comprimento > channel.item_max_dimension.length ||
           dimensoes.largura > channel.item_max_dimension.width ||
           dimensoes.altura > channel.item_max_dimension.height) {
-        continue; // Pula este canal se as dimensões excedem o limite
+        console.log(`[buildLogisticInfo] Canal ${channel.logistics_channel_name} (${channel.logistics_channel_id}) - DIMENSAO fora: ${JSON.stringify(dimensoes)} vs max=${JSON.stringify(channel.item_max_dimension)}`);
+        skipped = true;
       }
     }
-    
+
+    if (skipped) continue;
+
     // Adiciona o canal à lista
     const info: LogisticsInfo = {
       logistic_id: channel.logistics_channel_id,
       enabled: true,
     };
-    
+
     // Se o canal tem tamanhos, seleciona o primeiro disponível
     if (channel.size_list && channel.size_list.length > 0) {
       info.size_id = channel.size_list[0].size_id;
     }
-    
+
     logisticInfo.push(info);
+    console.log(`[buildLogisticInfo] Canal ${channel.logistics_channel_name} (${channel.logistics_channel_id}) - OK`);
   }
-  
+
   if (logisticInfo.length === 0) {
-    throw new Error('Nenhum canal de logística compatível com as dimensões/peso do produto.');
+    throw new Error(`Nenhum canal de logística compatível com peso=${peso}kg e dimensões=${dimensoes.comprimento}x${dimensoes.largura}x${dimensoes.altura}cm. Total canais habilitados: ${enabledChannels.length}`);
   }
   
   return logisticInfo;

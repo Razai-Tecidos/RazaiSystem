@@ -6,7 +6,8 @@ import {
   Image,
   StyleSheet,
 } from '@react-pdf/renderer';
-import { TecidoComVinculos, TecidoComEstampas } from '@/pages/Catalogo';
+import { TecidoComVinculos } from '@/lib/firebase/catalogos';
+import { TecidoComEstampas } from '@/pages/Catalogo';
 import { CorTecido } from '@/types/cor.types';
 import { Estampa } from '@/types/estampa.types';
 import { Tecido } from '@/types/tecido.types';
