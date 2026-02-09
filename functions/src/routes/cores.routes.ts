@@ -31,14 +31,14 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     console.error('Erro ao buscar cores:', error);
     return res.status(500).json({
       success: false,
-      error: 'Erro ao buscar cores',
+      error: `Erro ao buscar cores: ${error.message || 'erro desconhecido'}`,
     });
   }
 });
 
 /**
  * GET /api/cores/:id
- * Busca uma cor específica
+ * Busca uma cor específica (ignora soft-deleted)
  */
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -52,18 +52,27 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       });
     }
 
+    // Verificar soft-delete
+    const data = doc.data();
+    if (data?.deletedAt) {
+      return res.status(404).json({
+        success: false,
+        error: 'Cor não encontrada',
+      });
+    }
+
     return res.json({
       success: true,
       data: {
         id: doc.id,
-        ...doc.data(),
+        ...data,
       },
     });
   } catch (error: any) {
     console.error('Erro ao buscar cor:', error);
     return res.status(500).json({
       success: false,
-      error: 'Erro ao buscar cor',
+      error: `Erro ao buscar cor: ${error.message || 'erro desconhecido'}`,
     });
   }
 });
@@ -77,27 +86,39 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     const data: CreateCorRequest = req.body;
 
     // Validações básicas
-    if (!data.nome) {
+    if (!data.nome?.trim()) {
       return res.status(400).json({
         success: false,
         error: 'Nome é obrigatório',
       });
     }
 
+    if (data.nome.trim().length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nome deve ter pelo menos 3 caracteres',
+      });
+    }
+
     // Validar código hexadecimal se fornecido
-    if (data.codigoHex && !/^#[0-9A-F]{6}$/i.test(data.codigoHex)) {
+    if (data.codigoHex && !/^#[0-9A-F]{6}$/i.test(data.codigoHex.trim())) {
       return res.status(400).json({
         success: false,
         error: 'Código hexadecimal inválido. Use o formato #RRGGBB',
       });
     }
 
-    const corData = {
-      ...data,
+    // Construir objeto explicitamente (sem spread operator)
+    const corData: Record<string, unknown> = {
+      nome: data.nome.trim(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       deletedAt: null,
     };
+
+    if (data.codigoHex) {
+      corData.codigoHex = data.codigoHex.trim();
+    }
 
     const docRef = await db.collection('cores').add(corData);
     const createdDoc = await docRef.get();
@@ -113,7 +134,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     console.error('Erro ao criar cor:', error);
     return res.status(500).json({
       success: false,
-      error: 'Erro ao criar cor',
+      error: `Erro ao criar cor: ${error.message || 'erro desconhecido'}`,
     });
   }
 });
@@ -137,18 +158,41 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
       });
     }
 
+    // Verificar soft-delete
+    if (doc.data()?.deletedAt) {
+      return res.status(404).json({
+        success: false,
+        error: 'Cor não encontrada',
+      });
+    }
+
+    // Validações condicionais
+    if (data.nome !== undefined) {
+      if (!data.nome.trim() || data.nome.trim().length < 3) {
+        return res.status(400).json({
+          success: false,
+          error: 'Nome deve ter pelo menos 3 caracteres',
+        });
+      }
+    }
+
     // Validar código hexadecimal se fornecido
-    if (data.codigoHex && !/^#[0-9A-F]{6}$/i.test(data.codigoHex)) {
+    if (data.codigoHex && !/^#[0-9A-F]{6}$/i.test(data.codigoHex.trim())) {
       return res.status(400).json({
         success: false,
         error: 'Código hexadecimal inválido. Use o formato #RRGGBB',
       });
     }
 
-    const updateData = {
-      ...data,
+    // Construir objeto de atualização explicitamente
+    const updateData: Record<string, unknown> = {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+
+    if (data.nome !== undefined) updateData.nome = data.nome.trim();
+    if (data.codigoHex !== undefined) {
+      updateData.codigoHex = data.codigoHex ? data.codigoHex.trim() : admin.firestore.FieldValue.delete();
+    }
 
     await docRef.update(updateData);
     const updatedDoc = await docRef.get();
@@ -164,7 +208,7 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
     console.error('Erro ao atualizar cor:', error);
     return res.status(500).json({
       success: false,
-      error: 'Erro ao atualizar cor',
+      error: `Erro ao atualizar cor: ${error.message || 'erro desconhecido'}`,
     });
   }
 });
@@ -187,6 +231,14 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
       });
     }
 
+    // Verificar se já foi excluído
+    if (doc.data()?.deletedAt) {
+      return res.status(404).json({
+        success: false,
+        error: 'Cor já foi excluída',
+      });
+    }
+
     // Soft delete
     await docRef.update({
       deletedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -200,7 +252,7 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
     console.error('Erro ao excluir cor:', error);
     return res.status(500).json({
       success: false,
-      error: 'Erro ao excluir cor',
+      error: `Erro ao excluir cor: ${error.message || 'erro desconhecido'}`,
     });
   }
 });

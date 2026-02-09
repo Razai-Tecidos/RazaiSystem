@@ -99,6 +99,7 @@ export interface ShopeeProduct {
   
   // Configurações de preço e estoque
   preco_base: number;
+  precos_por_tamanho?: Record<string, number> | null; // Preço por tamanho (quando há tamanhos)
   estoque_padrao: number;
   
   // Categoria
@@ -173,11 +174,11 @@ export interface CreateShopeeProductData {
   tecido_id: string;
   cores: Array<{
     cor_id: string;
-    preco?: number;
     estoque: number;
   }>;
   tamanhos?: string[]; // IDs dos tamanhos selecionados
-  preco_base: number;
+  precos_por_tamanho?: Record<string, number>; // Preço por tamanho (tamanhoId -> preço)
+  preco_base: number; // Preço único quando não há tamanhos
   estoque_padrao: number;
   categoria_id: number;
   peso: number;
@@ -248,7 +249,7 @@ export interface ShopeeUploadImageResponse {
  */
 export interface ShopeeCategory {
   id: number;
-  parent_category_id?: number;
+  parent_category_id?: number | null;
   original_category_name: string;
   display_name: string;
   has_children: boolean;

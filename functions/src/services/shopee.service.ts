@@ -1,4 +1,5 @@
 import axios from 'axios';
+import FormData from 'form-data';
 import admin from '../config/firebase';
 import {
   getShopeeCredentials,
@@ -263,6 +264,72 @@ export async function callShopeeApi(request: ShopeeApiRequest): Promise<unknown>
     return response.data;
   } catch (error: any) {
     console.error(`[ShopeeAPI] ${request.path} - Request failed:`, {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
+    throw error;
+  }
+}
+
+/**
+ * Faz upload de imagem para Shopee Media Space usando multipart/form-data
+ * Este endpoint requer multipart/form-data, não JSON com base64
+ */
+export async function uploadImageToShopeeMultipart(
+  shopId: number,
+  accessToken: string,
+  imageBuffer: Buffer,
+  filename: string = 'image.jpg'
+): Promise<unknown> {
+  const { partnerId, partnerKey } = getShopeeCredentials();
+  const { host } = getShopeeUrls();
+  const timestamp = getTimestamp();
+  const path = '/api/v2/media_space/upload_image';
+
+  const sign = generateShopeeSign(
+    partnerKey,
+    partnerId,
+    path,
+    timestamp,
+    accessToken,
+    shopId
+  );
+
+  // Cria FormData com a imagem como arquivo binário
+  const formData = new FormData();
+  formData.append('image', imageBuffer, {
+    filename,
+    contentType: 'image/jpeg', // Shopee aceita JPEG, PNG
+  });
+
+  // Parâmetros da query (assinatura HMAC)
+  const params = {
+    partner_id: partnerId,
+    timestamp,
+    sign,
+    access_token: accessToken,
+    shop_id: shopId,
+  };
+
+  const url = `${host}${path}`;
+
+  try {
+    const response = await axios.post(url, formData, {
+      params,
+      headers: {
+        ...formData.getHeaders(), // Inclui Content-Type com boundary
+      },
+      timeout: 60000, // 60 segundos para upload de imagem
+    });
+
+    if (response.data?.error) {
+      console.error(`[ShopeeAPI] ${path} - Error:`, response.data.error, response.data.message);
+    }
+
+    return response.data;
+  } catch (error: any) {
+    console.error(`[ShopeeAPI] ${path} - Request failed:`, {
       status: error.response?.status,
       data: error.response?.data,
       message: error.message,

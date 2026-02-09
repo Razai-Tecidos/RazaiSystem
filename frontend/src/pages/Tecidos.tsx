@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTecidos } from '@/hooks/useTecidos';
 import { TecidosTable } from '@/components/Tecidos/TecidosTable';
 import { TecidoFormModal } from '@/components/Tecidos/TecidoFormModal';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Plus } from 'lucide-react';
-import { Tecido, CreateTecidoData, UpdateTecidoData } from '@/types/tecido.types';
+import { Plus, Search } from 'lucide-react';
+import { Tecido, CreateTecidoData, UpdateTecidoData, TipoTecido } from '@/types/tecido.types';
 import { Header } from '@/components/Layout/Header';
 import { BreadcrumbNav } from '@/components/Layout/BreadcrumbNav';
 import { migrateTecidosTipo } from '@/lib/firebase/tecidos';
@@ -21,6 +22,10 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
+  // Busca e filtro
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterTipo, setFilterTipo] = useState<TipoTecido | 'todos'>('todos');
+
   // Migração única: adicionar tipo 'liso' aos tecidos existentes
   useEffect(() => {
     const runMigration = async () => {
@@ -31,7 +36,7 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
         const count = await migrateTecidosTipo();
         if (count > 0) {
           console.log(`Migração: ${count} tecidos atualizados para tipo 'liso'`);
-          loadTecidos(); // Recarrega a lista
+          loadTecidos();
         }
         localStorage.setItem(migrationKey, 'true');
       } catch (error) {
@@ -41,6 +46,27 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
     
     runMigration();
   }, [loadTecidos]);
+
+  // Filtrar tecidos
+  const filteredTecidos = useMemo(() => {
+    let result = tecidos;
+
+    // Filtro por tipo
+    if (filterTipo !== 'todos') {
+      result = result.filter(t => t.tipo === filterTipo);
+    }
+
+    // Busca por nome ou SKU
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      result = result.filter(t =>
+        t.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term) ||
+        t.sku.toLowerCase().includes(term)
+      );
+    }
+
+    return result;
+  }, [tecidos, filterTipo, searchTerm]);
 
   const handleAddClick = () => {
     setEditingTecido(null);
@@ -71,20 +97,17 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
   const handleSubmit = async (data: CreateTecidoData) => {
     try {
       if (editingTecido) {
-        // Modo edição
         const updateData: UpdateTecidoData = {
           id: editingTecido.id,
           ...data,
         };
         await updateTecido(updateData);
       } else {
-        // Modo criação
         await createTecido(data);
       }
       setModalOpen(false);
       setEditingTecido(null);
     } catch (error) {
-      // Erro já é tratado no hook
       throw error;
     }
   };
@@ -101,21 +124,56 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
       />
 
       <main className="container mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex justify-between items-center mb-6">
+        <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
               <h2 className="text-xl font-semibold text-gray-900">
                 Tecidos Cadastrados
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-                Gerencie tecidos lisos e estampados
+                {tecidos.length} tecido{tecidos.length !== 1 ? 's' : ''} cadastrado{tecidos.length !== 1 ? 's' : ''}
+                {filterTipo !== 'todos' || searchTerm.trim() ? ` (${filteredTecidos.length} exibido${filteredTecidos.length !== 1 ? 's' : ''})` : ''}
               </p>
             </div>
-            <Button onClick={handleAddClick}>
+            <Button onClick={handleAddClick} className="w-full sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
               Adicionar Tecido
             </Button>
           </div>
+
+          {/* Busca e Filtro */}
+          {tecidos.length > 0 && (
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Buscar por nome ou SKU..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                {([
+                  { value: 'todos', label: 'Todos' },
+                  { value: 'liso', label: 'Lisos' },
+                  { value: 'estampado', label: 'Estampados' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setFilterTipo(opt.value)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                      filterTipo === opt.value
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {loading && tecidos.length === 0 ? (
             <div className="space-y-3">
@@ -134,9 +192,10 @@ export function Tecidos({ onNavigateHome }: TecidosProps) {
             </div>
           ) : (
             <TecidosTable
-              tecidos={tecidos}
+              tecidos={filteredTecidos}
               onEdit={handleEditClick}
               onDelete={handleDeleteClick}
+              onAdd={handleAddClick}
               loading={loading}
             />
           )}

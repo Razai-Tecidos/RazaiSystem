@@ -8,6 +8,7 @@ import { EditarVinculo } from './EditarVinculo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { Plus, Loader2, AlertTriangle, Copy, Merge, Check } from 'lucide-react';
+import { Plus, Loader2, AlertTriangle, Copy, Merge, Check, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Cor, CreateCorData, UpdateCorData, CorTecido } from '@/types/cor.types';
 import { Header } from '@/components/Layout/Header';
@@ -42,6 +43,11 @@ export function Cores({ onNavigateHome }: CoresProps) {
   const [corSelecionadaParaManter, setCorSelecionadaParaManter] = useState<'cor1' | 'cor2' | null>(null);
   const [editingVinculoId, setEditingVinculoId] = useState<string | null>(null);
 
+  // Busca e confirmação de exclusão
+  const [searchTerm, setSearchTerm] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
   // Calcular conflitos com base no limiar atual (do Firebase)
   const { conflitos, mapaConflitos } = useMemo(() => {
     const conflitos = encontrarTodosConflitos(cores, deltaELimiar);
@@ -49,13 +55,24 @@ export function Cores({ onNavigateHome }: CoresProps) {
     return { conflitos, mapaConflitos };
   }, [cores, deltaELimiar]);
 
+  // Filtrar cores por busca
+  const filteredCores = useMemo(() => {
+    if (!searchTerm.trim()) return cores;
+
+    const term = searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return cores.filter(cor =>
+      cor.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term) ||
+      cor.sku?.toLowerCase().includes(term) ||
+      cor.codigoHex?.toLowerCase().includes(term)
+    );
+  }, [cores, searchTerm]);
+
   const handleAddClick = () => {
     setEditingCor(null);
     setModalOpen(true);
   };
 
   const handleCopiarHexCapturadas = async () => {
-    // Filtrar cores com nome "Cor capturada..."
     const coresCapturadas = cores.filter(cor => 
       cor.nome.toLowerCase().startsWith('cor capturada')
     );
@@ -69,13 +86,11 @@ export function Cores({ onNavigateHome }: CoresProps) {
       return;
     }
     
-    // Extrair HEX codes (um por linha)
     const hexCodes = coresCapturadas
       .map(cor => cor.codigoHex)
       .filter(Boolean)
       .join('\n');
     
-    // Copiar para clipboard
     await navigator.clipboard.writeText(hexCodes);
     
     toast({
@@ -85,7 +100,6 @@ export function Cores({ onNavigateHome }: CoresProps) {
   };
 
   const handleCopiarNomesNomeadas = async () => {
-    // Filtrar cores que NÃO têm nome "Cor capturada..." (ou seja, já foram nomeadas)
     const coresNomeadas = cores.filter(cor => 
       !cor.nome.toLowerCase().startsWith('cor capturada')
     );
@@ -99,13 +113,11 @@ export function Cores({ onNavigateHome }: CoresProps) {
       return;
     }
     
-    // Extrair nomes (um por linha)
     const nomes = coresNomeadas
       .map(cor => cor.nome)
       .filter(Boolean)
       .join('\n');
     
-    // Copiar para clipboard
     await navigator.clipboard.writeText(nomes);
     
     toast({
@@ -115,7 +127,6 @@ export function Cores({ onNavigateHome }: CoresProps) {
   };
 
   const handleEditClick = (cor: Cor) => {
-    // Navegar para página de edição ao invés de abrir modal
     setEditingCorId(cor.id);
   };
 
@@ -132,7 +143,6 @@ export function Cores({ onNavigateHome }: CoresProps) {
   };
 
   const handleEditVinculo = (vinculo: CorTecido) => {
-    // Abre diretamente a edição do vínculo específico
     setEditingVinculoId(vinculo.id);
   };
 
@@ -167,43 +177,42 @@ export function Cores({ onNavigateHome }: CoresProps) {
     }
   };
 
-  const handleDeleteClick = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta cor?')) {
-      return;
-    }
+  const handleDeleteClick = (id: string) => {
+    setPendingDeleteId(id);
+    setConfirmOpen(true);
+  };
 
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
+    setConfirmOpen(false);
     try {
-      await deleteCor(id);
+      await deleteCor(pendingDeleteId);
     } catch (error) {
       // Erro já é tratado no hook
     }
+    setPendingDeleteId(null);
   };
 
   const handleSubmit = async (data: CreateCorData) => {
     try {
       if (editingCor) {
-        // Modo edição
         const updateData: UpdateCorData = {
           id: editingCor.id,
           ...data,
         };
         await updateCor(updateData);
       } else {
-        // Modo criação
         await createCor(data);
       }
       setModalOpen(false);
       setEditingCor(null);
     } catch (error) {
-      // Erro já é tratado no hook
       throw error;
     }
   };
 
   // Se estiver navegando para vínculos, redirecionar para Home com página de vínculos
   if (navigateToVinculos && onNavigateHome) {
-    // TODO: Idealmente usar um sistema de navegação mais robusto (react-router)
-    // Por ora, simplesmente volta para home e usuário navega manualmente para Vínculos
     onNavigateHome();
     return null;
   }
@@ -236,13 +245,19 @@ export function Cores({ onNavigateHome }: CoresProps) {
       />
 
       <main className="container mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Cores Cadastradas
-            </h2>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Cores Cadastradas
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {cores.length} cor{cores.length !== 1 ? 'es' : ''} cadastrada{cores.length !== 1 ? 's' : ''}
+                {searchTerm.trim() ? ` (${filteredCores.length} exibida${filteredCores.length !== 1 ? 's' : ''})` : ''}
+              </p>
+            </div>
             <div className="flex items-center gap-4 flex-wrap">
-              {/* Controle de Limiar Delta E (salvo globalmente no Firebase) */}
+              {/* Controle de Limiar Delta E */}
               <div className="flex items-center gap-2">
                 <Label htmlFor="limiarDeltaE" className="text-sm text-gray-600 whitespace-nowrap">
                   Limiar ΔE:
@@ -278,12 +293,27 @@ export function Cores({ onNavigateHome }: CoresProps) {
                 <Copy className="mr-2 h-4 w-4" />
                 Copiar Nomes
               </Button>
-              <Button onClick={handleAddClick}>
+              <Button onClick={handleAddClick} className="w-full sm:w-auto">
                 <Plus className="mr-2 h-4 w-4" />
                 Adicionar Cor
               </Button>
             </div>
           </div>
+
+          {/* Busca */}
+          {cores.length > 0 && (
+            <div className="mb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Buscar por nome, SKU ou HEX..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Alerta de conflitos */}
           {conflitos.length > 0 && (
@@ -345,9 +375,21 @@ export function Cores({ onNavigateHome }: CoresProps) {
             </div>
           )}
 
+          {/* Loading skeleton */}
           {loading && cores.length === 0 ? (
-            <div className="flex justify-center items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="bg-white rounded-lg border p-4 animate-pulse">
+                  <div className="flex items-start gap-3">
+                    <div className="w-14 h-14 bg-gray-200 rounded-lg flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-1/4" />
+                      <div className="h-3 bg-gray-100 rounded w-1/2" />
+                      <div className="h-3 bg-gray-100 rounded w-1/3" />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : error ? (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -363,7 +405,7 @@ export function Cores({ onNavigateHome }: CoresProps) {
             </div>
           ) : (
             <CoresTable
-              cores={cores}
+              cores={filteredCores}
               vinculos={vinculos}
               onEdit={handleEditClick}
               onDelete={handleDeleteClick}
@@ -383,6 +425,16 @@ export function Cores({ onNavigateHome }: CoresProps) {
         onSubmit={handleSubmit}
         cor={editingCor}
         loading={loading}
+      />
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Excluir cor"
+        description="Tem certeza que deseja excluir esta cor? Essa ação não pode ser desfeita."
+        confirmLabel="Excluir"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
 
       {/* Modal de Mesclar Cores */}

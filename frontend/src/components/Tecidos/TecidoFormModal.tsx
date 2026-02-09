@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Tecido, CreateTecidoData, TipoTecido } from '@/types/tecido.types';
 import {
   Dialog,
@@ -42,6 +42,42 @@ export function TecidoFormModal({
   const [descricao, setDescricao] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Detectar se o formulário tem dados preenchidos
+  const hasUnsavedChanges = () => {
+    if (tecido) {
+      // Modo edição: verificar se algo mudou
+      return (
+        nome !== tecido.nome ||
+        tipo !== (tecido.tipo || 'liso') ||
+        largura !== tecido.largura.toString().replace('.', ',') ||
+        composicao !== (tecido.composicao || '') ||
+        descricao !== (tecido.descricao || '') ||
+        imagemPadrao instanceof File
+      );
+    }
+    // Modo criação: verificar se algo foi preenchido
+    return !!(nome.trim() || largura.trim() || composicao.trim() || descricao.trim() || imagemPadrao);
+  };
+
+  // Interceptar fechamento do modal
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && hasUnsavedChanges() && !isSubmitting) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    if (!newOpen) resetForm();
+    onOpenChange(newOpen);
+  };
+
+  const confirmDiscard = () => {
+    setShowDiscardConfirm(false);
+    resetForm();
+    onOpenChange(false);
+  };
 
   // Resetar formulário quando modal abrir/fechar ou tecido mudar
   useEffect(() => {
@@ -181,6 +217,26 @@ export function TecidoFormModal({
     });
   };
 
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      // Simular o mesmo fluxo do handleImageChange
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        setErrors((prev) => ({ ...prev, imagemPadrao: 'Formato inválido. Use JPG, PNG ou WEBP' }));
+        return;
+      }
+      if (file.size > MAX_IMAGE_SIZE) {
+        setErrors((prev) => ({ ...prev, imagemPadrao: 'Imagem muito grande. Máximo: 5MB' }));
+        return;
+      }
+      setImagemPadrao(file);
+      setImagemPreview(URL.createObjectURL(file));
+      setErrors((prev) => { const n = { ...prev }; delete n.imagemPadrao; return n; });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -212,7 +268,8 @@ export function TecidoFormModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="flex-shrink-0 px-4 sm:px-6 pt-4 sm:pt-6 pb-3">
           <DialogTitle>
@@ -223,7 +280,7 @@ export function TecidoFormModal({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 space-y-4 pb-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 space-y-4 pb-4">
           {/* Nome */}
           <div className="space-y-2">
             <Label htmlFor="nome">
@@ -368,15 +425,25 @@ export function TecidoFormModal({
                 </Button>
               </div>
             ) : (
-              <div className="flex items-center justify-center w-full">
+              <div
+                className="flex items-center justify-center w-full"
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+              >
                 <label
                   htmlFor="imagem"
-                  className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50"
+                  className={cn(
+                    "flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
+                    isDragging
+                      ? "border-primary bg-primary/5"
+                      : "border-gray-300 hover:bg-gray-50"
+                  )}
                 >
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <Upload className="w-8 h-8 mb-2 text-gray-400" />
+                    <Upload className={cn("w-8 h-8 mb-2", isDragging ? "text-primary" : "text-gray-400")} />
                     <p className="mb-2 text-sm text-gray-500">
-                      Clique para fazer upload
+                      {isDragging ? 'Solte a imagem aqui' : 'Clique ou arraste para fazer upload'}
                     </p>
                     <p className="text-xs text-gray-500">
                       PNG, JPG, WEBP até 5MB
@@ -414,10 +481,7 @@ export function TecidoFormModal({
           <Button
             type="button"
             variant="outline"
-            onClick={() => {
-              onOpenChange(false);
-              resetForm();
-            }}
+            onClick={() => handleOpenChange(false)}
             disabled={isSubmitting || loading}
             className="w-full sm:w-auto"
           >
@@ -427,11 +491,7 @@ export function TecidoFormModal({
             type="button" 
             disabled={isSubmitting || loading} 
             className="w-full sm:w-auto" 
-            onClick={(e) => {
-              e.preventDefault();
-              const formEvent = e as unknown as React.FormEvent;
-              handleSubmit(formEvent);
-            }}
+            onClick={() => formRef.current?.requestSubmit()}
           >
             {(isSubmitting || loading) && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -441,5 +501,26 @@ export function TecidoFormModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Diálogo de confirmação de descarte */}
+    <Dialog open={showDiscardConfirm} onOpenChange={setShowDiscardConfirm}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Descartar alterações?</DialogTitle>
+          <DialogDescription>
+            Você tem dados não salvos. Deseja descartar as alterações?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+          <Button variant="outline" onClick={() => setShowDiscardConfirm(false)}>
+            Continuar editando
+          </Button>
+          <Button variant="destructive" onClick={confirmDiscard}>
+            Descartar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Tecido, CreateTecidoData, UpdateTecidoData } from '@/types/tecido.types';
 import {
   getTecidos as getTecidosFirebase,
@@ -11,9 +11,9 @@ import { updateTecidoDataInVinculos } from '@/lib/firebase/cor-tecido';
 import { useSku } from './useSku';
 import { useToast } from '@/hooks/use-toast';
 
-interface TecidoWithStatus extends Tecido {
+export interface TecidoWithStatus extends Tecido {
   _status?: 'saving' | 'deleting' | 'idle';
-  _tempId?: string; // Para tecidos temporários na UI otimista
+  _tempId?: string;
 }
 
 /**
@@ -26,10 +26,9 @@ export function useTecidos() {
   const { generateNextSku, invalidateSku } = useSku();
   const { toast } = useToast();
 
-  // Carregar tecidos ao montar componente
-  useEffect(() => {
-    loadTecidos();
-  }, []);
+  // Ref estável para acessar tecidos dentro dos callbacks sem dependência
+  const tecidosRef = useRef(tecidos);
+  tecidosRef.current = tecidos;
 
   /**
    * Carrega todos os tecidos do Firebase
@@ -52,6 +51,11 @@ export function useTecidos() {
     }
   }, [toast]);
 
+  // Carregar tecidos ao montar componente
+  useEffect(() => {
+    loadTecidos();
+  }, [loadTecidos]);
+
   /**
    * Cria um novo tecido com UI otimista
    */
@@ -61,7 +65,6 @@ export function useTecidos() {
       let imageUrl = '';
       let sku = '';
 
-      // Criar tecido temporário para UI otimista
       const tempTecido: TecidoWithStatus = {
         id: tempId,
         nome: data.nome,
@@ -77,22 +80,12 @@ export function useTecidos() {
         _tempId: tempId,
       };
 
-      // Adicionar temporário à lista
       setTecidos((prev) => [tempTecido, ...prev]);
 
-      // Fechar modal e mostrar toast
-      toast({
-        title: 'Cadastrando...',
-        description: 'Tecido sendo cadastrado...',
-      });
-
       try {
-        // Gerar SKU
         sku = await generateNextSku();
 
-        // Se tiver imagem para upload, fazer upload primeiro
         if (data.imagemPadrao instanceof File) {
-          // Criar documento temporário para obter ID real (necessário para o caminho do upload)
           const tempImageUrl = 'temp';
           const createdTecido = await createTecidoFirebase(
             { ...data, imagemPadrao: tempImageUrl },
@@ -101,13 +94,10 @@ export function useTecidos() {
           );
 
           try {
-            // Upload da imagem com ID real do documento
             imageUrl = await uploadTecidoImage(data.imagemPadrao, createdTecido.id);
-            // Atualizar documento com URL real da imagem
             await updateTecidoFirebase(createdTecido.id, {}, imageUrl);
             createdTecido.imagemPadrao = imageUrl;
 
-            // Atualizar lista removendo temporário e adicionando real
             setTecidos((prev) => [
               { ...createdTecido, _status: 'idle' as const },
               ...prev.filter((t) => t._tempId !== tempId).map((t) => ({ ...t, _status: 'idle' as const })),
@@ -118,14 +108,11 @@ export function useTecidos() {
               description: 'Tecido cadastrado com sucesso!',
             });
           } catch (uploadError: any) {
-            // Se upload falhar, deletar documento criado
             await deleteTecidoFirebase(createdTecido.id, '');
-            // Invalidar SKU usado
             await invalidateSku(sku);
             throw uploadError;
           }
         } else {
-          // Sem upload de imagem (URL existente ou vazio), criar documento diretamente
           imageUrl = data.imagemPadrao || '';
           const createdTecido = await createTecidoFirebase(
             { ...data, imagemPadrao: imageUrl },
@@ -133,7 +120,6 @@ export function useTecidos() {
             imageUrl || undefined
           );
 
-          // Atualizar lista removendo temporário e adicionando real
           setTecidos((prev) => [
             { ...createdTecido, _status: 'idle' as const },
             ...prev.filter((t) => t._tempId !== tempId).map((t) => ({ ...t, _status: 'idle' as const })),
@@ -145,7 +131,6 @@ export function useTecidos() {
           });
         }
       } catch (err: any) {
-        // Remover temporário em caso de erro
         setTecidos((prev) => prev.filter((t) => t._tempId !== tempId));
 
         toast({
@@ -157,7 +142,7 @@ export function useTecidos() {
         throw err;
       }
     },
-    [generateNextSku, toast]
+    [generateNextSku, invalidateSku, toast]
   );
 
   /**
@@ -165,17 +150,16 @@ export function useTecidos() {
    */
   const updateTecido = useCallback(
     async (data: UpdateTecidoData): Promise<void> => {
-      const tecidoIndex = tecidos.findIndex((t) => t.id === data.id);
-      if (tecidoIndex === -1) return;
-
-      const originalTecido = tecidos[tecidoIndex];
+      // Usar ref para acessar estado atual sem dependência
+      const currentTecidos = tecidosRef.current;
+      const originalTecido = currentTecidos.find((t) => t.id === data.id);
+      if (!originalTecido) return;
 
       // Atualizar otimisticamente
       setTecidos((prev) =>
         prev.map((t) => {
           if (t.id === data.id) {
             const updateData: any = { ...data };
-            // Se imagemPadrao for File, não incluir na atualização otimista (ainda não foi feito upload)
             if (updateData.imagemPadrao instanceof File) {
               delete updateData.imagemPadrao;
             }
@@ -185,31 +169,24 @@ export function useTecidos() {
         })
       );
 
-      toast({
-        title: 'Atualizando...',
-        description: 'Tecido sendo atualizado...',
-      });
-
       try {
         let imageUrl: string | undefined;
 
-        // Upload de nova imagem se fornecida
         if (data.imagemPadrao instanceof File) {
           imageUrl = await uploadTecidoImage(data.imagemPadrao, data.id);
         }
 
         await updateTecidoFirebase(data.id, data, imageUrl);
 
-        // Propagar mudanças para os vínculos (dados denormalizados)
+        // Propagar mudanças para vínculos denormalizados
         const dadosParaVinculos: { tecidoNome?: string; tecidoSku?: string } = {};
         if (data.nome) dadosParaVinculos.tecidoNome = data.nome;
-        // SKU de tecido não muda após criação, mas incluímos caso seja necessário
-        
+
         if (Object.keys(dadosParaVinculos).length > 0) {
           await updateTecidoDataInVinculos(data.id, dadosParaVinculos);
         }
 
-        // Recarregar tecidos para ter dados atualizados
+        // Recarregar para ter dados atualizados do servidor
         await loadTecidos();
 
         toast({
@@ -233,7 +210,7 @@ export function useTecidos() {
         throw err;
       }
     },
-    [tecidos, loadTecidos, toast]
+    [loadTecidos, toast]
   );
 
   /**
@@ -241,22 +218,16 @@ export function useTecidos() {
    */
   const deleteTecido = useCallback(
     async (id: string): Promise<void> => {
-      const tecido = tecidos.find((t) => t.id === id);
+      // Usar ref para acessar estado atual sem dependência
+      const currentTecidos = tecidosRef.current;
+      const tecido = currentTecidos.find((t) => t.id === id);
       if (!tecido) return;
 
       // Remover otimisticamente
       setTecidos((prev) => prev.filter((t) => t.id !== id));
 
-      toast({
-        title: 'Excluindo...',
-        description: 'Tecido sendo excluído...',
-      });
-
       try {
-        // Invalidar SKU
         await invalidateSku(tecido.sku);
-
-        // Deletar do Firebase
         await deleteTecidoFirebase(id, tecido.imagemPadrao || '');
 
         toast({
@@ -276,7 +247,7 @@ export function useTecidos() {
         throw err;
       }
     },
-    [tecidos, invalidateSku, toast]
+    [invalidateSku, toast]
   );
 
   return {

@@ -55,8 +55,11 @@ export function useShopeeCategories() {
 
   /**
    * Carrega todas as categorias
+   * @param shopId - ID da loja
+   * @param forceRefresh - Forçar atualização do cache
+   * @param silent - Se true, não exibe toast de erro (útil para carregamento inicial)
    */
-  const loadCategories = useCallback(async (shopId: number, forceRefresh = false) => {
+  const loadCategories = useCallback(async (shopId: number, forceRefresh = false, silent = false) => {
     try {
       setLoading(true);
       const response = await apiRequest<{ success: boolean; data: ShopeeCategory[] }>(
@@ -67,11 +70,14 @@ export function useShopeeCategories() {
       return response.data;
     } catch (err: any) {
       setError(err.message);
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível carregar as categorias',
-        variant: 'destructive',
-      });
+      console.warn('Erro ao carregar categorias:', err.message);
+      if (!silent) {
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível carregar as categorias',
+          variant: 'destructive',
+        });
+      }
       return [];
     } finally {
       setLoading(false);

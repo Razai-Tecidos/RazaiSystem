@@ -70,6 +70,7 @@ export async function createCorTecido(data: CreateCorTecidoData): Promise<string
   const corTecidoData = {
     ...data,
     ...(sku ? { sku } : {}),
+    deletedAt: null,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
   };

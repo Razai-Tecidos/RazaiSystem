@@ -1,27 +1,25 @@
-export interface ComposicaoItem {
-  id: string;
-  nome: string;
-  porcentagem: number;
-}
+export type TipoTecido = 'liso' | 'estampado';
 
 export interface Tecido {
   id: string;
   nome: string;
+  tipo: TipoTecido;
   largura: number;
-  composicao: ComposicaoItem[];
-  imagemPadrao: string;
+  composicao: string; // Campo de texto livre (ex: "Algodão 60%, Poliester 40%")
+  imagemPadrao?: string; // URL do Firebase Storage (opcional para estampados)
   descricao?: string;
   sku: string;
   createdAt: Date;
   updatedAt: Date;
-  deletedAt?: Date;
+  deletedAt?: Date | null;
 }
 
 export interface CreateTecidoRequest {
   nome: string;
+  tipo?: TipoTecido;
   largura: number;
-  composicao: ComposicaoItem[];
-  imagemPadrao: string; // URL após upload
+  composicao: string;
+  imagemPadrao?: string; // URL após upload (opcional para estampados)
   descricao?: string;
 }
 

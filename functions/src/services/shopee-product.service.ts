@@ -7,7 +7,7 @@ import {
   ShopeeAddItemResponse,
   ShopeeUploadImageResponse,
 } from '../types/shopee-product.types';
-import { callShopeeApi, ensureValidToken } from './shopee.service';
+import { callShopeeApi, ensureValidToken, uploadImageToShopeeMultipart } from './shopee.service';
 import * as preferencesService from './shopee-preferences.service';
 import * as imageCompressor from './image-compressor.service';
 import * as logisticsService from './shopee-logistics.service';
@@ -22,6 +22,36 @@ const PRODUCTS_COLLECTION = 'shopee_products';
 const TECIDOS_COLLECTION = 'tecidos';
 const COR_TECIDO_COLLECTION = 'cor_tecido';
 const TAMANHOS_COLLECTION = 'tamanhos';
+
+/**
+ * Remove valores undefined recursivamente de um objeto
+ * Firestore e Shopee API não aceitam undefined
+ */
+function removeUndefinedValues(obj: Record<string, unknown>): Record<string, unknown> {
+  const cleaned: Record<string, unknown> = {};
+  
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) {
+      continue; // Pula valores undefined
+    }
+    
+    if (value === null) {
+      cleaned[key] = null; // Mantém null (é válido)
+    } else if (Array.isArray(value)) {
+      cleaned[key] = value.map(item => 
+        typeof item === 'object' && item !== null && !Array.isArray(item)
+          ? removeUndefinedValues(item as Record<string, unknown>)
+          : item
+      );
+    } else if (typeof value === 'object' && value !== null) {
+      cleaned[key] = removeUndefinedValues(value as Record<string, unknown>);
+    } else {
+      cleaned[key] = value;
+    }
+  }
+  
+  return cleaned;
+}
 
 /**
  * Faz upload de uma imagem para o Shopee Media Space
@@ -40,16 +70,15 @@ async function uploadImageToShopee(
     console.log(`Imagem comprimida: ${(originalSize / 1024 / 1024).toFixed(2)}MB -> ${(finalSize / 1024 / 1024).toFixed(2)}MB`);
   }
   
-  // Faz upload para Shopee Media Space
-  const response = await callShopeeApi({
-    path: '/api/v2/media_space/upload_image',
-    method: 'POST',
+  // Faz upload para Shopee Media Space usando multipart/form-data
+  // O endpoint requer arquivo binário, não base64 em JSON
+  const filename = imageUrl.split('/').pop() || 'image.jpg';
+  const response = await uploadImageToShopeeMultipart(
     shopId,
     accessToken,
-    body: {
-      image: buffer.toString('base64'),
-    },
-  }) as ShopeeUploadImageResponse;
+    buffer,
+    filename
+  ) as ShopeeUploadImageResponse;
   
   if (response.error) {
     throw new Error(`Erro ao fazer upload de imagem: ${response.error} - ${response.message}`);
@@ -160,15 +189,19 @@ async function getCorTecidoData(tecidoId: string, corIds: string[]): Promise<Arr
     const snapshot = await db.collection(COR_TECIDO_COLLECTION)
       .where('tecidoId', '==', tecidoId)
       .where('corId', '==', corId)
-      .where('deletedAt', '==', null)
-      .limit(1)
+      .limit(5)
       .get();
     
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0];
+    // Filtra no código: aceita documentos sem deletedAt OU com deletedAt == null
+    const activeDoc = snapshot.docs.find(doc => {
       const data = doc.data();
+      return !data.deletedAt;
+    });
+    
+    if (activeDoc) {
+      const data = activeDoc.data();
       vinculos.push({
-        id: doc.id,
+        id: activeDoc.id,
         corId: data.corId,
         corNome: data.corNome || '',
         corSku: data.corSku,
@@ -272,14 +305,15 @@ function buildModelList(
   tecidoSku: string,
   vinculos: Array<{ id: string; corId: string; corNome: string; corSku?: string; imagemTingida?: string }>,
   tamanhos: Array<{ id: string; nome: string; sku?: string }> | undefined,
-  coresConfig: Array<{ cor_id: string; preco?: number; estoque: number }>,
+  coresConfig: Array<{ cor_id: string; estoque: number }>,
   precoBase: number,
+  precosPorTamanho: Record<string, number> | undefined,
   estoquePadrao: number
 ): ProductModel[] {
   const modelos: ProductModel[] = [];
   
   if (!tamanhos || tamanhos.length === 0) {
-    // Apenas cores, sem tamanhos
+    // Apenas cores, sem tamanhos - usa preco_base para todos
     vinculos.forEach((vinculo, corIndex) => {
       const corConfig = coresConfig.find(c => c.cor_id === vinculo.corId);
       const modelSku = vinculo.corSku 
@@ -292,13 +326,13 @@ function buildModelList(
         cor_id: vinculo.corId,
         cor_nome: vinculo.corNome,
         vinculo_id: vinculo.id,
-        preco: corConfig?.preco,
+        preco: precoBase, // Sem tamanhos, usa preço único
         estoque: corConfig?.estoque ?? estoquePadrao,
         imagem_url: vinculo.imagemTingida,
       });
     });
   } else {
-    // Cores + Tamanhos
+    // Cores + Tamanhos - usa preço do tamanho correspondente
     vinculos.forEach((vinculo, corIndex) => {
       const corConfig = coresConfig.find(c => c.cor_id === vinculo.corId);
       
@@ -306,6 +340,9 @@ function buildModelList(
         const modelSku = vinculo.corSku && tamanho.sku
           ? `${tecidoSku}-${vinculo.corSku}-${tamanho.sku}`
           : `${tecidoSku}-${corIndex + 1}-${tamanhoIndex + 1}`;
+        
+        // Preço do tamanho ou fallback para preco_base
+        const precoTamanho = precosPorTamanho?.[tamanho.id] || precoBase;
         
         modelos.push({
           model_sku: modelSku,
@@ -315,7 +352,7 @@ function buildModelList(
           tamanho_id: tamanho.id,
           tamanho_nome: tamanho.nome,
           vinculo_id: vinculo.id,
-          preco: corConfig?.preco,
+          preco: precoTamanho, // Preço do tamanho aplicado a todas as cores
           estoque: corConfig?.estoque ?? estoquePadrao,
           imagem_url: vinculo.imagemTingida,
         });
@@ -417,6 +454,7 @@ export async function createProduct(
     tamanhos,
     data.cores,
     data.preco_base,
+    data.precos_por_tamanho,
     data.estoque_padrao
   );
   
@@ -437,6 +475,7 @@ export async function createProduct(
     tier_variations: tierVariations,
     modelos,
     preco_base: data.preco_base,
+    precos_por_tamanho: data.precos_por_tamanho || null,
     estoque_padrao: data.estoque_padrao,
     categoria_id: data.categoria_id,
     atributos: data.atributos || [],
@@ -528,10 +567,10 @@ export async function updateProduct(
         tamanhos,
         data.cores || existingData.modelos.map(m => ({
           cor_id: m.cor_id!,
-          preco: m.preco,
           estoque: m.estoque,
         })),
         data.preco_base ?? existingData.preco_base,
+        data.precos_por_tamanho,
         data.estoque_padrao ?? existingData.estoque_padrao
       );
     }
@@ -539,6 +578,7 @@ export async function updateProduct(
   
   // Atualiza campos simples
   if (data.preco_base !== undefined) updateData.preco_base = data.preco_base;
+  if (data.precos_por_tamanho !== undefined) updateData.precos_por_tamanho = data.precos_por_tamanho;
   if (data.estoque_padrao !== undefined) updateData.estoque_padrao = data.estoque_padrao;
   if (data.categoria_id !== undefined) updateData.categoria_id = data.categoria_id;
   if (data.peso !== undefined) updateData.peso = data.peso;
@@ -766,9 +806,9 @@ export async function publishProduct(
       item_status: 'NORMAL',
       pre_order: {
         is_pre_order: product.is_pre_order || false,
-        days_to_ship: product.is_pre_order ? (product.days_to_ship || 7) : undefined,
+        ...(product.is_pre_order && product.days_to_ship ? { days_to_ship: product.days_to_ship } : {}),
       },
-      days_to_ship: product.is_pre_order ? undefined : (product.days_to_ship || 2),
+      ...(product.is_pre_order ? {} : { days_to_ship: product.days_to_ship || 2 }),
     };
     
     // Adiciona vídeo se disponível
@@ -806,12 +846,15 @@ export async function publishProduct(
       shopeePayload.wholesale = product.wholesale;
     }
     
+    // Remove valores undefined do payload (Firestore/Shopee não aceitam)
+    const cleanPayload = removeUndefinedValues(shopeePayload);
+    
     const response = await callShopeeApi({
       path: '/api/v2/product/add_item',
       method: 'POST',
       shopId: product.shop_id,
       accessToken,
-      body: shopeePayload,
+      body: cleanPayload,
     }) as ShopeeAddItemResponse;
     
     if (response.error) {

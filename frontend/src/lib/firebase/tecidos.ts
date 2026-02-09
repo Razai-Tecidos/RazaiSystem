@@ -7,6 +7,9 @@ import {
   setDoc,
   updateDoc,
   serverTimestamp,
+  query,
+  where,
+  orderBy,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { auth, db, storage } from '@/config/firebase';
@@ -18,35 +21,29 @@ const SKU_CONTROL_ID = 'main';
 
 /**
  * Busca todos os tecidos cadastrados (não excluídos)
- * Nota: Se houver erro de índice, o Firestore solicitará criação de índice composto
+ * Usa índice composto: deletedAt ASC, createdAt DESC
  */
 export async function getTecidos(): Promise<Tecido[]> {
   try {
-    // Buscar todos os tecidos e filtrar client-side para evitar problemas
-    // com documentos que não têm o campo deletedAt
-    const snapshot = await getDocs(collection(db, TECIDOS_COLLECTION));
+    const q = query(
+      collection(db, TECIDOS_COLLECTION),
+      where('deletedAt', '==', null),
+      orderBy('createdAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
     
-    const tecidos = snapshot.docs
-      .filter((doc) => !doc.data().deletedAt) // Filtrar excluídos client-side
-      .map((doc) => {
-        const data = doc.data();
-        // Compatibilidade: converter array de composição para string se necessário
-        if (Array.isArray(data.composicao)) {
-          data.composicao = (data.composicao as any[])
-            .map((item: any) => item.nome || item)
-            .join(', ');
-        }
-        return {
-          id: doc.id,
-          ...data,
-        } as Tecido;
-      });
-    
-    // Ordenar por data de criação (mais recentes primeiro)
-    return tecidos.sort((a, b) => {
-      const aTime = a.createdAt?.toMillis() || 0;
-      const bTime = b.createdAt?.toMillis() || 0;
-      return bTime - aTime;
+    return snapshot.docs.map((doc) => {
+      const data = doc.data();
+      // Compatibilidade: converter array de composição para string se necessário
+      if (Array.isArray(data.composicao)) {
+        data.composicao = (data.composicao as any[])
+          .map((item: any) => item.nome || item)
+          .join(', ');
+      }
+      return {
+        id: doc.id,
+        ...data,
+      } as Tecido;
     });
   } catch (error: any) {
     console.error('Erro ao carregar tecidos:', error);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Estampa, CreateEstampaData } from '@/types/estampa.types';
 import { Tecido } from '@/types/tecido.types';
 import {
@@ -13,8 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Upload, X, Loader2, ListPlus, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { extrairNomeFamiliaEstampa } from '@/lib/firebase/estampas';
 
 type FormMode = 'individual' | 'lote';
 
@@ -67,10 +69,6 @@ function validarNomeEstampa(nome: string): { valido: boolean; erro?: string } {
   return { valido: true };
 }
 
-// Extrair família do nome
-function extrairFamilia(nome: string): string {
-  return nome.trim().split(/\s+/)[0] || '';
-}
 
 export function EstampaFormModal({
   open,
@@ -92,15 +90,69 @@ export function EstampaFormModal({
   const [imagem, setImagem] = useState<File | string>('');
   const [imagemPreview, setImagemPreview] = useState<string>('');
   const [descricao, setDescricao] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const previewUrlRef = useRef<string | null>(null);
 
   // Estados do modo lote
   const [nomesLote, setNomesLote] = useState('');
+
+  // Cleanup de URL.createObjectURL ao desmontar ou trocar imagem
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  // Detectar se o formulário tem dados preenchidos
+  const hasUnsavedChanges = () => {
+    if (estampa) {
+      // Modo edição: verificar se algo mudou
+      return (
+        nome !== estampa.nome ||
+        tecidoBaseId !== estampa.tecidoBaseId ||
+        descricao !== (estampa.descricao || '') ||
+        imagem instanceof File ||
+        (imagem && imagem !== estampa.imagem)
+      );
+    }
+    // Modo criação: verificar se algo foi preenchido
+    return !!(nome.trim() || tecidoBaseId || descricao.trim() || imagem || nomesLote.trim());
+  };
+
+  // Interceptar fechamento do modal
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && hasUnsavedChanges() && !isSubmitting) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    if (!newOpen) {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+      resetForm();
+    }
+    onOpenChange(newOpen);
+  };
+
+  const confirmDiscard = () => {
+    setShowDiscardConfirm(false);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    resetForm();
+    onOpenChange(false);
+  };
 
   // Parse dos nomes do lote
   const nomesParseados = useMemo(() => {
     if (!nomesLote.trim()) return [];
     
-    // Separa por vírgula ou quebra de linha
     return nomesLote
       .split(/[,\n]/)
       .map(n => n.trim())
@@ -109,13 +161,13 @@ export function EstampaFormModal({
 
   // Validação do lote
   const loteValidacao = useMemo(() => {
-    const validos: { nome: string; familia: string }[] = [];
-    const invalidos: { nome: string; erro: string }[] = [];
+      const validos: { nome: string; familia: string }[] = [];
+      const invalidos: { nome: string; erro: string }[] = [];
 
     for (const nome of nomesParseados) {
       const resultado = validarNomeEstampa(nome);
       if (resultado.valido) {
-        validos.push({ nome, familia: extrairFamilia(nome) });
+        validos.push({ nome, familia: extrairNomeFamiliaEstampa(nome) || '' });
       } else {
         invalidos.push({ nome, erro: resultado.erro || 'Inválido' });
       }
@@ -147,6 +199,10 @@ export function EstampaFormModal({
   }, [open, estampa, tecidos]);
 
   const resetForm = () => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setNome('');
     setTecidoBaseId('');
     setImagem('');
@@ -154,6 +210,7 @@ export function EstampaFormModal({
     setDescricao('');
     setNomesLote('');
     setErrors({});
+    setIsDragging(false);
   };
 
   const validateFormIndividual = (): boolean => {
@@ -199,21 +256,46 @@ export function EstampaFormModal({
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-        setErrors(prev => ({ ...prev, imagem: 'Formato inválido' }));
-        return;
-      }
-      if (file.size > MAX_IMAGE_SIZE) {
-        setErrors(prev => ({ ...prev, imagem: 'Máximo 5MB' }));
-        return;
-      }
-      setImagem(file);
-      setImagemPreview(URL.createObjectURL(file));
-      setErrors(prev => { const n = { ...prev }; delete n.imagem; return n; });
+      processImageFile(file);
     }
   };
 
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processImageFile(file);
+    }
+  };
+
+  const processImageFile = (file: File) => {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setErrors(prev => ({ ...prev, imagem: 'Formato inválido' }));
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      setErrors(prev => ({ ...prev, imagem: 'Máximo 5MB' }));
+      return;
+    }
+    
+    // Revogar URL anterior se existir
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+    }
+    
+    const url = URL.createObjectURL(file);
+    previewUrlRef.current = url;
+    setImagem(file);
+    setImagemPreview(url);
+    setErrors(prev => { const n = { ...prev }; delete n.imagem; return n; });
+  };
+
   const handleRemoveImage = () => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setImagem('');
     setImagemPreview('');
   };
@@ -237,7 +319,7 @@ export function EstampaFormModal({
         imagem,
         descricao: descricao.trim() || undefined,
       });
-      onOpenChange(false);
+      handleOpenChange(false);
       resetForm();
     } catch {
       // Erro tratado no hook
@@ -255,7 +337,7 @@ export function EstampaFormModal({
     try {
       const nomes = loteValidacao.validos.map(v => v.nome);
       await onSubmitBatch(nomes, tecidoBaseId);
-      onOpenChange(false);
+      handleOpenChange(false);
       resetForm();
     } catch {
       // Erro tratado no hook
@@ -264,11 +346,12 @@ export function EstampaFormModal({
     }
   };
 
-  const familiaNome = extrairFamilia(nome);
+  const familiaNome = extrairNomeFamiliaEstampa(nome);
   const isEditing = !!estampa;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="flex-shrink-0 px-4 sm:px-6 pt-4 sm:pt-6 pb-3">
           <DialogTitle className="text-xl">
@@ -403,24 +486,36 @@ export function EstampaFormModal({
                     </Button>
                   </div>
                 ) : (
-                  <label
-                    htmlFor="imagem"
-                    className={cn(
-                      'flex flex-col items-center justify-center w-full h-24 rounded-lg cursor-pointer transition-all',
-                      'border-2 border-dashed hover:border-pink-300 hover:bg-pink-50/50',
-                      errors.imagem ? 'border-red-300 bg-red-50/30' : 'border-gray-200'
-                    )}
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
                   >
-                    <Upload className="w-5 h-5 mb-1 text-gray-400" />
-                    <p className="text-sm text-gray-500">Clique para upload</p>
-                    <input
-                      id="imagem"
-                      type="file"
-                      className="hidden"
-                      accept="image/jpeg,image/jpg,image/png,image/webp"
-                      onChange={handleImageChange}
-                    />
-                  </label>
+                    <label
+                      htmlFor="imagem"
+                      className={cn(
+                        'flex flex-col items-center justify-center w-full h-24 rounded-lg cursor-pointer transition-all',
+                        'border-2 border-dashed',
+                        isDragging
+                          ? 'border-pink-500 bg-pink-50'
+                          : errors.imagem
+                          ? 'border-red-300 bg-red-50/30'
+                          : 'border-gray-200 hover:border-pink-300 hover:bg-pink-50/50'
+                      )}
+                    >
+                      <Upload className={cn("w-5 h-5 mb-1", isDragging ? "text-pink-500" : "text-gray-400")} />
+                      <p className="text-sm text-gray-500">
+                        {isDragging ? 'Solte a imagem aqui' : 'Clique ou arraste para upload'}
+                      </p>
+                      <input
+                        id="imagem"
+                        type="file"
+                        className="hidden"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={handleImageChange}
+                      />
+                    </label>
+                  </div>
                 )}
                 {errors.imagem && <p className="text-sm text-red-500">{errors.imagem}</p>}
               </div>
@@ -506,10 +601,7 @@ export function EstampaFormModal({
           <Button
             type="button"
             variant="ghost"
-            onClick={() => {
-              onOpenChange(false);
-              resetForm();
-            }}
+            onClick={() => handleOpenChange(false)}
             disabled={isSubmitting || loading}
             className="w-full sm:w-auto"
           >
@@ -537,5 +629,17 @@ export function EstampaFormModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Diálogo de confirmação de descarte */}
+    <ConfirmDialog
+      open={showDiscardConfirm}
+      onOpenChange={setShowDiscardConfirm}
+      title="Descartar alterações?"
+      description="Você tem dados não salvos. Deseja descartar as alterações?"
+      confirmLabel="Descartar"
+      variant="destructive"
+      onConfirm={confirmDiscard}
+    />
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Estampa } from '@/types/estampa.types';
+import { EstampaWithStatus } from '@/hooks/useEstampas';
 import {
   Table,
   TableBody,
@@ -28,16 +29,16 @@ import { cn } from '@/lib/utils';
 interface EstampaGrupo {
   key: string;
   label: string;
-  estampas: Estampa[];
+  estampas: EstampaWithStatus[];
 }
 
 interface EstampasTableProps {
   estampasAgrupadas: EstampaGrupo[];
   viewMode: 'table' | 'grid';
   groupBy: 'none' | 'familia' | 'tecido';
-  onEdit: (estampa: Estampa) => void;
-  onDelete: (estampa: Estampa) => void;
-  onDuplicate: (estampa: Estampa) => void;
+  onEdit: (estampa: EstampaWithStatus) => void;
+  onDelete: (estampa: EstampaWithStatus) => void;
+  onDuplicate: (estampa: EstampaWithStatus) => void;
   onUpdateNome: (id: string, nome: string) => Promise<void>;
   onUpdateSku: (id: string, sku: string) => Promise<void>;
   loading?: boolean;
@@ -55,15 +56,15 @@ function EstampaCard({
   onStartEditingNome,
   isGridView = false,
 }: {
-  estampa: Estampa;
-  onEdit: (estampa: Estampa) => void;
-  onDelete: (estampa: Estampa) => void;
-  onDuplicate: (estampa: Estampa) => void;
-  onStartEditingNome: (estampa: Estampa) => void;
+  estampa: EstampaWithStatus;
+  onEdit: (estampa: EstampaWithStatus) => void;
+  onDelete: (estampa: EstampaWithStatus) => void;
+  onDuplicate: (estampa: EstampaWithStatus) => void;
+  onStartEditingNome: (estampa: EstampaWithStatus) => void;
   isGridView?: boolean;
 }) {
-  const isSaving = (estampa as any)._status === 'saving';
-  const isDeleting = (estampa as any)._status === 'deleting';
+  const isSaving = estampa._status === 'saving';
+  const isDeleting = estampa._status === 'deleting';
 
   if (isGridView) {
     // Layout de grid - imagem maior
@@ -511,8 +512,8 @@ export function EstampasTable({
                     </TableHeader>
                     <TableBody>
                       {grupo.estampas.map((estampa, index) => {
-                        const isSaving = (estampa as any)._status === 'saving';
-                        const isDeleting = (estampa as any)._status === 'deleting';
+                        const isSaving = estampa._status === 'saving';
+                        const isDeleting = estampa._status === 'deleting';
                         const isEditingNome = editingNomeId === estampa.id;
                         const isEditingSku = editingSkuId === estampa.id;
 

@@ -131,7 +131,10 @@ export async function processReservedStockChange(event: any): Promise<void> {
         accessToken,
         body: {
           item_id: item_id,
-          stock_list: [{ model_id: variation_id, stock: 0 }],
+          stock_list: [{ 
+            model_id: variation_id, 
+            seller_stock: [{ stock: 0 }] 
+          }],
         },
       });
 

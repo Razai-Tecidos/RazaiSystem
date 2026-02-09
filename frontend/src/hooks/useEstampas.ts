@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Estampa, CreateEstampaData, UpdateEstampaData } from '@/types/estampa.types';
 import {
   getEstampas,
@@ -13,7 +13,7 @@ import {
 import { getTecidoById } from '@/lib/firebase/tecidos';
 import { useToast } from './use-toast';
 
-interface EstampaWithStatus extends Estampa {
+export interface EstampaWithStatus extends Estampa {
   _status?: 'saving' | 'deleting';
   _tempId?: string;
 }
@@ -22,6 +22,10 @@ export function useEstampas() {
   const [estampas, setEstampas] = useState<EstampaWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+
+  // Ref estável para acessar estampas dentro dos callbacks sem dependência
+  const estampasRef = useRef(estampas);
+  estampasRef.current = estampas;
 
   /**
    * Carrega todas as estampas
@@ -49,9 +53,6 @@ export function useEstampas() {
 
   /**
    * Verifica se um nome de estampa já existe
-   * @param nome Nome a verificar
-   * @param excludeId ID da estampa a excluir (para edição)
-   * @returns A estampa duplicada ou null
    */
   const verificarNomeDuplicado = useCallback(
     async (nome: string, excludeId?: string): Promise<Estampa | null> => {
@@ -68,7 +69,6 @@ export function useEstampas() {
       const tempId = `temp-${Date.now()}`;
       let imageUrl = '';
 
-      // Verificar nome duplicado
       const estampaDuplicada = await checkNomeDuplicadoEstampa(data.nome);
       if (estampaDuplicada) {
         toast({
@@ -79,7 +79,6 @@ export function useEstampas() {
         throw new Error(`Nome duplicado: "${data.nome}" já existe`);
       }
 
-      // Buscar nome do tecido base
       let tecidoBaseNome = '';
       try {
         const tecido = await getTecidoById(data.tecidoBaseId);
@@ -88,7 +87,6 @@ export function useEstampas() {
         console.warn('Erro ao buscar tecido base:', error);
       }
 
-      // Criar estampa temporária para UI otimista
       const tempEstampa: EstampaWithStatus = {
         id: tempId,
         nome: data.nome,
@@ -105,26 +103,17 @@ export function useEstampas() {
 
       setEstampas((prev) => [tempEstampa, ...prev]);
 
-      toast({
-        title: 'Cadastrando...',
-        description: 'Estampa sendo cadastrada...',
-      });
-
       try {
-        // Gerar SKU baseado na família (primeira palavra do nome)
         const { sku } = await gerarSkuPorFamiliaEstampa(data.nome);
 
-        // Upload da imagem se for File (imagem é opcional)
         if (data.imagem instanceof File) {
           imageUrl = await uploadEstampaImage(data.imagem, tempId);
         } else if (data.imagem) {
           imageUrl = data.imagem;
         }
 
-        // Criar no Firestore
         const created = await createEstampaFirebase(data, sku, imageUrl || undefined, tecidoBaseNome);
 
-        // Atualizar lista com estampa real
         setEstampas((prev) =>
           prev.map((e) =>
             e._tempId === tempId ? { ...created } : e
@@ -137,11 +126,8 @@ export function useEstampas() {
         });
       } catch (error: any) {
         console.error('Erro ao criar estampa:', error);
-
-        // Remover temporário em caso de erro
         setEstampas((prev) => prev.filter((e) => e._tempId !== tempId));
 
-        // Só mostrar toast se não for erro de duplicado (já mostrou acima)
         if (!error.message?.includes('Nome duplicado')) {
           toast({
             title: 'Erro',
@@ -163,13 +149,13 @@ export function useEstampas() {
     async (data: UpdateEstampaData): Promise<void> => {
       const { id, ...updateData } = data;
 
-      // Encontrar estampa atual
-      const currentEstampa = estampas.find((e) => e.id === id);
+      // Usar ref para acessar estado atual sem dependência
+      const currentEstampas = estampasRef.current;
+      const currentEstampa = currentEstampas.find((e) => e.id === id);
       if (!currentEstampa) {
         throw new Error('Estampa não encontrada');
       }
 
-      // Verificar nome duplicado se estiver alterando o nome
       if (updateData.nome && updateData.nome !== currentEstampa.nome) {
         const estampaDuplicada = await checkNomeDuplicadoEstampa(updateData.nome, id);
         if (estampaDuplicada) {
@@ -182,7 +168,6 @@ export function useEstampas() {
         }
       }
 
-      // Marcar como salvando
       setEstampas((prev) =>
         prev.map((e) =>
           e.id === id ? { ...e, _status: 'saving' as const } : e
@@ -193,28 +178,20 @@ export function useEstampas() {
         let imageUrl: string | undefined;
         let tecidoBaseNome: string | undefined;
 
-        // Upload nova imagem se for File
         if (updateData.imagem instanceof File) {
           imageUrl = await uploadEstampaImage(updateData.imagem, id);
         }
 
-        // Buscar nome do tecido se mudou
         if (updateData.tecidoBaseId && updateData.tecidoBaseId !== currentEstampa.tecidoBaseId) {
           const tecido = await getTecidoById(updateData.tecidoBaseId);
           tecidoBaseNome = tecido?.nome || '';
         }
 
-        // Determinar o SKU final
-        // 1. Se foi passado um SKU manualmente, usar ele
-        // 2. Se o nome mudou e a família mudou, gerar novo SKU
-        // 3. Caso contrário, manter o SKU atual
         let skuFinal: string | undefined = undefined;
         
         if (updateData.sku !== undefined) {
-          // SKU foi passado manualmente
           skuFinal = updateData.sku;
         } else if (updateData.nome && updateData.nome !== currentEstampa.nome) {
-          // Nome mudou, verificar se família mudou
           const familiaAtual = extrairNomeFamiliaEstampa(currentEstampa.nome);
           const novaFamilia = extrairNomeFamiliaEstampa(updateData.nome);
           
@@ -224,7 +201,6 @@ export function useEstampas() {
           }
         }
 
-        // Atualizar no Firestore
         await updateEstampaFirebase(
           id, 
           { ...updateData, sku: skuFinal }, 
@@ -232,7 +208,6 @@ export function useEstampas() {
           tecidoBaseNome
         );
 
-        // Atualizar lista local
         setEstampas((prev) =>
           prev.map((e) =>
             e.id === id
@@ -255,14 +230,12 @@ export function useEstampas() {
       } catch (error: any) {
         console.error('Erro ao atualizar estampa:', error);
 
-        // Remover status de salvando
         setEstampas((prev) =>
           prev.map((e) =>
             e.id === id ? { ...e, _status: undefined } : e
           )
         );
 
-        // Só mostrar toast se não for erro de duplicado (já mostrou acima)
         if (!error.message?.includes('Nome duplicado')) {
           toast({
             title: 'Erro',
@@ -274,7 +247,7 @@ export function useEstampas() {
         throw error;
       }
     },
-    [estampas, toast]
+    [toast]
   );
 
   /**
@@ -282,10 +255,11 @@ export function useEstampas() {
    */
   const deleteEstampa = useCallback(
     async (id: string): Promise<void> => {
-      const estampaToDelete = estampas.find((e) => e.id === id);
+      // Usar ref para acessar estado atual sem dependência
+      const currentEstampas = estampasRef.current;
+      const estampaToDelete = currentEstampas.find((e) => e.id === id);
       if (!estampaToDelete) return;
 
-      // Marcar como deletando
       setEstampas((prev) =>
         prev.map((e) =>
           e.id === id ? { ...e, _status: 'deleting' as const } : e
@@ -294,8 +268,6 @@ export function useEstampas() {
 
       try {
         await deleteEstampaFirebase(id);
-
-        // Remover da lista
         setEstampas((prev) => prev.filter((e) => e.id !== id));
 
         toast({
@@ -305,7 +277,6 @@ export function useEstampas() {
       } catch (error: any) {
         console.error('Erro ao excluir estampa:', error);
 
-        // Restaurar estampa
         setEstampas((prev) =>
           prev.map((e) =>
             e.id === id ? { ...e, _status: undefined } : e
@@ -321,7 +292,7 @@ export function useEstampas() {
         throw error;
       }
     },
-    [estampas, toast]
+    [toast]
   );
 
   /**
@@ -331,7 +302,6 @@ export function useEstampas() {
     async (nomes: string[], tecidoBaseId: string): Promise<void> => {
       if (nomes.length === 0) return;
 
-      // Verificar nomes duplicados antes de iniciar
       const nomesExistentes: string[] = [];
       for (const nome of nomes) {
         const duplicada = await checkNomeDuplicadoEstampa(nome);
@@ -349,7 +319,6 @@ export function useEstampas() {
         throw new Error(`Nomes duplicados: ${nomesExistentes.join(', ')}`);
       }
 
-      // Buscar nome do tecido base uma vez
       let tecidoBaseNome = '';
       try {
         const tecido = await getTecidoById(tecidoBaseId);
@@ -358,7 +327,6 @@ export function useEstampas() {
         console.warn('Erro ao buscar tecido base:', error);
       }
 
-      // Criar estampas temporárias para UI otimista
       const tempEstampas: EstampaWithStatus[] = nomes.map((nome, index) => ({
         id: `temp-batch-${Date.now()}-${index}`,
         nome,
@@ -374,25 +342,15 @@ export function useEstampas() {
 
       setEstampas((prev) => [...tempEstampas, ...prev]);
 
-      toast({
-        title: 'Cadastrando...',
-        description: `Criando ${nomes.length} estampa${nomes.length > 1 ? 's' : ''}...`,
-      });
-
       let criadas = 0;
       let erros = 0;
-      const estampasCriadas: Estampa[] = [];
 
-      // Criar sequencialmente para garantir SKUs corretos
       for (let i = 0; i < nomes.length; i++) {
         const nome = nomes[i];
         const tempId = tempEstampas[i]._tempId!;
 
         try {
-          // Gerar SKU
           const { sku } = await gerarSkuPorFamiliaEstampa(nome);
-
-          // Criar no Firestore
           const created = await createEstampaFirebase(
             { nome, tecidoBaseId },
             sku,
@@ -400,10 +358,7 @@ export function useEstampas() {
             tecidoBaseNome
           );
 
-          estampasCriadas.push(created);
           criadas++;
-
-          // Atualizar UI com estampa real
           setEstampas((prev) =>
             prev.map((e) =>
               e._tempId === tempId ? { ...created } : e
@@ -412,13 +367,10 @@ export function useEstampas() {
         } catch (error) {
           console.error(`Erro ao criar estampa "${nome}":`, error);
           erros++;
-
-          // Remover temporário com erro
           setEstampas((prev) => prev.filter((e) => e._tempId !== tempId));
         }
       }
 
-      // Toast final
       if (erros === 0) {
         toast({
           title: 'Sucesso!',

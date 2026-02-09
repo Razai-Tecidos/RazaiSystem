@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nperf: melhorias no modulo de captura e catalogo\n\n- Memory leaks corrigidos:\n  * useBluetooth: adicionar cleanup de event listeners com useRef\n  * TecidoSelecaoModal: cleanup de setTimeout\n  * Catalogo: cleanup de URL.createObjectURL\n\n- Performance:\n  * useCatalogos: trocar queries sequenciais por Promise.all\n  * Reduz 20 chamadas sequenciais para paralelo\n\n- Padronizacao:\n  * useCapturaLista: adicionar useRef + remover console.log\n  * Extrair agruparVinculosPorTecido para catalogos.ts\n\n- UX/UI:\n  * CatalogoPublico: tratamento de erro com retry e timeout\n  * Skeleton loading em Catalogo, CatalogoPublico e TecidoSelecaoModal\n  * Criar componente Skeleton reutilizavel\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)"
+    ]
+  }
+}

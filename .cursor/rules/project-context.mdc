@@ -1,38 +1,72 @@
 ---
-description: Contexto técnico e decisões importantes do projeto RazaiSystem
+description: Contexto essencial do RazaiSystem - carrega automaticamente em toda conversa
 globs: **/*
 alwaysApply: true
 ---
 
-# Contexto do Projeto RazaiSystem
+# RazaiSystem - Contexto Essencial
 
-> Para informações completas, consulte [CONTEXT.md](../../CONTEXT.md)
+## Stack
+- **Backend**: Cloud Functions (Express + TypeScript) em `functions/src/`
+- **Frontend**: React 18 + Vite + TypeScript + shadcn/ui + Tailwind em `frontend/src/`
+- **DB/Auth/Storage**: Firebase (Firestore, Auth, Storage)
+- **API externa**: Shopee Open Platform v2
+- **Shell**: PowerShell (usar `;` para encadear comandos, NUNCA `&&`)
 
-## Informações Críticas
+## Estrutura Rápida
 
-### Padrão Brasileiro
-- Números decimais: vírgula (,) como separador
-- Largura sempre em metros
-- Conversão automática: vírgula ↔ ponto
-- Aplicar em todos os campos numéricos
+```
+functions/src/
+  routes/         → 11 arquivos de rotas (Express Router)
+  services/       → 11 serviços (lógica de negócio)
+  types/          → 6 arquivos de tipos TypeScript
+  scheduled/      → 2 funções agendadas
+  config/         → firebase.ts, shopee.ts
 
-### Campo de Composição
-- Texto livre (sem validação de formato)
-- Sem numeração nos cards ("Item 1", etc.)
-- Apenas valida preenchimento
-- Agrupamento visual com card/borda
+frontend/src/
+  pages/          → 18 páginas React
+  components/     → Cores/, Shopee/, Layout/, Tecidos/, Estampas/, ui/
+  hooks/          → 22 hooks customizados
+  types/          → 10 arquivos de tipos
+  lib/            → utils, colorUtils, deltaE, firebase/
+```
 
-### UI Otimista
-- Padrão usado em todas operações CRUD
-- Atualização imediata + reversão em erro
-- Feedback visual durante operações
-- Toasts para feedback de ações
+## Regras Invioláveis
 
-### Estrutura de Dados
-- Composição: texto livre (nome), porcentagem não validada
-- Largura: metros (float)
-- SKU: T001, T002, etc. (não reutiliza excluídos)
+1. **Firestore**: NUNCA enviar `undefined` como valor. Usar `null` ou omitir o campo.
+2. **Soft-delete**: SEMPRE incluir `deletedAt: null` ao criar documentos.
+3. **Índices**: Query com `where` + `orderBy` em campos diferentes EXIGE índice composto.
+4. **Shopee upload_image**: Usar multipart/form-data, NÃO JSON.
+5. **Shopee update_stock**: Formato `seller_stock: [{ stock: N }]`.
+6. **Payload Shopee**: Rodar `removeUndefinedValues()` antes de chamar `add_item`.
+7. **Formato brasileiro**: Vírgula como separador decimal, largura em metros.
+8. **Preço**: Definido por TAMANHO (`precos_por_tamanho`), não por cor.
 
-## Manutenção
+## Collections Principais
 
-Este arquivo referencia CONTEXT.md que deve ser mantido sempre atualizado quando houver decisões importantes ou mudanças de padrão.
+- `tecidos`, `cores`, `cor_tecido`, `estampas`, `tamanhos` → CRUD com soft-delete
+- `shopee_products` → Rascunhos e anúncios publicados
+- `shopee_shops` → Tokens OAuth (write backend-only)
+- `shopee_categories_cache`, `shopee_logistics_cache` → Caches (write backend-only)
+- `catalogos` → Leitura pública (links compartilháveis)
+
+## Deploy
+
+```powershell
+# Backend
+cd functions; npm run build; cd ..; npx firebase deploy --only functions
+
+# Frontend
+cd frontend; npm run build; cd ..; npx firebase deploy --only hosting
+
+# Regras/Índices
+npx firebase deploy --only firestore:rules,firestore:indexes
+```
+
+## Skills Disponíveis
+
+- **razai-system-map**: Mapa completo (endpoints, collections, páginas/hooks)
+- **shopee-integration**: API Shopee (payloads, gotchas, fluxos)
+- **firebase-patterns**: Padrões Firebase (regras, índices, erros comuns)
+- **backend-development**: Guia backend (rotas, serviços, tipos)
+- **frontend-development**: Guia frontend (componentes, hooks, páginas)

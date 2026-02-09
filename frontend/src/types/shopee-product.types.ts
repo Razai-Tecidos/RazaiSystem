@@ -129,10 +129,10 @@ export interface CreateShopeeProductData {
   tecido_id: string;
   cores: Array<{
     cor_id: string;
-    preco?: number;
     estoque: number;
   }>;
   tamanhos?: string[];
+  precos_por_tamanho?: Record<string, number>;
   preco_base: number;
   estoque_padrao: number;
   categoria_id: number;

@@ -1,4 +1,4 @@
-import { Tecido } from '@/types/tecido.types';
+import { TecidoWithStatus } from '@/hooks/useTecidos';
 import {
   Table,
   TableBody,
@@ -8,18 +8,19 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Edit, Trash2, Loader2, Package } from 'lucide-react';
+import { Edit, Trash2, Loader2, Package, Plus, SearchX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TecidosTableProps {
-  tecidos: Tecido[];
-  onEdit: (tecido: Tecido) => void;
+  tecidos: TecidoWithStatus[];
+  onEdit: (tecido: TecidoWithStatus) => void;
   onDelete: (id: string) => void;
+  onAdd?: () => void;
   loading?: boolean;
 }
 
 // Função para formatar composição
-const formatComposicao = (composicao: Tecido['composicao']): string => {
+const formatComposicao = (composicao: string | unknown): string => {
   if (typeof composicao === 'string') {
     return composicao;
   }
@@ -35,12 +36,12 @@ function TecidoCard({
   onEdit, 
   onDelete 
 }: { 
-  tecido: Tecido; 
-  onEdit: (tecido: Tecido) => void; 
+  tecido: TecidoWithStatus; 
+  onEdit: (tecido: TecidoWithStatus) => void; 
   onDelete: (id: string) => void;
 }) {
-  const isSaving = (tecido as any)._status === 'saving';
-  const isDeleting = (tecido as any)._status === 'deleting';
+  const isSaving = tecido._status === 'saving';
+  const isDeleting = tecido._status === 'deleting';
 
   return (
     <div
@@ -141,15 +142,24 @@ export function TecidosTable({
   tecidos,
   onEdit,
   onDelete,
+  onAdd,
   loading,
 }: TecidosTableProps) {
+  // Empty state melhorado com CTA
   if (tecidos.length === 0 && !loading) {
     return (
       <div className="text-center py-12 text-gray-500 animate-fade-in">
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-          <Package className="h-8 w-8 text-gray-300" />
+          <SearchX className="h-8 w-8 text-gray-300" />
         </div>
-        <p>Nenhum tecido cadastrado ainda.</p>
+        <p className="font-medium text-gray-700">Nenhum tecido encontrado</p>
+        <p className="text-sm mt-1">Tente alterar a busca ou o filtro aplicado.</p>
+        {onAdd && (
+          <Button onClick={onAdd} className="mt-4" variant="outline">
+            <Plus className="mr-2 h-4 w-4" />
+            Adicionar primeiro tecido
+          </Button>
+        )}
       </div>
     );
   }
@@ -163,12 +173,13 @@ export function TecidosTable({
         ))}
       </div>
 
-      {/* Desktop: Tabela com scroll */}
+      {/* Desktop: Tabela com thumbnail */}
       <div className="hidden md:block rounded-lg border overflow-hidden animate-fade-in">
         <div className="scroll-smooth-x">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/80">
+                <TableHead className="font-semibold w-10"></TableHead>
                 <TableHead className="font-semibold">SKU</TableHead>
                 <TableHead className="font-semibold">Nome</TableHead>
                 <TableHead className="font-semibold">Tipo</TableHead>
@@ -179,8 +190,8 @@ export function TecidosTable({
             </TableHeader>
             <TableBody>
               {tecidos.map((tecido, index) => {
-                const isSaving = (tecido as any)._status === 'saving';
-                const isDeleting = (tecido as any)._status === 'deleting';
+                const isSaving = tecido._status === 'saving';
+                const isDeleting = tecido._status === 'deleting';
 
                 return (
                   <TableRow
@@ -191,6 +202,19 @@ export function TecidosTable({
                     )}
                     style={{ animationDelay: `${index * 30}ms` }}
                   >
+                    <TableCell className="w-10 pr-0">
+                      <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+                        {tecido.imagemPadrao ? (
+                          <img 
+                            src={tecido.imagemPadrao} 
+                            alt={tecido.nome}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Package className="h-4 w-4 text-gray-300" />
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="font-medium">
                       {isSaving ? (
                         <span className="flex items-center gap-2">

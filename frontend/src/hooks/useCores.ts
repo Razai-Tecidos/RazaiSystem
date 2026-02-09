@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Cor, CreateCorData, UpdateCorData, LabColor } from '@/types/cor.types';
 import {
   getCores as getCoresFirebase,
@@ -15,9 +15,9 @@ import {
 import { updateCorDataInVinculos, moverVinculosDeCor } from '@/lib/firebase/cor-tecido';
 import { useToast } from '@/hooks/use-toast';
 
-interface CorWithStatus extends Cor {
+export interface CorWithStatus extends Cor {
   _status?: 'saving' | 'deleting' | 'idle';
-  _tempId?: string; // Para cores temporárias na UI otimista
+  _tempId?: string;
 }
 
 /**
@@ -29,10 +29,9 @@ export function useCores() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Carregar cores ao montar componente
-  useEffect(() => {
-    loadCores();
-  }, []);
+  // Ref estável para acessar cores dentro dos callbacks sem dependência
+  const coresRef = useRef(cores);
+  coresRef.current = cores;
 
   /**
    * Carrega todas as cores do Firebase
@@ -46,12 +45,6 @@ export function useCores() {
       console.log('[useCores] Cores carregadas:', data.length);
       setCores(data.map((c) => ({ ...c, _status: 'idle' as const })));
     } catch (err: any) {
-      // Erros esperados que não devem ser tratados como erro crítico:
-      // - permission-denied: permissão negada (usuário não autenticado ou sem permissão)
-      // - failed-precondition: índice não criado (já tem fallback)
-      // - not-found: coleção não existe ainda (estado válido)
-      // - unavailable: serviço temporariamente indisponível
-      
       const isErroEsperado = 
         err.code === 'permission-denied' ||
         err.code === 'failed-precondition' ||
@@ -59,26 +52,26 @@ export function useCores() {
         err.code === 'unavailable';
       
       if (isErroEsperado) {
-        // Para erros esperados, apenas logar e continuar com lista vazia
         console.warn('Erro esperado ao carregar cores:', err.code, err.message);
-        setCores([]); // Lista vazia é um estado válido
-        setError(null); // Não marcar como erro
+        setCores([]);
+        setError(null);
       } else {
-        // Para erros críticos, marcar como erro mas não mostrar toast no carregamento inicial
         const errorMessage = err.message || 'Erro ao carregar cores';
         setError(errorMessage);
         console.error('Erro crítico ao carregar cores:', err);
-        // Não mostrar toast no carregamento inicial para não incomodar o usuário
-        // O erro fica disponível no estado 'error' caso seja necessário exibir na UI
       }
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // Carregar cores ao montar componente
+  useEffect(() => {
+    loadCores();
+  }, [loadCores]);
+
   /**
    * Gera SKU baseado na família da cor
-   * Retorna null se o nome for padrão "Cor capturada"
    */
   const generateSkuFromName = useCallback(async (nome: string): Promise<string | null> => {
     const result = await gerarSkuPorFamilia(nome);
@@ -87,9 +80,6 @@ export function useCores() {
 
   /**
    * Verifica se um nome de cor já existe
-   * @param nome Nome a verificar
-   * @param excludeId ID da cor a excluir (para edição)
-   * @returns A cor duplicada ou null
    */
   const verificarNomeDuplicado = useCallback(
     async (nome: string, excludeId?: string): Promise<Cor | null> => {
@@ -100,14 +90,12 @@ export function useCores() {
 
   /**
    * Cria uma nova cor com UI otimista
-   * Bloqueia se já existir uma cor com o mesmo nome
    */
   const createCor = useCallback(
     async (data: CreateCorData): Promise<void> => {
       const tempId = `temp-${Date.now()}`;
       const isPadrao = isNomePadrao(data.nome);
 
-      // Verificar nome duplicado (exceto para nomes padrão)
       if (!isPadrao) {
         const corDuplicada = await checkNomeDuplicado(data.nome);
         if (corDuplicada) {
@@ -120,34 +108,23 @@ export function useCores() {
         }
       }
 
-      // Criar cor temporária para UI otimista
       const tempCor: CorWithStatus = {
         id: tempId,
         nome: data.nome,
         codigoHex: data.codigoHex,
-        sku: isPadrao ? undefined : '...', // Sem SKU se for nome padrão
+        sku: isPadrao ? undefined : '...',
         createdAt: {} as any,
         updatedAt: {} as any,
         _status: 'saving',
         _tempId: tempId,
       };
 
-      // Adicionar temporária à lista
       setCores((prev) => [tempCor, ...prev]);
 
-      toast({
-        title: 'Cadastrando...',
-        description: 'Cor sendo cadastrada...',
-      });
-
       try {
-        // Gerar SKU apenas se não for nome padrão
         const sku = await generateSkuFromName(data.nome);
-
-        // Criar documento
         const createdCor = await createCorFirebase(data, sku);
 
-        // Atualizar lista removendo temporária e adicionando real
         setCores((prev) => [
           { ...createdCor, _status: 'idle' as const },
           ...prev.filter((c) => c._tempId !== tempId).map((c) => ({ ...c, _status: 'idle' as const })),
@@ -160,10 +137,8 @@ export function useCores() {
             : 'Cor cadastrada! Renomeie para gerar o SKU.',
         });
       } catch (err: any) {
-        // Remover temporária em caso de erro
         setCores((prev) => prev.filter((c) => c._tempId !== tempId));
 
-        // Só mostrar toast se não for erro de duplicado (já mostrou acima)
         if (!err.message?.includes('Nome duplicado')) {
           toast({
             title: 'Erro',
@@ -180,17 +155,14 @@ export function useCores() {
 
   /**
    * Atualiza uma cor existente
-   * Se a cor não tinha SKU e o novo nome não é padrão, gera SKU
-   * Bloqueia se o novo nome já existir em outra cor
    */
   const updateCor = useCallback(
     async (data: UpdateCorData): Promise<void> => {
-      const corIndex = cores.findIndex((c) => c.id === data.id);
-      if (corIndex === -1) return;
+      // Usar ref para acessar estado atual sem dependência
+      const currentCores = coresRef.current;
+      const originalCor = currentCores.find((c) => c.id === data.id);
+      if (!originalCor) return;
 
-      const originalCor = cores[corIndex];
-
-      // Verificar nome duplicado se estiver alterando o nome
       if (data.nome && data.nome !== originalCor.nome && !isNomePadrao(data.nome)) {
         const corDuplicada = await checkNomeDuplicado(data.nome, data.id);
         if (corDuplicada) {
@@ -210,32 +182,21 @@ export function useCores() {
         )
       );
 
-      toast({
-        title: 'Atualizando...',
-        description: 'Cor sendo atualizada...',
-      });
-
       try {
-        // Verificar se precisa gerar SKU
-        // (cor não tem SKU e o novo nome não é padrão)
         let novoSku: string | null = null;
         const nomeAtualizado = data.nome || originalCor.nome;
         
         if (!originalCor.sku && data.nome && !isNomePadrao(data.nome)) {
-          // Gerar SKU para a cor que foi renomeada
           novoSku = await generateSkuFromName(nomeAtualizado);
         }
 
-        // SKU final: prioriza o gerado automaticamente, senão usa o passado manualmente
         const skuFinal = novoSku || data.sku;
 
-        // Atualizar documento (incluindo SKU se gerado ou passado)
         await updateCorFirebase(data.id, {
           ...data,
           ...(skuFinal !== undefined ? { sku: skuFinal } : {}),
         });
 
-        // Propagar mudanças para os vínculos (dados denormalizados)
         const dadosParaVinculos: { corNome?: string; corHex?: string; corSku?: string } = {};
         if (data.nome) dadosParaVinculos.corNome = data.nome;
         if (data.codigoHex) dadosParaVinculos.corHex = data.codigoHex;
@@ -245,7 +206,6 @@ export function useCores() {
           await updateCorDataInVinculos(data.id, dadosParaVinculos);
         }
 
-        // Recarregar cores para ter dados atualizados
         await loadCores();
 
         toast({
@@ -264,7 +224,6 @@ export function useCores() {
           )
         );
 
-        // Só mostrar toast se não for erro de duplicado (já mostrou acima)
         if (!err.message?.includes('Nome duplicado')) {
           toast({
             title: 'Erro',
@@ -276,7 +235,7 @@ export function useCores() {
         throw err;
       }
     },
-    [cores, loadCores, toast, generateSkuFromName]
+    [loadCores, toast, generateSkuFromName]
   );
 
   /**
@@ -284,19 +243,15 @@ export function useCores() {
    */
   const deleteCor = useCallback(
     async (id: string): Promise<void> => {
-      const cor = cores.find((c) => c.id === id);
+      // Usar ref para acessar estado atual sem dependência
+      const currentCores = coresRef.current;
+      const cor = currentCores.find((c) => c.id === id);
       if (!cor) return;
 
       // Remover otimisticamente
       setCores((prev) => prev.filter((c) => c.id !== id));
 
-      toast({
-        title: 'Excluindo...',
-        description: 'Cor sendo excluída...',
-      });
-
       try {
-        // Deletar do Firebase (soft delete)
         await deleteCorFirebase(id);
 
         toast({
@@ -316,12 +271,11 @@ export function useCores() {
         throw err;
       }
     },
-    [cores, toast]
+    [toast]
   );
 
   /**
    * Busca cor similar por LAB
-   * Retorna a cor mais próxima se deltaE < limiar
    */
   const findSimilar = useCallback(async (lab: LabColor, limiar: number = 3): Promise<Cor | null> => {
     return findCorByLab(lab, limiar);
@@ -343,13 +297,9 @@ export function useCores() {
 
   /**
    * Mescla duas cores: move vínculos da cor origem para a cor destino e deleta a origem
-   * @param corOrigemId - ID da cor que será removida
-   * @param corDestinoId - ID da cor que será mantida
-   * @returns Número de vínculos movidos
    */
   const mesclarCores = useCallback(
     async (corOrigemId: string, corDestinoId: string): Promise<number> => {
-      // Buscar cor destino para pegar os dados
       const corDestino = await getCorById(corDestinoId);
       if (!corDestino) {
         throw new Error('Cor destino não encontrada');
@@ -361,7 +311,6 @@ export function useCores() {
       });
 
       try {
-        // Mover todos os vínculos da cor origem para a cor destino
         const vinculosMovidos = await moverVinculosDeCor(
           corOrigemId,
           corDestinoId,
@@ -372,10 +321,7 @@ export function useCores() {
           }
         );
 
-        // Deletar a cor origem
         await deleteCorFirebase(corOrigemId);
-
-        // Recarregar lista de cores
         await loadCores();
 
         toast({

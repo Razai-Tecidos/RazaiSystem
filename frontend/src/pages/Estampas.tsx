@@ -29,6 +29,7 @@ import { Header } from '@/components/Layout/Header';
 import { BreadcrumbNav } from '@/components/Layout/BreadcrumbNav';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { extrairNomeFamiliaEstampa } from '@/lib/firebase/estampas';
 
 interface EstampasProps {
   onNavigateHome?: () => void;
@@ -38,11 +39,6 @@ type SortField = 'nome' | 'sku' | 'tecido' | 'data';
 type SortOrder = 'asc' | 'desc';
 type ViewMode = 'table' | 'grid';
 type GroupBy = 'none' | 'familia' | 'tecido';
-
-// Extrair família do nome (primeira palavra)
-function extrairFamilia(nome: string): string {
-  return nome.trim().split(/\s+/)[0] || '';
-}
 
 export function Estampas({ onNavigateHome }: EstampasProps) {
   const { estampas, loading, createEstampa, createEstampasBatch, updateEstampa, deleteEstampa } = useEstampas();
@@ -129,7 +125,7 @@ export function Estampas({ onNavigateHome }: EstampasProps) {
     estampasFiltradas.forEach(estampa => {
       let key: string;
       if (groupBy === 'familia') {
-        key = extrairFamilia(estampa.nome);
+        key = extrairNomeFamiliaEstampa(estampa.nome) || '';
       } else {
         key = estampa.tecidoBaseNome || 'Sem tecido';
       }
@@ -232,7 +228,7 @@ export function Estampas({ onNavigateHome }: EstampasProps) {
     const rows = estampasFiltradas.map(e => [
       e.sku || '',
       e.nome,
-      extrairFamilia(e.nome),
+      extrairNomeFamiliaEstampa(e.nome) || '',
       e.tecidoBaseNome || '',
       e.descricao || '',
     ]);
@@ -272,7 +268,7 @@ export function Estampas({ onNavigateHome }: EstampasProps) {
   // Contadores
   const totalEstampas = estampas.length;
   const totalFiltradas = estampasFiltradas.length;
-  const totalFamilias = new Set(estampas.map(e => extrairFamilia(e.nome))).size;
+  const totalFamilias = new Set(estampas.map(e => extrairNomeFamiliaEstampa(e.nome) || '')).size;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -454,8 +450,19 @@ export function Estampas({ onNavigateHome }: EstampasProps) {
 
           {/* Conteúdo */}
           {loading && estampas.length === 0 ? (
-            <div className="flex justify-center items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="bg-white rounded-lg border p-4 animate-pulse">
+                  <div className="flex items-start gap-3">
+                    <div className="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-1/4" />
+                      <div className="h-3 bg-gray-100 rounded w-1/2" />
+                      <div className="h-3 bg-gray-100 rounded w-1/3" />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : estampasFiltradas.length === 0 ? (
             <div className="text-center py-12 text-gray-500">

@@ -7,6 +7,9 @@ import {
   setDoc,
   updateDoc,
   serverTimestamp,
+  query,
+  where,
+  orderBy,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { Cor, SkuControlCor, CreateCorData, LabColor } from '@/types/cor.types';
@@ -47,26 +50,21 @@ export async function checkNomeDuplicado(
 
 /**
  * Busca todas as cores cadastradas (não excluídas)
+ * Usa índice composto: deletedAt ASC, createdAt DESC
  */
 export async function getCores(): Promise<Cor[]> {
   try {
-    // Buscar todas as cores e filtrar client-side para evitar problemas
-    // com documentos que não têm o campo deletedAt
-    const snapshot = await getDocs(collection(db, CORES_COLLECTION));
+    const q = query(
+      collection(db, CORES_COLLECTION),
+      where('deletedAt', '==', null),
+      orderBy('createdAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
     
-    const cores = snapshot.docs
-      .filter((doc) => !doc.data().deletedAt) // Filtrar excluídos client-side
-      .map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Cor[];
-    
-    // Ordenar por data de criação (mais recentes primeiro)
-    return cores.sort((a, b) => {
-      const aTime = a.createdAt?.toMillis() || 0;
-      const bTime = b.createdAt?.toMillis() || 0;
-      return bTime - aTime;
-    });
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Cor[];
   } catch (error: any) {
     console.error('Erro ao carregar cores:', error);
     

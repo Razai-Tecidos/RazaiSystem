@@ -73,7 +73,7 @@ export const maintainDisabledColors = functions.pubsub
                         item_id: itemId,
                         stock_list: [{
                           model_id: modelId,
-                          stock: 0,
+                          seller_stock: [{ stock: 0 }],
                         }],
                       },
                     });

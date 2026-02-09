@@ -485,7 +485,7 @@ async function zeroStockForModels(
           item_id: itemId,
           stock_list: modelsToZero.map(({ model_id }) => ({
             model_id,
-            stock: 0,
+            seller_stock: [{ stock: 0 }],
           })),
         },
       }) as any;
@@ -719,7 +719,7 @@ router.post('/update-color-availability', authMiddleware, async (req: Request, r
               item_id: itemId,
               stock_list: target.model_ids.map(modelIdRaw => ({
                 model_id: typeof modelIdRaw === 'string' ? parseInt(modelIdRaw, 10) : modelIdRaw,
-                stock,
+                seller_stock: [{ stock }],
               })),
             },
           }) as any;

@@ -92,7 +92,7 @@ async function fetchCategoriesFromShopee(shopId: number): Promise<ShopeeCategory
     
     return {
       id: cat.category_id,
-      parent_category_id: cat.parent_category_id > 0 ? cat.parent_category_id : undefined,
+      parent_category_id: cat.parent_category_id > 0 ? cat.parent_category_id : null,
       original_category_name: cat.original_category_name,
       display_name: cat.display_category_name || cat.original_category_name,
       has_children: cat.has_children,
@@ -152,7 +152,7 @@ export async function getCategoryPath(shopId: number, categoryId: number): Promi
   const categories = await getCategories(shopId);
   const path: ShopeeCategory[] = [];
   
-  let currentId: number | undefined = categoryId;
+  let currentId: number | null | undefined = categoryId;
   
   while (currentId) {
     const category = categories.find(c => c.id === currentId);

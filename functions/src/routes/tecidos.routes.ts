@@ -38,7 +38,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
 /**
  * GET /api/tecidos/:id
- * Busca um tecido específico
+ * Busca um tecido específico (ignora soft-deleted)
  */
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -52,11 +52,20 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       });
     }
 
+    // Verificar soft-delete
+    const data = doc.data();
+    if (data?.deletedAt) {
+      return res.status(404).json({
+        success: false,
+        error: 'Tecido não encontrado',
+      });
+    }
+
     return res.json({
       success: true,
       data: {
         id: doc.id,
-        ...doc.data(),
+        ...data,
       },
     });
   } catch (error: any) {
@@ -77,34 +86,51 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     const data: CreateTecidoRequest = req.body;
 
     // Validações básicas
-    if (!data.nome || !data.largura || !data.composicao || !data.imagemPadrao) {
+    if (!data.nome?.trim()) {
       return res.status(400).json({
         success: false,
-        error: 'Campos obrigatórios: nome, largura, composicao, imagemPadrao',
+        error: 'Nome é obrigatório',
       });
     }
 
-    if (data.composicao.length === 0) {
+    if (data.nome.trim().length < 3) {
       return res.status(400).json({
         success: false,
-        error: 'Composição deve ter pelo menos um item',
+        error: 'Nome deve ter pelo menos 3 caracteres',
       });
     }
 
-    const somaPorcentagem = data.composicao.reduce(
-      (sum, item) => sum + item.porcentagem,
-      0
-    );
-
-    if (somaPorcentagem !== 100) {
+    if (!data.largura || typeof data.largura !== 'number' || data.largura <= 0) {
       return res.status(400).json({
         success: false,
-        error: `A soma das porcentagens deve ser 100% (atual: ${somaPorcentagem}%)`,
+        error: 'Largura deve ser um número positivo',
+      });
+    }
+
+    if (!data.composicao?.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Composição é obrigatória',
+      });
+    }
+
+    const tipo = data.tipo || 'liso';
+
+    // Imagem obrigatória apenas para tecidos lisos
+    if (tipo === 'liso' && !data.imagemPadrao) {
+      return res.status(400).json({
+        success: false,
+        error: 'Imagem é obrigatória para tecidos lisos',
       });
     }
 
     const tecidoData = {
-      ...data,
+      nome: data.nome.trim(),
+      tipo,
+      largura: data.largura,
+      composicao: data.composicao.trim(),
+      imagemPadrao: data.imagemPadrao || '',
+      descricao: data.descricao?.trim() || '',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       deletedAt: null,
@@ -124,7 +150,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     console.error('Erro ao criar tecido:', error);
     return res.status(500).json({
       success: false,
-      error: 'Erro ao criar tecido',
+      error: `Erro ao criar tecido: ${error.message || 'erro desconhecido'}`,
     });
   }
 });
@@ -148,25 +174,46 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
       });
     }
 
-    // Validar composição se fornecida
-    if (data.composicao) {
-      const somaPorcentagem = data.composicao.reduce(
-        (sum, item) => sum + item.porcentagem,
-        0
-      );
-
-      if (somaPorcentagem !== 100) {
-        return res.status(400).json({
-          success: false,
-          error: `A soma das porcentagens deve ser 100% (atual: ${somaPorcentagem}%)`,
-        });
-      }
+    // Verificar soft-delete
+    if (doc.data()?.deletedAt) {
+      return res.status(404).json({
+        success: false,
+        error: 'Tecido não encontrado',
+      });
     }
 
-    const updateData = {
-      ...data,
+    // Validações condicionais
+    if (data.nome !== undefined && (!data.nome.trim() || data.nome.trim().length < 3)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nome deve ter pelo menos 3 caracteres',
+      });
+    }
+
+    if (data.largura !== undefined && (typeof data.largura !== 'number' || data.largura <= 0)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Largura deve ser um número positivo',
+      });
+    }
+
+    if (data.composicao !== undefined && !data.composicao.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Composição não pode ser vazia',
+      });
+    }
+
+    const updateData: Record<string, unknown> = {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+
+    if (data.nome !== undefined) updateData.nome = data.nome.trim();
+    if (data.tipo !== undefined) updateData.tipo = data.tipo;
+    if (data.largura !== undefined) updateData.largura = data.largura;
+    if (data.composicao !== undefined) updateData.composicao = data.composicao.trim();
+    if (data.imagemPadrao !== undefined) updateData.imagemPadrao = data.imagemPadrao;
+    if (data.descricao !== undefined) updateData.descricao = data.descricao.trim();
 
     await docRef.update(updateData);
     const updatedDoc = await docRef.get();
@@ -182,7 +229,7 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
     console.error('Erro ao atualizar tecido:', error);
     return res.status(500).json({
       success: false,
-      error: 'Erro ao atualizar tecido',
+      error: `Erro ao atualizar tecido: ${error.message || 'erro desconhecido'}`,
     });
   }
 });
@@ -205,6 +252,14 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
       });
     }
 
+    // Verificar se já foi excluído
+    if (doc.data()?.deletedAt) {
+      return res.status(404).json({
+        success: false,
+        error: 'Tecido já foi excluído',
+      });
+    }
+
     // Soft delete
     await docRef.update({
       deletedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -218,7 +273,7 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
     console.error('Erro ao excluir tecido:', error);
     return res.status(500).json({
       success: false,
-      error: 'Erro ao excluir tecido',
+      error: `Erro ao excluir tecido: ${error.message || 'erro desconhecido'}`,
     });
   }
 });
