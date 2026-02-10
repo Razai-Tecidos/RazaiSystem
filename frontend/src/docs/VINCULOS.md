@@ -101,3 +101,18 @@ Storage:
 - `frontend/src/lib/firebase/cor-tecido.ts`
 - `frontend/src/components/Cores/CoresTable.tsx`
 - `frontend/src/components/ui/image-lightbox.tsx`
+
+## Padrao de colunas na tabela
+
+A grade desktop foi alinhada ao padrao de navegacao com as colunas:
+
+- `SKU`
+- `Nome`
+- `Preview`
+- `Vinculo`
+- `Acoes`
+
+Detalhes:
+- A coluna `Nome` concentra o swatch da cor, edicao inline de nome e SKU da cor, e copia de `HEX`.
+- A coluna `Vinculo` mostra o tecido associado (`tecidoNome`) e, quando existir, o `tecidoSku`.
+- O cabecalho de grupo por tecido respeita `colSpan={5}` para combinar com o layout atual da tabela.

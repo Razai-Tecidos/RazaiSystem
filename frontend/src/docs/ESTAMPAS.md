@@ -396,3 +396,17 @@ O PDF inclui seções separadas para "CORES" e "ESTAMPAS" quando ambos são sele
 4. **Tecido base**: Sempre vincule a um tecido estampado existente
 5. **Nomes únicos**: Evite nomes duplicados para facilitar identificação
 6. **Agrupamento**: Use agrupamento por família para organizar visualmente
+
+## Padrao visual de listagem
+
+Para manter consistencia com os modulos de Cores e Vinculos, a tabela desktop de Estampas usa as colunas:
+
+- `SKU`
+- `Nome`
+- `Preview`
+- `Vinculo`
+- `Acoes`
+
+Observacoes:
+- O campo `Vinculo` representa o tecido base (`tecidoBaseNome`).
+- Em cards (mobile/grid), o mesmo dado aparece com o rotulo `Vinculo`.

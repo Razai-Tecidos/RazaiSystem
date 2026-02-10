@@ -17,6 +17,7 @@ import {
   Loader2,
   Image as ImageIcon,
   ExternalLink,
+  Link as LinkIcon,
   Check,
   X,
   Pencil,
@@ -138,7 +139,7 @@ function EstampaCard({
             {estampa.nome}
           </h4>
           <p className="text-xs text-gray-500 truncate mt-0.5">
-            {estampa.tecidoBaseNome || 'N/A'}
+            Vinculo: {estampa.tecidoBaseNome || 'N/A'}
           </p>
         </div>
       </div>
@@ -224,7 +225,7 @@ function EstampaCard({
 
           {/* Detalhes */}
           <div className="mt-2 pt-2 border-t border-gray-100 text-xs">
-            <span className="text-gray-500">Tecido base:</span>
+            <span className="text-gray-500">Vinculo:</span>
             <span className="font-medium text-gray-700 ml-1">
               {estampa.tecidoBaseNome || 'N/A'}
             </span>
@@ -506,7 +507,7 @@ export function EstampasTable({
                         <TableHead className="font-semibold w-20">Preview</TableHead>
                         <TableHead className="font-semibold w-28">SKU</TableHead>
                         <TableHead className="font-semibold">Nome</TableHead>
-                        <TableHead className="font-semibold">Tecido Base</TableHead>
+                        <TableHead className="font-semibold">Vinculo</TableHead>
                         <TableHead className="text-right font-semibold w-36">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -672,9 +673,12 @@ export function EstampasTable({
                               )}
                             </TableCell>
 
-                            {/* Tecido Base */}
-                            <TableCell className="text-gray-600">
-                              {estampa.tecidoBaseNome || 'N/A'}
+                            {/* Vinculo */}
+                            <TableCell>
+                              <div className="flex items-center gap-2 text-gray-600">
+                                <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
+                                <span>{estampa.tecidoBaseNome || 'N/A'}</span>
+                              </div>
                             </TableCell>
 
                             {/* Ações */}

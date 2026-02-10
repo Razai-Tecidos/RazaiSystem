@@ -1200,10 +1200,9 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                 <TableHeader>
                   <TableRow className="bg-gray-50/80">
                     <TableHead className="font-semibold">SKU</TableHead>
-                    <TableHead className="font-semibold">Cor</TableHead>
-                    <TableHead className="font-semibold">HEX</TableHead>
-                    <TableHead className="font-semibold">Tecido</TableHead>
+                    <TableHead className="font-semibold">Nome</TableHead>
                     <TableHead className="font-semibold">Preview</TableHead>
+                    <TableHead className="font-semibold">Vinculo</TableHead>
                     <TableHead className="text-right font-semibold">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1217,7 +1216,7 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                         <TableRow 
                           className="bg-gray-100 hover:bg-gray-200 transition-colors"
                         >
-                          <TableCell colSpan={6} className="py-3">
+                          <TableCell colSpan={5} className="py-3">
                             <div className="flex items-center gap-3">
                               <div 
                                 className={`transition-transform duration-200 cursor-pointer ${isExpanded ? 'rotate-0' : '-rotate-90'}`}
@@ -1425,38 +1424,26 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                                       <Pencil className="h-2.5 w-2.5 text-gray-400 opacity-0 group-hover/sku:opacity-100 transition-opacity" />
                                     </div>
                                   )}
+                                  {vinculo.corHex ? (
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          await navigator.clipboard.writeText(vinculo.corHex!);
+                                          toast({
+                                            title: 'HEX copiado!',
+                                            description: vinculo.corHex,
+                                          });
+                                        } catch (error) {
+                                          console.error('Erro ao copiar:', error);
+                                        }
+                                      }}
+                                      className="mt-1 font-mono text-xs text-gray-500 hover:text-primary hover:bg-primary/10 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                                      title="Clique para copiar HEX"
+                                    >
+                                      {vinculo.corHex}
+                                    </button>
+                                  ) : null}
                                 </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {vinculo.corHex ? (
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      await navigator.clipboard.writeText(vinculo.corHex!);
-                                      toast({
-                                        title: 'HEX copiado!',
-                                        description: vinculo.corHex,
-                                      });
-                                    } catch (error) {
-                                      console.error('Erro ao copiar:', error);
-                                    }
-                                  }}
-                                  className="font-mono text-sm text-gray-700 hover:text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors cursor-pointer"
-                                  title="Clique para copiar"
-                                >
-                                  {vinculo.corHex}
-                                </button>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div>
-                                <div className="font-medium">{vinculo.tecidoNome}</div>
-                                {vinculo.tecidoSku && (
-                                  <div className="text-xs text-gray-500">{vinculo.tecidoSku}</div>
-                                )}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -1483,6 +1470,14 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                                   <ImageIcon className="w-5 h-5 text-gray-300" />
                                 </div>
                               )}
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{vinculo.tecidoNome}</div>
+                                {vinculo.tecidoSku && (
+                                  <div className="text-xs text-gray-500">{vinculo.tecidoSku}</div>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1">

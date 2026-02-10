@@ -30,17 +30,22 @@ Ultima atualizacao: 2026-02-10
 3. [CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)
 4. [VINCULOS.md](../frontend/src/docs/VINCULOS.md)
 5. [GESTAO_IMAGENS.md](../frontend/src/docs/GESTAO_IMAGENS.md)
-6. [REINHARD.md](../frontend/src/docs/REINHARD.md)
+6. [CATALOGO.md](../frontend/src/docs/CATALOGO.md)
+7. [REINHARD.md](../frontend/src/docs/REINHARD.md)
 
 ## O que mudou nesta atualizacao
 - Navegacao desktop persistente com `DesktopSidebar`, atalhos e historico recente.
 - Sincronizacao de modulo ativo com URL hash (`#/modulo`) sem React Router.
 - Novo modulo `Gestao de Imagens` com geracao de imagem, upload de modelo e mosaicos.
 - `Gestao de Imagens` agora agrupa por tecido e permite regeneracao em lote por tecido.
+- `Gestao de Imagens` ganhou controle de mosaico default por tecido, botao de ultimo mosaico e acoes de preview no hover (modelo e premium).
 - `Shopee` passou a ser modulo pai para `Criar Anuncio` e `Tamanhos`.
 - Integracao do fluxo Shopee com `titulo_anuncio` e selecao de capa por mosaico.
+- Fluxo Shopee ganhou step dedicado `tamanhos_precificacao`, margem em `%` ou `R$`, margem por comprimento e exibicao de lucro liquido.
 - Ajustes no modulo Vinculos com ampliacao de imagem na tela.
+- Estampas e Vinculos foram alinhados no padrao de colunas `SKU`, `Nome`, `Preview`, `Vinculo` e `Acoes`.
 - Atualizacao das regras de Firebase para `gestao_imagens_mosaicos` e `mosaicos/**`.
+- Catalogo passou a usar lista unificada de tecidos (liso + estampado), share nativo no celular e PDF priorizando `imagemGerada`.
 
 ## Convencoes
 - Sempre atualizar os docs quando houver mudanca de interface, fluxo ou modelo de dados.
