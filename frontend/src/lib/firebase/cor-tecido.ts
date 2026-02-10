@@ -74,6 +74,18 @@ export async function uploadImagemModelo(
 }
 
 /**
+ * Faz upload da arte premium (1:1 ou 3:4) e retorna a URL
+ */
+export async function uploadImagemPremium(
+  vinculoId: string,
+  blob: Blob,
+  variant: 'square' | 'portrait'
+): Promise<string> {
+  const timestamp = Date.now();
+  return uploadCorTecidoImage(vinculoId, blob, `premium_${variant}_${timestamp}.jpg`);
+}
+
+/**
  * Gera o SKU do vínculo no formato "TecidoSKU-CorSKU"
  * Ex: "T007-MA001"
  */

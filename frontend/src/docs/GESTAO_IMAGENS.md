@@ -1,4 +1,4 @@
-﻿# Modulo de Gestao de Imagens
+# Modulo de Gestao de Imagens
 
 Ultima atualizacao: 2026-02-10
 

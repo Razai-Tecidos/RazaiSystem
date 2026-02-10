@@ -1,4 +1,4 @@
-﻿# Documentacao de Hooks
+# Documentacao de Hooks
 
 Ultima atualizacao: 2026-02-10
 

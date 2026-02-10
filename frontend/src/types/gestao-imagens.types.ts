@@ -1,13 +1,13 @@
 import { Timestamp } from 'firebase/firestore';
 
-export type MosaicTemplateId = 'grid-2x2' | 'hero-vertical' | 'triptych';
+export type MosaicTemplateId = 'grid-2x2' | 'hero-vertical' | 'triptych' | 'premium-info';
 
 export interface GestaoImagemMosaico {
   id: string;
   tecidoId: string;
   tecidoNomeSnapshot: string;
   templateId: MosaicTemplateId;
-  sourcePolicy: 'gerada';
+  sourcePolicy: 'gerada' | 'original';
   selectedVinculoIds: string[];
   selectedImageUrls: string[];
   outputSquareUrl: string;
@@ -20,7 +20,7 @@ export interface CreateGestaoImagemMosaicoData {
   tecidoId: string;
   tecidoNomeSnapshot: string;
   templateId: MosaicTemplateId;
-  sourcePolicy: 'gerada';
+  sourcePolicy: 'gerada' | 'original';
   selectedVinculoIds: string[];
   selectedImageUrls: string[];
   outputSquareUrl: string;

@@ -1,4 +1,4 @@
-﻿# Integracao Shopee
+# Integracao Shopee
 
 Ultima atualizacao: 2026-02-10
 

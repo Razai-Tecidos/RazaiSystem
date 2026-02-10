@@ -1,4 +1,4 @@
-﻿import admin from '../config/firebase';
+import admin from '../config/firebase';
 import {
   ShopeeProduct,
   CreateShopeeProductData,
@@ -29,7 +29,7 @@ const TAMANHOS_COLLECTION = 'tamanhos';
 
 /**
  * Remove valores undefined recursivamente de um objeto
- * Firestore e Shopee API nÃ£o aceitam undefined
+ * Firestore e Shopee API não aceitam undefined
  */
 function removeUndefinedValues(obj: Record<string, unknown>): Record<string, unknown> {
   const cleaned: Record<string, unknown> = {};
@@ -40,7 +40,7 @@ function removeUndefinedValues(obj: Record<string, unknown>): Record<string, unk
     }
     
     if (value === null) {
-      cleaned[key] = null; // MantÃ©m null (Ã© vÃ¡lido)
+      cleaned[key] = null; // Mantém null (é válido)
     } else if (Array.isArray(value)) {
       cleaned[key] = value.map(item => 
         typeof item === 'object' && item !== null && !Array.isArray(item)
@@ -59,14 +59,14 @@ function removeUndefinedValues(obj: Record<string, unknown>): Record<string, unk
 
 /**
  * Faz upload de uma imagem para o Shopee Media Space
- * Comprime a imagem se necessÃ¡rio (target: 1.99MB)
+ * Comprime a imagem se necessário (target: 1.99MB)
  */
 async function uploadImageToShopee(
   shopId: number,
   accessToken: string,
   imageUrl: string
 ): Promise<string> {
-  // Baixa e comprime a imagem se necessÃ¡rio
+  // Baixa e comprime a imagem se necessário
   const { buffer, wasCompressed, originalSize, finalSize } = 
     await imageCompressor.downloadAndCompressImage(imageUrl);
   
@@ -75,7 +75,7 @@ async function uploadImageToShopee(
   }
   
   // Faz upload para Shopee Media Space usando multipart/form-data
-  // O endpoint requer arquivo binÃ¡rio, nÃ£o base64 em JSON
+  // O endpoint requer arquivo binário, não base64 em JSON
   const filename = imageUrl.split('/').pop() || 'image.jpg';
   const response = await uploadImageToShopeeMultipart(
     shopId,
@@ -90,15 +90,15 @@ async function uploadImageToShopee(
 
   const imageId = response.response?.image_info?.image_id;
   if (!imageId) {
-    throw new Error('Upload de imagem nÃ£o retornou image_id');
+    throw new Error('Upload de imagem não retornou image_id');
   }
 
   return imageId;
 }
 
 /**
- * Faz upload de uma imagem de variaÃ§Ã£o com overlay de marca (logo Razai + nome da cor)
- * Pipeline: download raw â†’ applyBrandOverlay â†’ comprimir â†’ upload
+ * Faz upload de uma imagem de variação com overlay de marca (logo Razai + nome da cor)
+ * Pipeline: download raw → applyBrandOverlay → comprimir → upload
  */
 async function uploadVariationImageToShopee(
   shopId: number,
@@ -136,7 +136,7 @@ async function uploadVariationImageToShopee(
 }
 
 /**
- * Processa imagens para publicaÃ§Ã£o
+ * Processa imagens para publicação
  * Sempre faz upload para Shopee Media Space para obter image_id
  * Retorna lista de image_ids
  */
@@ -188,7 +188,7 @@ async function getTecidoData(tecidoId: string): Promise<{
 }
 
 /**
- * Busca vÃ­nculos cor-tecido
+ * Busca vínculos cor-tecido
  */
 async function getCorTecidoData(tecidoId: string, corIds: string[]): Promise<Array<{
   id: string;
@@ -207,14 +207,14 @@ async function getCorTecidoData(tecidoId: string, corIds: string[]): Promise<Arr
     imagemTingida?: string;
   }> = [];
 
-  // Busca TODOS os vÃ­nculos do tecido (apenas 1 WHERE para evitar erro de Ã­ndice composto)
+  // Busca TODOS os vínculos do tecido (apenas 1 WHERE para evitar erro de índice composto)
   const snapshot = await db.collection(COR_TECIDO_COLLECTION)
     .where('tecidoId', '==', tecidoId)
     .get();
 
   console.log(`[getCorTecidoData] tecidoId=${tecidoId}, corIds=[${corIds.join(',')}], snapshot.size=${snapshot.size}`);
 
-  // Filtra no cÃ³digo por corId e deletedAt
+  // Filtra no código por corId e deletedAt
   for (const corId of corIds) {
     const doc = snapshot.docs.find(doc => {
       const data = doc.data();
@@ -265,7 +265,7 @@ async function getTamanhosData(tamanhoIds: string[]): Promise<Array<{
 }
 
 /**
- * Gera descriÃ§Ã£o do produto
+ * Gera descrição do produto
  */
 function buildProductDescription(
   tecidoNome: string,
@@ -281,7 +281,7 @@ function buildProductDescription(
   let descricao = descricaoTemplate || `${tecidoNome}`;
   
   if (composicao) {
-    descricao += `\n\nComposiÃ§Ã£o: ${composicao}`;
+    descricao += `\n\nComposição: ${composicao}`;
   }
   
   if (largura) {
@@ -329,7 +329,7 @@ function buildTierVariations(
 }
 
 /**
- * Gera lista de modelos (combinaÃ§Ãµes)
+ * Gera lista de modelos (combinações)
  */
 function buildModelList(
   tecidoSku: string,
@@ -357,13 +357,13 @@ function buildModelList(
         cor_id: vinculo.corId,
         cor_nome: vinculo.corNome,
         vinculo_id: vinculo.id,
-        preco: precoBase, // Sem tamanhos, usa preÃ§o Ãºnico
+        preco: precoBase, // Sem tamanhos, usa preço único
         estoque: corConfig?.estoque ?? estoquePadrao,
         imagem_url: imagemFinal,
       });
     });
   } else {
-    // Cores + Tamanhos - usa preÃ§o do tamanho correspondente
+    // Cores + Tamanhos - usa preço do tamanho correspondente
     vinculos.forEach((vinculo, corIndex) => {
       const imagemFinal = vinculo.imagemGerada || vinculo.imagemTingida;
       const corConfig = coresConfig.find(c => c.cor_id === vinculo.corId);
@@ -373,7 +373,7 @@ function buildModelList(
           ? `${tecidoSku}-${vinculo.corSku}-${tamanho.sku}`
           : `${tecidoSku}-${corIndex + 1}-${tamanhoIndex + 1}`;
         
-        // PreÃ§o do tamanho ou fallback para preco_base
+        // Preço do tamanho ou fallback para preco_base
         const precoTamanho = precosPorTamanho?.[tamanho.id] || precoBase;
         
         modelos.push({
@@ -384,7 +384,7 @@ function buildModelList(
           tamanho_id: tamanho.id,
           tamanho_nome: tamanho.nome,
           vinculo_id: vinculo.id,
-          preco: precoTamanho, // PreÃ§o do tamanho aplicado a todas as cores
+          preco: precoTamanho, // Preço do tamanho aplicado a todas as cores
           estoque: corConfig?.estoque ?? estoquePadrao,
           imagem_url: imagemFinal,
         });
@@ -448,15 +448,15 @@ export async function createProduct(
   // Busca dados do tecido
   const tecido = await getTecidoData(data.tecido_id);
   if (!tecido) {
-    throw new Error('Tecido nÃ£o encontrado');
+    throw new Error('Tecido não encontrado');
   }
   
-  // Busca vÃ­nculos cor-tecido
+  // Busca vínculos cor-tecido
   const corIds = data.cores.map(c => c.cor_id);
   const vinculos = await getCorTecidoData(data.tecido_id, corIds);
   
   if (vinculos.length === 0) {
-    throw new Error('Nenhum vÃ­nculo cor-tecido encontrado');
+    throw new Error('Nenhum vínculo cor-tecido encontrado');
   }
   
   // Busca tamanhos (se selecionados)
@@ -464,10 +464,10 @@ export async function createProduct(
     ? await getTamanhosData(data.tamanhos)
     : undefined;
   
-  // Busca preferÃªncias do usuÃ¡rio para template de descriÃ§Ã£o
+  // Busca preferências do usuário para template de descrição
   const preferences = await preferencesService.getUserPreferences(userId);
   
-  // Monta descriÃ§Ã£o
+  // Monta descrição
   const descricao = buildProductDescription(
     tecido.nome,
     tecido.composicao,
@@ -490,7 +490,7 @@ export async function createProduct(
     data.estoque_padrao
   );
   
-  // Imagens principais (usa imagem do tecido como padrÃ£o se nÃ£o fornecidas)
+  // Imagens principais (usa imagem do tecido como padrão se não fornecidas)
   const imagensPrincipais = data.imagens_principais && data.imagens_principais.length > 0
     ? data.imagens_principais
     : tecido.imagemUrl ? [tecido.imagemUrl] : [];
@@ -559,18 +559,18 @@ export async function updateProduct(
   
   const existingData = doc.data() as ShopeeProduct;
   
-  // Verifica se o usuÃ¡rio Ã© o dono
+  // Verifica se o usuário é o dono
   if (existingData.created_by !== userId) {
-    throw new Error('Sem permissÃ£o para editar este produto');
+    throw new Error('Sem permissão para editar este produto');
   }
   
-  // NÃ£o permite editar produtos jÃ¡ publicados (exceto alguns campos)
+  // Não permite editar produtos já publicados (exceto alguns campos)
   if (existingData.status === 'created' && existingData.item_id) {
-    // Para produtos publicados, sÃ³ permite editar alguns campos
+    // Para produtos publicados, só permite editar alguns campos
     const allowedFields = ['preco_base', 'estoque_padrao'];
     const hasDisallowedFields = Object.keys(data).some(k => !allowedFields.includes(k));
     if (hasDisallowedFields) {
-      throw new Error('Produto jÃ¡ publicado. Apenas preÃ§o e estoque podem ser alterados.');
+      throw new Error('Produto já publicado. Apenas preço e estoque podem ser alterados.');
     }
   }
   
@@ -588,7 +588,7 @@ export async function updateProduct(
       const vinculos = await getCorTecidoData(tecidoId, corIds);
 
       if (vinculos.length === 0) {
-        throw new Error('Nenhum vÃ­nculo cor-tecido encontrado para as cores selecionadas');
+        throw new Error('Nenhum vínculo cor-tecido encontrado para as cores selecionadas');
       }
 
       const tamanhoIds = data.tamanhos || existingData.tier_variations
@@ -648,9 +648,9 @@ export async function deleteProduct(id: string, userId: string): Promise<boolean
   
   const data = doc.data() as ShopeeProduct;
   
-  // Verifica se o usuÃ¡rio Ã© o dono
+  // Verifica se o usuário é o dono
   if (data.created_by !== userId) {
-    throw new Error('Sem permissÃ£o para excluir este produto');
+    throw new Error('Sem permissão para excluir este produto');
   }
 
   const shopeeItemId = data.item_id ?? data.shopee_item_id;
@@ -669,7 +669,7 @@ export async function deleteProduct(id: string, userId: string): Promise<boolean
     }) as ShopeeDeleteItemResponse;
 
     if (response.error && response.error !== '' && response.error !== '-') {
-      throw new Error(`Erro ao excluir anÃºncio na Shopee: ${response.error} - ${response.message || 'sem detalhes'}`);
+      throw new Error(`Erro ao excluir anúncio na Shopee: ${response.error} - ${response.message || 'sem detalhes'}`);
     }
   }
 
@@ -690,25 +690,25 @@ export async function publishProduct(
   const doc = await docRef.get();
   
   if (!doc.exists) {
-    throw new Error('Produto nÃ£o encontrado');
+    throw new Error('Produto não encontrado');
   }
   
   const product = { id: doc.id, ...doc.data() } as ShopeeProduct;
   
-  // Verifica se o usuÃ¡rio Ã© o dono
+  // Verifica se o usuário é o dono
   if (product.created_by !== userId) {
-    throw new Error('Sem permissÃ£o para publicar este produto');
+    throw new Error('Sem permissão para publicar este produto');
   }
   
-  // Verifica se jÃ¡ estÃ¡ publicado
+  // Verifica se já está publicado
   if (product.status === 'created' && product.item_id) {
-    throw new Error('Produto jÃ¡ estÃ¡ publicado');
+    throw new Error('Produto já está publicado');
   }
   
-  // Busca dados do tecido para formataÃ§Ã£o
+  // Busca dados do tecido para formatação
   const tecido = await getTecidoData(product.tecido_id);
   
-  // Formata nome e descriÃ§Ã£o para atender requisitos mÃ­nimos
+  // Formata nome e descrição para atender requisitos mínimos
   const preferredTitle = product.titulo_anuncio?.trim() || product.tecido_nome;
   const formattedName = formatItemName(
     preferredTitle,
@@ -741,11 +741,11 @@ export async function publishProduct(
   });
   
   if (!validation.valid) {
-    throw new Error(`ValidaÃ§Ã£o falhou: ${validation.errors.join('; ')}`);
+    throw new Error(`Validação falhou: ${validation.errors.join('; ')}`);
   }
   
   if (validation.warnings.length > 0) {
-    console.warn('Avisos de validaÃ§Ã£o:', validation.warnings);
+    console.warn('Avisos de validação:', validation.warnings);
   }
   
   // Atualiza status para publishing (pula no dry-run)
@@ -759,14 +759,14 @@ export async function publishProduct(
   try {
     const accessToken = dryRun ? 'DRY_RUN' : await ensureValidToken(product.shop_id);
 
-    // Busca canais de logÃ­stica habilitados
-    console.log('Buscando canais de logÃ­stica...');
+    // Busca canais de logística habilitados
+    console.log('Buscando canais de logística...');
     const logisticInfo = await logisticsService.buildLogisticInfoForProduct(
       product.shop_id,
       product.peso,
       product.dimensoes
     );
-    console.log(`${logisticInfo.length} canais de logÃ­stica configurados`);
+    console.log(`${logisticInfo.length} canais de logística configurados`);
 
     let processedMainImages: string[];
     let processedTierVariations: Array<{ name: string; option_list: Array<{ option: string; image?: { image_id: string } }> }>;
@@ -781,9 +781,9 @@ export async function publishProduct(
           ...(tierIndex === 0 && opt.imagem_url ? { image: { image_id: `DRY_RUN_VAR_${opt.option_name}` } } : {}),
         })),
       }));
-      console.log('[publishProduct] DRY-RUN: imagens substituÃ­das por placeholders');
+      console.log('[publishProduct] DRY-RUN: imagens substituídas por placeholders');
     } else {
-      // Processa imagens principais (comprime se necessÃ¡rio)
+      // Processa imagens principais (comprime se necessário)
       console.log('Processando imagens principais...');
       processedMainImages = await processImagesForPublish(
         product.shop_id,
@@ -792,9 +792,9 @@ export async function publishProduct(
         product.usar_imagens_publicas
       );
 
-      // Processa imagens de variaÃ§Ã£o (cores) - apenas tier 1
-      // Shopee exige: se uma opÃ§Ã£o do tier 1 tem imagem, TODAS devem ter
-      console.log('Processando imagens de variaÃ§Ã£o...');
+      // Processa imagens de variação (cores) - apenas tier 1
+      // Shopee exige: se uma opção do tier 1 tem imagem, TODAS devem ter
+      console.log('Processando imagens de variação...');
       processedTierVariations = await Promise.all(
         product.tier_variations.map(async (tier, tierIndex) => {
           const processedOptions = await Promise.all(
@@ -856,7 +856,7 @@ export async function publishProduct(
       image: {
         image_id_list: processedMainImages,
       },
-      // tier_variation e model NAO vao no add_item â€” sao enviados via init_tier_variation
+      // tier_variation e model NAO vao no add_item — sao enviados via init_tier_variation
       logistic_info: logisticInfo,
       condition: product.condition || 'NEW',
       item_status: 'NORMAL',
@@ -877,19 +877,19 @@ export async function publishProduct(
       };
     }
     
-    // Adiciona vÃ­deo se disponÃ­vel
+    // Adiciona vídeo se disponível
     if (product.video_url) {
       shopeePayload.video = {
         video_url: product.video_url,
       };
     }
     
-    // Adiciona atributos se disponÃ­veis
+    // Adiciona atributos se disponíveis
     if (product.atributos && product.atributos.length > 0) {
       shopeePayload.attribute_list = product.atributos;
     }
     
-    // Adiciona marca (brand_id + original_brand_name sÃ£o obrigatÃ³rios dentro do objeto brand)
+    // Adiciona marca (brand_id + original_brand_name são obrigatórios dentro do objeto brand)
     // brand_id=0 + original_brand_name="No Brand" quando sem marca
     if (product.brand_id !== null && product.brand_id !== undefined) {
       shopeePayload.brand = {
@@ -897,30 +897,30 @@ export async function publishProduct(
         original_brand_name: product.brand_nome || (product.brand_id === 0 ? 'No Brand' : ''),
       };
     } else {
-      // Se brand_id nÃ£o foi definido, envia "Sem marca" por padrÃ£o
+      // Se brand_id não foi definido, envia "Sem marca" por padrão
       shopeePayload.brand = {
         brand_id: 0,
         original_brand_name: 'No Brand',
       };
     }
     
-    // Adiciona size chart se disponÃ­vel
+    // Adiciona size chart se disponível
     if (product.size_chart_id) {
       shopeePayload.size_chart = product.size_chart_id;
     }
     
-    // Adiciona descriÃ§Ã£o estendida se disponÃ­vel (para vendedores whitelisted)
+    // Adiciona descrição estendida se disponível (para vendedores whitelisted)
     if (product.description_type === 'extended' && product.extended_description) {
       shopeePayload.description_type = 'extended';
       shopeePayload.extended_description = product.extended_description;
     }
     
-    // Adiciona configuraÃ§Ã£o de atacado se disponÃ­vel
+    // Adiciona configuração de atacado se disponível
     if (product.wholesale && product.wholesale.length > 0) {
       shopeePayload.wholesale = product.wholesale;
     }
     
-    // Remove valores undefined do payload (Firestore/Shopee nÃ£o aceitam)
+    // Remove valores undefined do payload (Firestore/Shopee não aceitam)
     const cleanPayload = removeUndefinedValues(shopeePayload);
 
     console.log('[publishProduct] Payload add_item:', JSON.stringify(cleanPayload, null, 2));
@@ -967,11 +967,11 @@ export async function publishProduct(
     const itemId = response.response?.item_id;
     
     if (!itemId) {
-      throw new Error('Shopee nÃ£o retornou item_id');
+      throw new Error('Shopee não retornou item_id');
     }
 
     // === INIT TIER VARIATION ===
-    // Shopee recomenda aguardar >= 5s apÃ³s add_item antes de criar variantes
+    // Shopee recomenda aguardar >= 5s após add_item antes de criar variantes
     console.log('[publishProduct] Aguardando 5s antes de init_tier_variation...');
     await new Promise(resolve => setTimeout(resolve, 5000));
 
@@ -1009,7 +1009,7 @@ export async function publishProduct(
 
     if (tierResponse.error && tierResponse.error !== '' && tierResponse.error !== '-') {
       console.error('[publishProduct] init_tier_variation ERRO:', JSON.stringify(tierResponse));
-      throw new Error(`Erro ao criar variaÃ§Ãµes: ${tierResponse.error} - ${tierResponse.message}`);
+      throw new Error(`Erro ao criar variações: ${tierResponse.error} - ${tierResponse.message}`);
     }
 
     console.log(`[publishProduct] init_tier_variation OK - ${tierResponse.response?.model?.length || 0} modelos criados`);
@@ -1025,7 +1025,7 @@ export async function publishProduct(
       sync_status: 'synced',
     });
     
-    // Atualiza Ãºltimos valores usados nas preferÃªncias
+    // Atualiza últimos valores usados nas preferências
     await preferencesService.updateLastUsedValues(userId, {
       preco_base: product.preco_base,
       estoque_padrao: product.estoque_padrao,
@@ -1034,7 +1034,7 @@ export async function publishProduct(
       dimensoes: product.dimensoes,
     });
     
-    // Salva NCM e categoria como preferÃªncia padrÃ£o
+    // Salva NCM e categoria como preferência padrão
     if (product.ncm_padrao || product.categoria_nome) {
       await preferencesService.saveUserPreferences(userId, {
         ...(product.ncm_padrao ? { ncm_padrao: product.ncm_padrao } : {}),

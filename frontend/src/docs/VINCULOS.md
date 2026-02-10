@@ -1,4 +1,4 @@
-﻿# Modulo de Vinculos Cor-Tecido
+# Modulo de Vinculos Cor-Tecido
 
 Ultima atualizacao: 2026-02-10
 

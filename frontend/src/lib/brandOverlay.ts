@@ -15,6 +15,33 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+let interFontLoadPromise: Promise<void> | null = null;
+
+async function ensureInterFontLoaded(fontSize: number, fontWeight: 400 | 700 | 900 = 700): Promise<void> {
+  if (typeof document === 'undefined' || !('fonts' in document)) return;
+  const fontFaceSet = (document as any).fonts;
+  const descriptor = `${fontWeight} ${fontSize}px "Inter"`;
+
+  if (typeof fontFaceSet.check === 'function' && fontFaceSet.check(descriptor)) {
+    return;
+  }
+
+  if (!interFontLoadPromise) {
+    interFontLoadPromise = fontFaceSet
+      .load(descriptor)
+      .then(() => undefined)
+      .finally(() => {
+        interFontLoadPromise = null;
+      });
+  }
+
+  await interFontLoadPromise;
+
+  if (typeof fontFaceSet.check === 'function' && !fontFaceSet.check(descriptor)) {
+    throw new Error('Falha ao carregar a fonte Inter para gerar imagem');
+  }
+}
+
 /**
  * Gera preview da imagem de variação com overlay:
  * - Crop quadrado (1:1)
@@ -53,10 +80,10 @@ export async function generateBrandOverlay(
   const logoX = (size - logoW) / 2;
   const logoY = Math.round(size * 0.12);
   // Sombra suave no logo para destacar sem pesar.
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.22)';
-  ctx.shadowBlur = Math.round(size * 0.012);
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+  ctx.shadowBlur = Math.round(size * 0.016);
   ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = Math.round(size * 0.004);
+  ctx.shadowOffsetY = Math.round(size * 0.005);
   ctx.drawImage(logo, logoX, logoY, logoW, logoH);
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
@@ -65,12 +92,13 @@ export async function generateBrandOverlay(
 
   // 3. Nome da cor sem faixa/gradiente no rodape.
   // Distancia da borda inferior: ~16% (4x maior que os ~4% anteriores).
-  const fontSize = Math.round(size * 0.0344); // ~30% maior que 0.028
-  ctx.font = `700 ${fontSize}px Arial, Helvetica, sans-serif`;
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.26)';
-  ctx.shadowBlur = Math.round(size * 0.010);
+  const fontSize = Math.round(size * 0.032);
+  await ensureInterFontLoaded(fontSize, 700);
+  ctx.font = `700 ${fontSize}px "Inter"`;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.30)';
+  ctx.shadowBlur = Math.round(size * 0.013);
   ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = Math.round(size * 0.0035);
+  ctx.shadowOffsetY = Math.round(size * 0.0042);
   ctx.fillStyle = 'white';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

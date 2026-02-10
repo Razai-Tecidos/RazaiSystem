@@ -1,4 +1,4 @@
-﻿# UX e Responsividade
+# UX e Responsividade
 
 Ultima atualizacao: 2026-02-10
 

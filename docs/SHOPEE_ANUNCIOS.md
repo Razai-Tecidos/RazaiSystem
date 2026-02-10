@@ -1,4 +1,4 @@
-﻿# Modulo de Criacao de Anuncios Shopee
+# Modulo de Criacao de Anuncios Shopee
 
 Ultima atualizacao: 2026-02-10
 
@@ -23,26 +23,31 @@ O backend (`functions/src/services/shopee-product.service.ts`) transforma o rasc
 - salvo em `titulo_anuncio`
 - validacao: vazio (usa auto) ou entre 20 e 120 caracteres
 
-2. Integracao com mosaicos:
+2. Nova etapa dedicada de imagens no fluxo:
+- ordem de etapas agora: `tecido -> imagens -> cores -> configuracoes -> preview`
+- a selecao de imagens principais foi movida para uma etapa propria, logo apos o tecido
+- a etapa de configuracoes ficou focada apenas em dados comerciais/logisticos/fiscais
+
+3. Integracao com mosaicos:
 - carrega mosaicos salvos por tecido (`gestao_imagens_mosaicos`)
 - permite clicar em um mosaico para definir capa (`imagens_principais[0]`)
 
-3. Prioridade de imagem por variacao:
+4. Prioridade de imagem por variacao:
 - frontend e backend priorizam `imagemGerada`
 - fallback para `imagemTingida`
 - flag `imagem_gerada` acompanha cada opcao de cor
 
-4. Publicacao com tratamento de imagem gerada:
+5. Publicacao com tratamento de imagem gerada:
 - `imagem_gerada = true`: upload direto para Shopee
 - `imagem_gerada = false`: backend aplica overlay antes do upload
 
 ## Fluxo resumido
 
 1. Usuario seleciona tecido.
-2. Sistema carrega vinculos e preenche cores.
-3. Usuario escolhe cores/tamanhos e configura dados comerciais.
-4. Usuario pode ajustar titulo manualmente.
-5. Usuario pode usar mosaico salvo como capa.
+2. Usuario seleciona imagens principais (upload manual ou mosaicos salvos).
+3. Sistema carrega vinculos e usuario escolhe cores/tamanhos.
+4. Usuario configura dados comerciais/logisticos/fiscais.
+5. Usuario pode ajustar titulo manualmente.
 6. Salva rascunho em `shopee_products`.
 7. Publica com validacao e upload de imagens.
 

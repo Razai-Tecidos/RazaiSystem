@@ -1,4 +1,4 @@
-﻿# Documentacao de Componentes
+# Documentacao de Componentes
 
 Ultima atualizacao: 2026-02-10
 

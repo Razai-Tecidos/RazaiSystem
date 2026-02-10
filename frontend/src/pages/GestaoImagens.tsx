@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import { auth } from '@/config/firebase';
 import { Header } from '@/components/Layout/Header';
@@ -23,11 +23,13 @@ import {
 } from '@/components/ui/table';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
 import { useCorTecido } from '@/hooks/useCorTecido';
+import { useTecidos } from '@/hooks/useTecidos';
 import { useToast } from '@/hooks/use-toast';
 import { generateBrandOverlay } from '@/lib/brandOverlay';
-import { buildMosaicOutputs } from '@/lib/mosaicBuilder';
+import { buildMosaicOutputs, buildPremiumVinculoOutputs } from '@/lib/mosaicBuilder';
 import {
   uploadImagemGerada,
+  uploadImagemPremium,
   uploadImagemModelo,
 } from '@/lib/firebase/cor-tecido';
 import {
@@ -38,6 +40,8 @@ import {
 import { CorTecido } from '@/types/cor.types';
 import { GestaoImagemMosaico, MosaicTemplateId } from '@/types/gestao-imagens.types';
 import {
+  ChevronDown,
+  ChevronRight,
   Image as ImageIcon,
   Loader2,
   Search,
@@ -72,11 +76,12 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
 const MOSAIC_TEMPLATE_OPTIONS: Array<{ id: MosaicTemplateId; label: string; description: string }> = [
   { id: 'grid-2x2', label: 'Grid 2x2', description: 'Quatro blocos equilibrados para capas limpas.' },
   { id: 'hero-vertical', label: 'Hero Vertical', description: 'Imagem principal com dois apoios laterais.' },
-  { id: 'triptych', label: 'Triptych', description: 'TrÃªs colunas para destacar variacoes.' },
+  { id: 'triptych', label: 'Triptych', description: 'Tr\u00EAs colunas para destacar varia\u00E7\u00F5es.' },
 ];
 
 export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   const { vinculos, loading, updateVinculo } = useCorTecido();
+  const { tecidos } = useTecidos();
   const { toast } = useToast();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,6 +93,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   const [loadingMosaicos, setLoadingMosaicos] = useState(false);
   const [generatingMosaic, setGeneratingMosaic] = useState(false);
   const [processingModelUploadId, setProcessingModelUploadId] = useState<string | null>(null);
+  const [generatingPremiumIds, setGeneratingPremiumIds] = useState<Set<string>>(new Set());
   const [lightboxImage, setLightboxImage] = useState<{
     url: string;
     title: string;
@@ -98,8 +104,10 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   const [regenerationProgressByTecido, setRegenerationProgressByTecido] = useState<
     Record<string, { done: number; total: number }>
   >({});
+  const [collapsedTecidoIds, setCollapsedTecidoIds] = useState<Set<string>>(new Set());
 
   const generatingIdsRef = useRef<Set<string>>(new Set());
+  const seenTecidoIdsRef = useRef<Set<string>>(new Set());
 
   const tecidosDisponiveis = useMemo(() => {
     const map = new Map<string, string>();
@@ -145,6 +153,23 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
 
     return Array.from(groupedMap.values()).sort((a, b) => a.tecidoNome.localeCompare(b.tecidoNome));
   }, [filteredVinculos]);
+
+  useEffect(() => {
+    setCollapsedTecidoIds((previous) => {
+      if (groupedVinculos.length === 0) return previous;
+      const next = new Set(previous);
+
+      groupedVinculos.forEach((group) => {
+        // Colapsa automaticamente apenas na primeira vez que o tecido aparece.
+        if (!seenTecidoIdsRef.current.has(group.tecidoId)) {
+          next.add(group.tecidoId);
+          seenTecidoIdsRef.current.add(group.tecidoId);
+        }
+      });
+
+      return next;
+    });
+  }, [groupedVinculos]);
 
   const loadMosaicos = useCallback(async (tecidoId: string) => {
     try {
@@ -323,7 +348,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     setSelectedForMosaic((previous) => {
       const next = new Set(previous);
       filteredVinculos.forEach((v) => {
-        if (v.imagemGerada) next.add(v.id);
+        if (v.imagemTingida) next.add(v.id);
       });
       return next;
     });
@@ -334,7 +359,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   };
 
   const selectedMosaicVinculos = useMemo(
-    () => vinculos.filter((v) => selectedForMosaic.has(v.id) && v.imagemGerada),
+    () => vinculos.filter((v) => selectedForMosaic.has(v.id) && v.imagemTingida),
     [selectedForMosaic, vinculos]
   );
 
@@ -342,7 +367,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     if (selectedMosaicVinculos.length === 0) {
       toast({
         title: 'Selecao vazia',
-        description: 'Selecione ao menos um vinculo com imagem gerada.',
+        description: 'Selecione ao menos um vinculo com imagem original.',
         variant: 'destructive',
       });
       return;
@@ -363,7 +388,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     try {
       setGeneratingMosaic(true);
       const outputs = await buildMosaicOutputs({
-        images: selectedMosaicVinculos.map((v) => v.imagemGerada!).filter(Boolean),
+        images: selectedMosaicVinculos.map((v) => v.imagemTingida!).filter(Boolean),
         tecidoNome,
         templateId,
       });
@@ -391,9 +416,9 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         tecidoId,
         tecidoNomeSnapshot: tecidoNome,
         templateId,
-        sourcePolicy: 'gerada',
+        sourcePolicy: 'original',
         selectedVinculoIds: selectedMosaicVinculos.map((v) => v.id),
-        selectedImageUrls: selectedMosaicVinculos.map((v) => v.imagemGerada!).filter(Boolean),
+        selectedImageUrls: selectedMosaicVinculos.map((v) => v.imagemTingida!).filter(Boolean),
         outputSquareUrl: squareUrl,
         outputPortraitUrl: portraitUrl,
         createdBy: auth.currentUser?.uid || 'unknown',
@@ -418,6 +443,76 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
       });
     } finally {
       setGeneratingMosaic(false);
+    }
+  };
+
+  const handleGeneratePremium = async (vinculo: CorTecido) => {
+    if (!vinculo.imagemTingida) {
+      toast({
+        title: 'Imagem base ausente',
+        description: 'Esse vinculo nao possui imagem base para gerar o layout premium.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!vinculo.imagemModelo) {
+      toast({
+        title: 'Foto de modelo obrigatoria',
+        description: 'Envie uma foto de modelo para este vinculo antes de gerar o premium.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (generatingPremiumIds.has(vinculo.id)) return;
+
+    try {
+      setGeneratingPremiumIds((previous) => {
+        const next = new Set(previous);
+        next.add(vinculo.id);
+        return next;
+      });
+
+      const tecido = tecidos.find((item) => item.id === vinculo.tecidoId);
+      const outputs = await buildPremiumVinculoOutputs({
+        fabricImageUrl: vinculo.imagemTingida,
+        modelImageUrl: vinculo.imagemModelo,
+        tecidoNome: vinculo.tecidoNome,
+        corNome: vinculo.corNome,
+        tecidoLargura: tecido?.largura ?? null,
+        tecidoComposicao: tecido?.composicao ?? null,
+      });
+
+      const [premiumSquareUrl, premiumPortraitUrl] = await Promise.all([
+        uploadImagemPremium(vinculo.id, outputs.squareBlob, 'square'),
+        uploadImagemPremium(vinculo.id, outputs.portraitBlob, 'portrait'),
+      ]);
+
+      await updateVinculo({
+        id: vinculo.id,
+        imagemPremiumSquare: premiumSquareUrl,
+        imagemPremiumPortrait: premiumPortraitUrl,
+        imagemPremiumAt: Timestamp.now(),
+      });
+
+      toast({
+        title: 'Premium gerado',
+        description: `Layout premium salvo para ${vinculo.corNome}.`,
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: 'Erro no premium',
+        description: `Nao foi possivel gerar o premium de ${vinculo.corNome}.`,
+        variant: 'destructive',
+      });
+    } finally {
+      setGeneratingPremiumIds((previous) => {
+        const next = new Set(previous);
+        next.delete(vinculo.id);
+        return next;
+      });
     }
   };
 
@@ -451,6 +546,15 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   const openImagePreview = (url: string, title: string, subtitle?: string) => {
     setLightboxImage({ url, title, subtitle });
   };
+
+  const toggleTecidoCollapsed = useCallback((tecidoId: string) => {
+    setCollapsedTecidoIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(tecidoId)) next.delete(tecidoId);
+      else next.add(tecidoId);
+      return next;
+    });
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -534,6 +638,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                 const eligibleForTecido = group.vinculos.filter((vinculo) => vinculo.imagemTingida).length;
                 const isBatchRegenerating = regeneratingTecidoIds.has(group.tecidoId);
                 const progress = regenerationProgressByTecido[group.tecidoId];
+                const isCollapsed = collapsedTecidoIds.has(group.tecidoId);
 
                 return (
                   <section
@@ -541,184 +646,269 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                     className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
                   >
                     <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 justify-between">
-                      <div className="text-sm">
-                        <span className="font-medium text-gray-900">{group.tecidoNome}</span>
-                        <span className="text-gray-600 ml-2">{group.vinculos.length} vinculo(s)</span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void handleRegenerateByTecido(group.tecidoId)}
-                        disabled={isBatchRegenerating || eligibleForTecido === 0}
+                      <button
+                        type="button"
+                        onClick={() => toggleTecidoCollapsed(group.tecidoId)}
+                        className="inline-flex items-center gap-2 text-sm rounded-md px-2 py-1 hover:bg-gray-100 transition-colors"
                       >
-                        {isBatchRegenerating ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Regenerando {progress?.done ?? 0}/{progress?.total ?? eligibleForTecido}
-                          </>
+                        {isCollapsed ? (
+                          <ChevronRight className="w-4 h-4 text-gray-500" />
                         ) : (
-                          'Regenerar todos deste tecido'
+                          <ChevronDown className="w-4 h-4 text-gray-500" />
                         )}
-                      </Button>
+                        <span className="font-medium text-gray-900">{group.tecidoNome}</span>
+                        <span className="text-gray-600">{group.vinculos.length} vinculo(s)</span>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleRegenerateByTecido(group.tecidoId)}
+                          disabled={isBatchRegenerating || eligibleForTecido === 0}
+                        >
+                          {isBatchRegenerating ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Regenerando {progress?.done ?? 0}/{progress?.total ?? eligibleForTecido}
+                            </>
+                          ) : (
+                            'Regenerar todos deste tecido'
+                          )}
+                        </Button>
+                      </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-14">Mosaico</TableHead>
-                            <TableHead>Cor</TableHead>
-                            <TableHead>Imagem Vinculo</TableHead>
-                            <TableHead>Imagem Gerada</TableHead>
-                            <TableHead>Foto Modelo</TableHead>
-                            <TableHead className="w-48">Acoes</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {group.vinculos.map((vinculo) => {
-                            const isGenerating = generatingIds.has(vinculo.id);
-                            const fingerprintOutdated =
-                              vinculo.imagemTingida &&
-                              vinculo.imagemGeradaFingerprint !== buildGenerationFingerprint(vinculo);
+                    {!isCollapsed ? (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-14">Mosaico</TableHead>
+                              <TableHead>Cor</TableHead>
+                              <TableHead>Imagem Vinculo</TableHead>
+                              <TableHead>Imagem Gerada</TableHead>
+                              <TableHead>Foto Modelo</TableHead>
+                              <TableHead>Premium</TableHead>
+                              <TableHead className="w-48">Acoes</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {group.vinculos.map((vinculo) => {
+                              const isGenerating = generatingIds.has(vinculo.id);
+                              const fingerprintOutdated =
+                                vinculo.imagemTingida &&
+                                vinculo.imagemGeradaFingerprint !== buildGenerationFingerprint(vinculo);
 
-                            return (
-                              <TableRow key={vinculo.id}>
-                                <TableCell>
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedForMosaic.has(vinculo.id)}
-                                    disabled={!vinculo.imagemGerada}
-                                    onChange={() => handleToggleSelectForMosaic(vinculo.id)}
-                                    className="h-4 w-4 rounded border-gray-300"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium text-gray-900">{vinculo.corNome}</div>
-                                  <div className="text-xs text-gray-500">SKU {vinculo.sku || 'sem SKU'}</div>
-                                </TableCell>
-                                <TableCell>
-                                  {vinculo.imagemTingida ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openImagePreview(
-                                          vinculo.imagemTingida!,
-                                          `${vinculo.corNome} em ${vinculo.tecidoNome}`
-                                        )
-                                      }
-                                      className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
-                                    >
-                                      <img
-                                        src={vinculo.imagemTingida}
-                                        alt={vinculo.corNome}
-                                        className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
-                                      />
-                                    </button>
-                                  ) : (
-                                    <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
-                                      <ImageIcon className="w-5 h-5" />
-                                    </div>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {vinculo.imagemGerada ? (
-                                    <div>
+                              return (
+                                <TableRow key={vinculo.id}>
+                                  <TableCell>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedForMosaic.has(vinculo.id)}
+                                      disabled={!vinculo.imagemTingida}
+                                      onChange={() => handleToggleSelectForMosaic(vinculo.id)}
+                                      className="h-4 w-4 rounded border-gray-300"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="font-medium text-gray-900">{vinculo.corNome}</div>
+                                    <div className="text-xs text-gray-500">SKU {vinculo.sku || 'sem SKU'}</div>
+                                  </TableCell>
+                                  <TableCell>
+                                    {vinculo.imagemTingida ? (
                                       <button
                                         type="button"
                                         onClick={() =>
                                           openImagePreview(
-                                            vinculo.imagemGerada!,
-                                            `Imagem gerada - ${vinculo.corNome}`,
-                                            fingerprintOutdated
-                                              ? 'Versao desatualizada, sera regenerada automaticamente.'
-                                              : undefined
+                                            vinculo.imagemTingida!,
+                                            `${vinculo.corNome} em ${vinculo.tecidoNome}`
                                           )
                                         }
                                         className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
                                       >
                                         <img
-                                          src={vinculo.imagemGerada}
-                                          alt={`Gerada ${vinculo.corNome}`}
+                                          src={vinculo.imagemTingida}
+                                          alt={vinculo.corNome}
                                           className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
                                         />
                                       </button>
-                                      {isGenerating ? (
-                                        <div className="text-[11px] text-gray-500 mt-1 inline-flex items-center gap-1">
-                                          <Loader2 className="w-3 h-3 animate-spin" />
-                                          Atualizando
+                                    ) : (
+                                      <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                        <ImageIcon className="w-5 h-5" />
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {vinculo.imagemGerada ? (
+                                      <div>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openImagePreview(
+                                              vinculo.imagemGerada!,
+                                              `Imagem gerada - ${vinculo.corNome}`,
+                                              fingerprintOutdated
+                                                ? 'Versao desatualizada, sera regenerada automaticamente.'
+                                                : undefined
+                                            )
+                                          }
+                                          className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
+                                        >
+                                          <img
+                                            src={vinculo.imagemGerada}
+                                            alt={`Gerada ${vinculo.corNome}`}
+                                            className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
+                                          />
+                                        </button>
+                                        {isGenerating ? (
+                                          <div className="text-[11px] text-gray-500 mt-1 inline-flex items-center gap-1">
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            Atualizando
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    ) : (
+                                      <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                        {isGenerating ? (
+                                          <Loader2 className="w-5 h-5 animate-spin" />
+                                        ) : (
+                                          <Sparkles className="w-5 h-5" />
+                                        )}
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {vinculo.imagemModelo ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          openImagePreview(
+                                            vinculo.imagemModelo!,
+                                            `Modelo - ${vinculo.corNome}`,
+                                            `Tecido ${vinculo.tecidoNome}`
+                                          )
+                                        }
+                                        className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
+                                      >
+                                        <img
+                                          src={vinculo.imagemModelo}
+                                          alt={`Modelo ${vinculo.corNome}`}
+                                          className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
+                                        />
+                                      </button>
+                                    ) : (
+                                      <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                        <Upload className="w-5 h-5" />
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {vinculo.imagemPremiumSquare ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          openImagePreview(
+                                            vinculo.imagemPremiumSquare!,
+                                            `Premium 1:1 - ${vinculo.corNome}`,
+                                            'Layout premium salvo no Firebase.'
+                                          )
+                                        }
+                                        className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
+                                      >
+                                        <img
+                                          src={vinculo.imagemPremiumSquare}
+                                          alt={`Premium ${vinculo.corNome}`}
+                                          className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
+                                        />
+                                      </button>
+                                    ) : (
+                                      <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                        <Sparkles className="w-5 h-5" />
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex flex-col items-start gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => void handleGeneratePremium(vinculo)}
+                                        disabled={generatingPremiumIds.has(vinculo.id) || !vinculo.imagemTingida || !vinculo.imagemModelo}
+                                      >
+                                        {generatingPremiumIds.has(vinculo.id) ? (
+                                          <>
+                                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                            Gerando premium...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Sparkles className="w-4 h-4 mr-1" />
+                                            Gerar premium
+                                          </>
+                                        )}
+                                      </Button>
+
+                                      {vinculo.imagemPremiumSquare || vinculo.imagemPremiumPortrait ? (
+                                        <div className="flex gap-2">
+                                          {vinculo.imagemPremiumSquare ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-7 px-2 text-[11px]"
+                                              onClick={() => window.open(vinculo.imagemPremiumSquare, '_blank', 'noopener,noreferrer')}
+                                            >
+                                              Abrir 1:1
+                                            </Button>
+                                          ) : null}
+                                          {vinculo.imagemPremiumPortrait ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-7 px-2 text-[11px]"
+                                              onClick={() => window.open(vinculo.imagemPremiumPortrait, '_blank', 'noopener,noreferrer')}
+                                            >
+                                              Abrir 3:4
+                                            </Button>
+                                          ) : null}
                                         </div>
                                       ) : null}
+
+                                      <label className="inline-flex">
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          className="sr-only"
+                                          onChange={(event) => {
+                                            const file = event.target.files?.[0];
+                                            if (file) {
+                                              void handleModeloUpload(vinculo, file);
+                                            }
+                                            event.currentTarget.value = '';
+                                          }}
+                                        />
+                                        <span className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-8 text-xs font-medium cursor-pointer hover:bg-accent hover:text-accent-foreground">
+                                          {processingModelUploadId === vinculo.id ? (
+                                            <>
+                                              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                              Enviando...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Upload className="w-4 h-4 mr-1" />
+                                              {vinculo.imagemModelo ? 'Trocar modelo' : 'Upload modelo'}
+                                            </>
+                                          )}
+                                        </span>
+                                      </label>
                                     </div>
-                                  ) : (
-                                    <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
-                                      {isGenerating ? (
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                      ) : (
-                                        <Sparkles className="w-5 h-5" />
-                                      )}
-                                    </div>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {vinculo.imagemModelo ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openImagePreview(
-                                          vinculo.imagemModelo!,
-                                          `Modelo - ${vinculo.corNome}`,
-                                          `Tecido ${vinculo.tecidoNome}`
-                                        )
-                                      }
-                                      className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
-                                    >
-                                      <img
-                                        src={vinculo.imagemModelo}
-                                        alt={`Modelo ${vinculo.corNome}`}
-                                        className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
-                                      />
-                                    </button>
-                                  ) : (
-                                    <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
-                                      <Upload className="w-5 h-5" />
-                                    </div>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  <label className="inline-flex">
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="sr-only"
-                                      onChange={(event) => {
-                                        const file = event.target.files?.[0];
-                                        if (file) {
-                                          void handleModeloUpload(vinculo, file);
-                                        }
-                                        event.currentTarget.value = '';
-                                      }}
-                                    />
-                                    <span className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-8 text-xs font-medium cursor-pointer hover:bg-accent hover:text-accent-foreground">
-                                      {processingModelUploadId === vinculo.id ? (
-                                        <>
-                                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                                          Enviando...
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Upload className="w-4 h-4 mr-1" />
-                                          {vinculo.imagemModelo ? 'Trocar modelo' : 'Upload modelo'}
-                                        </>
-                                      )}
-                                    </span>
-                                  </label>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : null}
                   </section>
                 );
               })}
@@ -728,7 +918,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
               <div className="flex flex-col gap-2">
                 <h2 className="text-lg font-semibold text-gray-900">Mosaico para capa Shopee</h2>
                 <p className="text-sm text-gray-600">
-                  Selecione imagens geradas de um unico tecido e monte a capa em um dos templates.
+                  Selecione imagens originais de um unico tecido e monte a capa em um dos templates.
                 </p>
               </div>
 
@@ -803,7 +993,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                         <div className="text-sm">
                           <p className="font-medium text-gray-900">{mosaico.tecidoNomeSnapshot}</p>
                           <p className="text-xs text-gray-500">
-                            Template {mosaico.templateId} â€¢ {mosaico.selectedVinculoIds.length} imagem(ns)
+                            Template {mosaico.templateId} {'\u2022'} {mosaico.selectedVinculoIds.length} imagem(ns)
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">

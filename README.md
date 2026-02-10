@@ -140,6 +140,8 @@ A autenticação é restrita por email. Configure emails autorizados no Firebase
 - `npm run build:backend` - Compila apenas o backend
 - `npm run build:frontend` - Compila apenas o frontend
 - `npm run install:all` - Instala dependências de todos os projetos
+- `npm run encoding:fix` - Corrige mojibake e normaliza arquivos texto para UTF-8
+- `npm run encoding:check` - Verifica se ainda existe mojibake/encoding inconsistente
 
 ### Cloud Functions (dentro de `functions/`)
 

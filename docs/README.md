@@ -1,4 +1,4 @@
-﻿# Documentacao do RazaiSystem
+# Documentacao do RazaiSystem
 
 Ultima atualizacao: 2026-02-10
 

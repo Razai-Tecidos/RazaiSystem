@@ -1,4 +1,4 @@
-﻿# Arquitetura do Projeto
+# Arquitetura do Projeto
 
 Ultima atualizacao: 2026-02-10
 

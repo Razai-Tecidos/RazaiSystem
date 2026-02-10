@@ -1,4 +1,4 @@
-﻿import { Timestamp } from 'firebase/firestore';
+import { Timestamp } from 'firebase/firestore';
 import { ReinhardConfig } from '@/hooks/useReinhardTingimento';
 
 /**
@@ -36,6 +36,9 @@ export interface CorTecido {
   imagemGeradaAt?: Timestamp;
   imagemModelo?: string;
   imagemModeloAt?: Timestamp;
+  imagemPremiumSquare?: string;
+  imagemPremiumPortrait?: string;
+  imagemPremiumAt?: Timestamp;
   ajustesReinhard?: ReinhardConfig;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -75,6 +78,9 @@ export interface CreateCorTecidoData {
   imagemGeradaAt?: Timestamp;
   imagemModelo?: string;
   imagemModeloAt?: Timestamp;
+  imagemPremiumSquare?: string;
+  imagemPremiumPortrait?: string;
+  imagemPremiumAt?: Timestamp;
   ajustesReinhard?: ReinhardConfig;
 }
 
@@ -87,6 +93,9 @@ export interface UpdateCorTecidoData {
   imagemGeradaAt?: Timestamp;
   imagemModelo?: string;
   imagemModeloAt?: Timestamp;
+  imagemPremiumSquare?: string;
+  imagemPremiumPortrait?: string;
+  imagemPremiumAt?: Timestamp;
   ajustesReinhard?: ReinhardConfig;
   corId?: string;
   corNome?: string;

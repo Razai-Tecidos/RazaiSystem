@@ -26,9 +26,23 @@ export async function uploadMosaicoImage(
     throw new Error('Usuario nao autenticado');
   }
 
-  const storageRef = ref(storage, `mosaicos/${tecidoId}/${mosaicoId}/${filename}`);
-  await uploadBytes(storageRef, blob);
-  return getDownloadURL(storageRef);
+  const primaryRef = ref(storage, `mosaicos/${tecidoId}/${mosaicoId}/${filename}`);
+
+  try {
+    await uploadBytes(primaryRef, blob);
+    return getDownloadURL(primaryRef);
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code !== 'storage/unauthorized') {
+      throw error;
+    }
+
+    // Fallback para compatibilidade com ambientes onde as regras de /mosaicos
+    // ainda nao foram publicadas.
+    const fallbackRef = ref(storage, `cor-tecido/${tecidoId}/mosaicos/${mosaicoId}/${filename}`);
+    await uploadBytes(fallbackRef, blob);
+    return getDownloadURL(fallbackRef);
+  }
 }
 
 export async function createGestaoImagemMosaico(

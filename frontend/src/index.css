@@ -54,6 +54,7 @@
     @apply border-border;
   }
   body {
+    font-family: "Inter";
     @apply bg-background text-foreground antialiased;
   }
   
