@@ -16,7 +16,8 @@ import {
   ChevronDown,
   ChevronRight,
   Package,
-  ClipboardList,
+  PlusCircle,
+  Ruler,
   ArrowLeft
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,8 @@ import { useToast } from '@/hooks/use-toast';
 
 interface ShopeeProps {
   onNavigateHome?: () => void;
+  onNavigateToAnuncios?: () => void;
+  onNavigateToTamanhos?: () => void;
 }
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -169,7 +172,7 @@ function EmptyState({ onConnect, connecting }: { onConnect: () => void; connecti
   );
 }
 
-type ShopeeSubPage = 'menu' | 'estoque' | 'pedidos';
+type ShopeeSubPage = 'menu' | 'estoque';
 
 interface SubPageCardProps {
   title: string;
@@ -222,7 +225,7 @@ function SubPageCard({ title, description, icon, onClick, color, disabled, badge
   );
 }
 
-export function Shopee({ onNavigateHome }: ShopeeProps) {
+export function Shopee({ onNavigateHome, onNavigateToAnuncios, onNavigateToTamanhos }: ShopeeProps) {
   const { 
     shops, 
     loading, 
@@ -1024,13 +1027,18 @@ export function Shopee({ onNavigateHome }: ShopeeProps) {
               color="orange"
             />
             <SubPageCard
-              title="Pedidos"
-              description="Visualize e gerencie pedidos"
-              icon={<ClipboardList className="w-5 h-5 text-white" />}
-              onClick={() => {}}
+              title="Criar Anuncio"
+              description="Abrir listagem para criar e editar anuncios"
+              icon={<PlusCircle className="w-5 h-5 text-white" />}
+              onClick={() => onNavigateToAnuncios?.()}
               color="blue"
-              disabled
-              badge="Em breve"
+            />
+            <SubPageCard
+              title="Tamanhos"
+              description="Gerencie grades e medidas para os produtos"
+              icon={<Ruler className="w-5 h-5 text-white" />}
+              onClick={() => onNavigateToTamanhos?.()}
+              color="green"
             />
           </div>
         </main>

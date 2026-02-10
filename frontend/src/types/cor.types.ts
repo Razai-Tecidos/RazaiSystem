@@ -1,75 +1,65 @@
-import { Timestamp } from 'firebase/firestore';
+﻿import { Timestamp } from 'firebase/firestore';
 import { ReinhardConfig } from '@/hooks/useReinhardTingimento';
 
 /**
- * Cor - entidade independente (sem vínculo com tecido)
- * Representa uma cor capturada ou cadastrada
+ * Cor - entidade independente (sem vinculo com tecido)
  */
 export interface Cor {
-  id: string; // Document ID
+  id: string;
   nome: string;
-  codigoHex?: string; // Código hexadecimal da cor (ex: #FF5733)
-  sku?: string; // VE001, AZ002, etc (opcional até renomear de "Cor capturada")
-  lab?: LabColor; // Valores LAB compensados (usado no processo Reinhard)
-  labOriginal?: LabColor; // Valores LAB originais capturados pelo colorímetro
-  rgb?: { r: number; g: number; b: number }; // Valores RGB convertidos
+  codigoHex?: string;
+  sku?: string;
+  lab?: LabColor;
+  labOriginal?: LabColor;
+  rgb?: { r: number; g: number; b: number };
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  deletedAt?: Timestamp; // Para soft delete
+  deletedAt?: Timestamp;
 }
 
 /**
- * CorTecido - vínculo entre cor e tecido
- * Armazena a imagem tingida específica para cada combinação cor+tecido
+ * CorTecido - vinculo entre cor e tecido
  */
 export interface CorTecido {
-  id: string; // Document ID
-  sku?: string; // SKU do vínculo: "TecidoSKU-CorSKU" (ex: "T007-MA001")
-  corId: string; // Referência à cor
-  corNome: string; // Denormalizado para exibição
-  corHex?: string; // Denormalizado para exibição
-  corSku?: string; // Denormalizado para exibição
-  tecidoId: string; // Referência ao tecido
-  tecidoNome: string; // Denormalizado para exibição
-  tecidoSku?: string; // Denormalizado para exibição
-  imagemTingida?: string; // URL da imagem do tecido tingido com esta cor
-  ajustesReinhard?: ReinhardConfig; // Ajustes do algoritmo Reinhard usados
+  id: string;
+  sku?: string;
+  corId: string;
+  corNome: string;
+  corHex?: string;
+  corSku?: string;
+  tecidoId: string;
+  tecidoNome: string;
+  tecidoSku?: string;
+  imagemTingida?: string;
+  imagemGerada?: string;
+  imagemGeradaFingerprint?: string;
+  imagemGeradaAt?: Timestamp;
+  imagemModelo?: string;
+  imagemModeloAt?: Timestamp;
+  ajustesReinhard?: ReinhardConfig;
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  deletedAt?: Timestamp; // Para soft delete
+  deletedAt?: Timestamp;
 }
 
 export interface SkuControlCor {
-  // Mapa de prefixo -> último número usado
-  // Ex: { "VE": 3, "AZ": 5, "VM": 1 }
   familias: Record<string, number>;
-  // Prefixos reservados para evitar conflito
-  // Ex: { "VE": "Verde", "VM": "Vermelho" }
   prefixosReservados: Record<string, string>;
 }
 
-/**
- * Dados para criar uma nova cor (sem vínculo com tecido)
- */
 export interface CreateCorData {
   nome: string;
   codigoHex?: string;
-  lab?: LabColor; // Valores LAB compensados (usado no processo Reinhard)
-  labOriginal?: LabColor; // Valores LAB originais capturados pelo colorímetro
-  rgb?: { r: number; g: number; b: number }; // Valores RGB convertidos
+  lab?: LabColor;
+  labOriginal?: LabColor;
+  rgb?: { r: number; g: number; b: number };
 }
 
-/**
- * Dados para atualizar uma cor
- */
 export interface UpdateCorData extends Partial<CreateCorData> {
   id: string;
-  sku?: string; // SKU pode ser atualizado manualmente
+  sku?: string;
 }
 
-/**
- * Dados para criar um vínculo cor-tecido
- */
 export interface CreateCorTecidoData {
   corId: string;
   corNome: string;
@@ -78,22 +68,27 @@ export interface CreateCorTecidoData {
   tecidoId: string;
   tecidoNome: string;
   tecidoSku?: string;
-  sku?: string; // SKU do vínculo: "TecidoSKU-CorSKU"
+  sku?: string;
   imagemTingida?: string;
+  imagemGerada?: string;
+  imagemGeradaFingerprint?: string;
+  imagemGeradaAt?: Timestamp;
+  imagemModelo?: string;
+  imagemModeloAt?: Timestamp;
   ajustesReinhard?: ReinhardConfig;
 }
 
-/**
- * Dados para atualizar um vínculo cor-tecido
- */
 export interface UpdateCorTecidoData {
   id: string;
-  sku?: string; // SKU do vínculo: "TecidoSKU-CorSKU"
+  sku?: string;
   imagemTingida?: string;
+  imagemGerada?: string;
+  imagemGeradaFingerprint?: string;
+  imagemGeradaAt?: Timestamp;
+  imagemModelo?: string;
+  imagemModeloAt?: Timestamp;
   ajustesReinhard?: ReinhardConfig;
-  // Permite mudar a cor do vínculo (usado para mesclar cores)
   corId?: string;
-  // Dados denormalizados podem ser atualizados se a cor/tecido mudar
   corNome?: string;
   corHex?: string;
   corSku?: string;
@@ -102,19 +97,12 @@ export interface UpdateCorTecidoData {
 }
 
 export interface LabColor {
-  L: number; // 0-100
-  a: number; // -128 a 127
-  b: number; // -128 a 127
+  L: number;
+  a: number;
+  b: number;
 }
 
-// ============================================
-// TIPOS LEGADOS (para compatibilidade durante migração)
-// ============================================
-
-/**
- * @deprecated Use Cor + CorTecido separadamente
- * Tipo legado que inclui campos de tecido na cor
- */
+// Legacy types for migration compatibility
 export interface CorLegacy extends Cor {
   tecidoId?: string;
   tecidoNome?: string;
@@ -123,9 +111,6 @@ export interface CorLegacy extends Cor {
   ajustesReinhard?: ReinhardConfig;
 }
 
-/**
- * @deprecated Use CreateCorData + CreateCorTecidoData separadamente
- */
 export interface CreateCorDataLegacy extends CreateCorData {
   tecidoId?: string;
   tecidoNome?: string;

@@ -1,10 +1,10 @@
-# Documentação: Módulo de Tecidos
+﻿# DocumentaÃ§Ã£o: MÃ³dulo de Tecidos
 
-> **Nota**: Para regras críticas do projeto (Firestore, formatação brasileira, etc.), consulte [CLAUDE.md](../../../CLAUDE.md) e [CONTEXT.md](../../../CONTEXT.md).
+> **Nota**: Para regras crÃ­ticas do projeto (Firestore, formataÃ§Ã£o brasileira, etc.), consulte [CLAUDE.md](../../../CLAUDE.md) e [CONTEXT.md](../../../CONTEXT.md).
 
-## Visão Geral
+## VisÃ£o Geral
 
-O módulo de Tecidos implementa um sistema completo de gerenciamento de tecidos com UI otimista, permitindo operações CRUD (Create, Read, Update, Delete) com feedback rápido para o usuário enquanto as operações são processadas em segundo plano no Firebase.
+O mÃ³dulo de Tecidos implementa um sistema completo de gerenciamento de tecidos com UI otimista, permitindo operaÃ§Ãµes CRUD (Create, Read, Update, Delete) com feedback rÃ¡pido para o usuÃ¡rio enquanto as operaÃ§Ãµes sÃ£o processadas em segundo plano no Firebase.
 
 ## Estrutura de Dados
 
@@ -13,30 +13,30 @@ O módulo de Tecidos implementa um sistema completo de gerenciamento de tecidos 
 ```typescript
 interface Tecido {
   id: string;                    // Document ID do Firestore
-  nome: string;                   // Nome do tecido (obrigatório)
-  largura: number;                // Largura em metros (obrigatório)
-  composicao: string;             // Campo de texto livre (obrigatório)
-  imagemPadrao: string;           // URL do Firebase Storage (obrigatório)
-  descricao?: string;             // Descrição opcional
-  sku: string;                    // SKU único (T001, T002, etc)
-  createdAt: Timestamp;           // Data de criação
-  updatedAt: Timestamp;           // Data de atualização
-  deletedAt?: Timestamp;          // Data de exclusão (soft delete)
+  nome: string;                   // Nome do tecido (obrigatÃ³rio)
+  largura: number;                // Largura em metros (obrigatÃ³rio)
+  composicao: string;             // Campo de texto livre (obrigatÃ³rio)
+  imagemPadrao: string;           // URL do Firebase Storage (obrigatÃ³rio)
+  descricao?: string;             // DescriÃ§Ã£o opcional
+  sku: string;                    // SKU Ãºnico (T001, T002, etc)
+  createdAt: Timestamp;           // Data de criaÃ§Ã£o
+  updatedAt: Timestamp;           // Data de atualizaÃ§Ã£o
+  deletedAt?: Timestamp;          // Data de exclusÃ£o (soft delete)
 }
 
 ```
 
 **Nota sobre Formato de Entrada:**
-No formulário, o campo de composição é um campo de texto livre simples (Textarea). O usuário pode digitar qualquer texto descrevendo a composição, por exemplo: "Algodão 60%, Poliester 40%" ou "100% Algodão". Não há validação de formato ou porcentagem.
+No formulÃ¡rio, o campo de composiÃ§Ã£o Ã© um campo de texto livre simples (Textarea). O usuÃ¡rio pode digitar qualquer texto descrevendo a composiÃ§Ã£o, por exemplo: "AlgodÃ£o 60%, Poliester 40%" ou "100% AlgodÃ£o". NÃ£o hÃ¡ validaÃ§Ã£o de formato ou porcentagem.
 
 ### Firestore Collection: `sku_control`
 
-Documento único para controlar geração de SKUs:
+Documento Ãºnico para controlar geraÃ§Ã£o de SKUs:
 
 ```typescript
 interface SkuControl {
-  lastSkuNumber: number;          // Último número usado (ex: 3 para T003)
-  invalidatedSkus: string[];      // Array de SKUs excluídos ["T002"]
+  lastSkuNumber: number;          // Ãšltimo nÃºmero usado (ex: 3 para T003)
+  invalidatedSkus: string[];      // Array de SKUs excluÃ­dos ["T002"]
 }
 ```
 
@@ -44,36 +44,36 @@ interface SkuControl {
 
 ### Componentes
 
-#### `Tecidos.tsx` (Página Principal)
-- Gerencia estado do modal e tecido em edição
-- Integra tabela e modal de formulário
-- Coordena operações CRUD
+#### `Tecidos.tsx` (PÃ¡gina Principal)
+- Gerencia estado do modal e tecido em ediÃ§Ã£o
+- Integra tabela e modal de formulÃ¡rio
+- Coordena operaÃ§Ãµes CRUD
 
 #### `TecidosTable.tsx`
 - Exibe lista de tecidos em formato de tabela
 - Mostra estados de loading (saving, deleting)
-- Botões de ação: Editar e Excluir
+- BotÃµes de aÃ§Ã£o: Editar e Excluir
 
 #### `TecidoFormModal.tsx`
-- Modal de formulário para criar/editar tecidos
-- Validação de campos obrigatórios
+- Modal de formulÃ¡rio para criar/editar tecidos
+- ValidaÃ§Ã£o de campos obrigatÃ³rios
 - Upload de imagem com preview
-- Campo de composição: Textarea simples de texto livre
+- Campo de composiÃ§Ã£o: Textarea simples de texto livre
 
 ### Hooks
 
 #### `useTecidos.ts`
-Hook principal para operações CRUD com UI otimista:
+Hook principal para operaÃ§Ãµes CRUD com UI otimista:
 
 ```typescript
 const {
   tecidos,        // Array de tecidos
   loading,        // Estado de carregamento
   error,          // Erro se houver
-  createTecido,   // Função para criar tecido
-  updateTecido,   // Função para atualizar tecido
-  deleteTecido,   // Função para excluir tecido
-  loadTecidos,    // Função para recarregar lista
+  createTecido,   // FunÃ§Ã£o para criar tecido
+  updateTecido,   // FunÃ§Ã£o para atualizar tecido
+  deleteTecido,   // FunÃ§Ã£o para excluir tecido
+  loadTecidos,    // FunÃ§Ã£o para recarregar lista
 } = useTecidos();
 ```
 
@@ -82,20 +82,20 @@ Hook para gerenciar SKUs:
 
 ```typescript
 const {
-  generateNextSku,  // Gera próximo SKU disponível
+  generateNextSku,  // Gera prÃ³ximo SKU disponÃ­vel
   invalidateSku,    // Invalida um SKU
   loading,
   error,
 } = useSku();
 ```
 
-### Utilitários Firebase
+### UtilitÃ¡rios Firebase
 
 #### `lib/firebase/tecidos.ts`
-Funções utilitárias para operações no Firestore e Storage:
+FunÃ§Ãµes utilitÃ¡rias para operaÃ§Ãµes no Firestore e Storage:
 
 - `getTecidos()` - Busca todos os tecidos
-- `getTecidoById(id)` - Busca tecido específico
+- `getTecidoById(id)` - Busca tecido especÃ­fico
 - `createTecido(data, sku, imageUrl)` - Cria novo tecido
 - `updateTecido(id, data, imageUrl?)` - Atualiza tecido
 - `deleteTecido(id, imageUrl)` - Exclui tecido (soft delete)
@@ -103,55 +103,55 @@ Funções utilitárias para operações no Firestore e Storage:
 - `deleteTecidoImage(imageUrl)` - Remove imagem do Storage
 - `getSkuControl()` - Busca controle de SKU
 - `updateSkuControl(lastSkuNumber, invalidatedSkus)` - Atualiza controle
-- `addInvalidatedSku(sku)` - Adiciona SKU inválido
+- `addInvalidatedSku(sku)` - Adiciona SKU invÃ¡lido
 
-## Padrão de UI Otimista
+## PadrÃ£o de UI Otimista
 
 ### Conceito
 
-UI Otimista é um padrão onde a interface é atualizada imediatamente antes da confirmação do servidor, proporcionando feedback rápido ao usuário. Se a operação falhar, a UI é revertida.
+UI Otimista Ã© um padrÃ£o onde a interface Ã© atualizada imediatamente antes da confirmaÃ§Ã£o do servidor, proporcionando feedback rÃ¡pido ao usuÃ¡rio. Se a operaÃ§Ã£o falhar, a UI Ã© revertida.
 
-### Fluxo de Criação
+### Fluxo de CriaÃ§Ã£o
 
-1. **Usuário preenche formulário e clica em "Salvar"**
+1. **UsuÃ¡rio preenche formulÃ¡rio e clica em "Salvar"**
 2. **Imediatamente (UI Otimista):**
    - Modal fecha
    - Toast: "Tecido sendo cadastrado..."
-   - Tecido temporário adicionado à tabela com `_status: 'saving'`
-   - SKU temporário: "..."
+   - Tecido temporÃ¡rio adicionado Ã  tabela com `_status: 'saving'`
+   - SKU temporÃ¡rio: "..."
 3. **Em segundo plano:**
-   - Gera SKU (busca próximo disponível)
+   - Gera SKU (busca prÃ³ximo disponÃ­vel)
    - Faz upload da imagem para Storage
    - Salva no Firestore
    - Atualiza controle de SKU
-4. **Após sucesso:**
+4. **ApÃ³s sucesso:**
    - Atualiza tecido na tabela com dados reais
    - Toast: "Tecido cadastrado com sucesso!"
    - Remove estado `saving`
 5. **Em caso de erro:**
-   - Remove tecido temporário da tabela
+   - Remove tecido temporÃ¡rio da tabela
    - Toast de erro
    - Modal pode ser reaberto com dados preenchidos
 
-### Fluxo de Exclusão
+### Fluxo de ExclusÃ£o
 
-1. **Usuário clica em excluir**
+1. **UsuÃ¡rio clica em excluir**
 2. **Imediatamente:**
    - Remove da tabela
-   - Toast: "Tecido sendo excluído..."
-   - SKU marcado como inválido localmente
+   - Toast: "Tecido sendo excluÃ­do..."
+   - SKU marcado como invÃ¡lido localmente
 3. **Em segundo plano:**
    - Deleta do Firestore (soft delete)
-   - Atualiza controle de SKU (adiciona ao array de inválidos)
-4. **Após sucesso:**
-   - Toast: "Tecido excluído com sucesso!"
+   - Atualiza controle de SKU (adiciona ao array de invÃ¡lidos)
+4. **ApÃ³s sucesso:**
+   - Toast: "Tecido excluÃ­do com sucesso!"
 5. **Em caso de erro:**
    - Restaura tecido na tabela
    - Toast de erro
 
-### Fluxo de Atualização
+### Fluxo de AtualizaÃ§Ã£o
 
-1. **Usuário edita e salva**
+1. **UsuÃ¡rio edita e salva**
 2. **Imediatamente:**
    - Atualiza tecido na tabela com novos dados
    - Marca como `_status: 'saving'`
@@ -159,7 +159,7 @@ UI Otimista é um padrão onde a interface é atualizada imediatamente antes da 
 3. **Em segundo plano:**
    - Upload de nova imagem (se fornecida)
    - Atualiza no Firestore
-4. **Após sucesso:**
+4. **ApÃ³s sucesso:**
    - Recarrega lista para garantir dados atualizados
    - Toast: "Tecido atualizado com sucesso!"
 5. **Em caso de erro:**
@@ -169,64 +169,64 @@ UI Otimista é um padrão onde a interface é atualizada imediatamente antes da 
 ## Sistema de SKU
 
 ### Formato
-- Padrão: `T` + número com 3 dígitos
+- PadrÃ£o: `T` + nÃºmero com 3 dÃ­gitos
 - Exemplos: `T001`, `T002`, `T003`, ..., `T999`
 
-### Geração
+### GeraÃ§Ã£o
 
 1. Busca documento `sku_control` no Firestore
-2. Se não existe, cria com `lastSkuNumber: 0` e `invalidatedSkus: []`
+2. Se nÃ£o existe, cria com `lastSkuNumber: 0` e `invalidatedSkus: []`
 3. Incrementa `lastSkuNumber`
 4. Gera SKU: `T${nextNumber.toString().padStart(3, '0')}`
 5. Atualiza controle no Firebase
 
-### Invalidação
+### InvalidaÃ§Ã£o
 
-1. Ao excluir tecido, SKU é adicionado ao array `invalidatedSkus`
-2. SKUs inválidos não são reutilizados automaticamente
-3. Mantém histórico para auditoria
+1. Ao excluir tecido, SKU Ã© adicionado ao array `invalidatedSkus`
+2. SKUs invÃ¡lidos nÃ£o sÃ£o reutilizados automaticamente
+3. MantÃ©m histÃ³rico para auditoria
 
-## Validações
+## ValidaÃ§Ãµes
 
 ### Frontend
 
-- **Nome**: obrigatório, mínimo 3 caracteres
-- **Largura**: obrigatório, número positivo
-- **Composição**: 
-  - Obrigatório, campo de texto livre
-  - Apenas valida se está preenchido
-  - Não há validação de formato ou porcentagem
-  - Exemplo: "Algodão 60%, Poliester 40%"
+- **Nome**: obrigatÃ³rio, mÃ­nimo 3 caracteres
+- **Largura**: obrigatÃ³rio, nÃºmero positivo
+- **ComposiÃ§Ã£o**: 
+  - ObrigatÃ³rio, campo de texto livre
+  - Apenas valida se estÃ¡ preenchido
+  - NÃ£o hÃ¡ validaÃ§Ã£o de formato ou porcentagem
+  - Exemplo: "AlgodÃ£o 60%, Poliester 40%"
 - **Imagem**: 
-  - Obrigatória
+  - ObrigatÃ³ria
   - Formatos aceitos: JPG, PNG, WEBP
-  - Tamanho máximo: 5MB
-- **Descrição**: opcional
+  - Tamanho mÃ¡ximo: 5MB
+- **DescriÃ§Ã£o**: opcional
 
 ### Backend (Rotas Opcionais)
 
-- Validação de campos obrigatórios
-- Validação de formato de SKU
-- Validação de composição: apenas verificar se está preenchido
-- Validação de permissões de usuário autenticado
+- ValidaÃ§Ã£o de campos obrigatÃ³rios
+- ValidaÃ§Ã£o de formato de SKU
+- ValidaÃ§Ã£o de composiÃ§Ã£o: apenas verificar se estÃ¡ preenchido
+- ValidaÃ§Ã£o de permissÃµes de usuÃ¡rio autenticado
 
-## Formato de Composição
+## Formato de ComposiÃ§Ã£o
 
-O campo de composição é um campo de texto livre simples (Textarea):
+O campo de composiÃ§Ã£o Ã© um campo de texto livre simples (Textarea):
 
 - **Tipo**: Textarea de texto livre
-- **Validação**: Apenas verifica se está preenchido
-- **Sem parsing**: Não há processamento automático do texto
+- **ValidaÃ§Ã£o**: Apenas verifica se estÃ¡ preenchido
+- **Sem parsing**: NÃ£o hÃ¡ processamento automÃ¡tico do texto
 - **Exemplos**:
-  - "Algodão 60%, Poliester 40%"
-  - "100% Algodão"
-  - "Algodão, Poliester e Viscose"
-  - Qualquer texto descritivo da composição
+  - "AlgodÃ£o 60%, Poliester 40%"
+  - "100% AlgodÃ£o"
+  - "AlgodÃ£o, Poliester e Viscose"
+  - Qualquer texto descritivo da composiÃ§Ã£o
 
 ### Interface Simplificada
 
-- Campo único Textarea (sem múltiplos campos)
-- Sem botão "Adicionar" ou "Remover"
+- Campo Ãºnico Textarea (sem mÃºltiplos campos)
+- Sem botÃ£o "Adicionar" ou "Remover"
 - Sem agrupamento visual ou cards
 - Interface mais simples e direta
 
@@ -234,17 +234,17 @@ O campo de composição é um campo de texto livre simples (Textarea):
 
 ### Processo
 
-1. Usuário seleciona arquivo
-2. Validação de tipo e tamanho
+1. UsuÃ¡rio seleciona arquivo
+2. ValidaÃ§Ã£o de tipo e tamanho
 3. Preview da imagem exibido
 4. Ao salvar, upload para Firebase Storage
 5. Caminho: `tecidos/{tecidoId}/{timestamp}-{filename}`
 6. URL retornada e salva no Firestore
 
-### Validações
+### ValidaÃ§Ãµes
 
 - Tipos aceitos: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`
-- Tamanho máximo: 5MB
+- Tamanho mÃ¡ximo: 5MB
 - Preview antes de salvar
 
 ## Como Usar
@@ -257,14 +257,11 @@ import { useTecidos } from '@/hooks/useTecidos';
 const { createTecido } = useTecidos();
 
 await createTecido({
-  nome: 'Tecido de Algodão',
-        largura: 1.50,
-  composicao: [
-    { id: '1', nome: 'Algodão', porcentagem: 60 },
-    { id: '2', nome: 'Poliester', porcentagem: 40 },
-  ],
+  nome: 'Tecido de Algodao',
+  largura: 1.50,
+  composicao: 'Algodao 60%, Poliester 40%',
   imagemPadrao: file, // File object
-  descricao: 'Tecido macio e confortável',
+  descricao: 'Tecido macio e confortÃ¡vel',
 });
 ```
 
@@ -276,8 +273,8 @@ const { updateTecido } = useTecidos();
 await updateTecido({
   id: 'tecido-id',
   nome: 'Novo Nome',
-        largura: 1.60,
-        composicao: '100% Algodão',
+  largura: 1.60,
+  composicao: '100% Algodao',
   // ... outros campos
 });
 ```
@@ -303,86 +300,88 @@ const sku = await generateNextSku(); // Retorna "T001", "T002", etc.
 
 ```
 frontend/src/
-├── components/
-│   └── Tecidos/
-│       ├── TecidoFormModal.tsx       # Modal de formulário
-│       └── TecidosTable.tsx          # Tabela de tecidos
-├── hooks/
-│   ├── useSku.ts                    # Hook de SKU
-│   └── useTecidos.ts                # Hook principal CRUD
-├── lib/
-│   └── firebase/
-│       └── tecidos.ts               # Funções Firebase
-├── pages/
-│   └── Tecidos.tsx                  # Página principal
-├── types/
-│   └── tecido.types.ts              # Tipos TypeScript
-└── docs/
-    └── TECIDOS.md                    # Esta documentação
+â”œâ”€â”€ components/
+â”‚   â””â”€â”€ Tecidos/
+â”‚       â”œâ”€â”€ TecidoFormModal.tsx       # Modal de formulÃ¡rio
+â”‚       â””â”€â”€ TecidosTable.tsx          # Tabela de tecidos
+â”œâ”€â”€ hooks/
+â”‚   â”œâ”€â”€ useSku.ts                    # Hook de SKU
+â”‚   â””â”€â”€ useTecidos.ts                # Hook principal CRUD
+â”œâ”€â”€ lib/
+â”‚   â””â”€â”€ firebase/
+â”‚       â””â”€â”€ tecidos.ts               # FunÃ§Ãµes Firebase
+â”œâ”€â”€ pages/
+â”‚   â””â”€â”€ Tecidos.tsx                  # PÃ¡gina principal
+â”œâ”€â”€ types/
+â”‚   â””â”€â”€ tecido.types.ts              # Tipos TypeScript
+â””â”€â”€ docs/
+    â””â”€â”€ TECIDOS.md                    # Esta documentaÃ§Ã£o
 ```
 
-## Boas Práticas
+## Boas PrÃ¡ticas
 
 ### UI Otimista
 
-1. **Sempre atualize a UI imediatamente** antes da operação assíncrona
+1. **Sempre atualize a UI imediatamente** antes da operaÃ§Ã£o assÃ­ncrona
 2. **Mantenha estado original** para reverter em caso de erro
-3. **Forneça feedback visual** (loading states, toasts)
-4. **Trate erros adequadamente** revertendo mudanças
+3. **ForneÃ§a feedback visual** (loading states, toasts)
+4. **Trate erros adequadamente** revertendo mudanÃ§as
 
-### Validação
+### ValidaÃ§Ã£o
 
-1. **Valide no frontend** para feedback rápido
-2. **Valide no backend** para segurança
-3. **Mostre erros claros** ao usuário
-4. **Limpe erros** quando campos são corrigidos
+1. **Valide no frontend** para feedback rÃ¡pido
+2. **Valide no backend** para seguranÃ§a
+3. **Mostre erros claros** ao usuÃ¡rio
+4. **Limpe erros** quando campos sÃ£o corrigidos
 
 ### Performance
 
 1. **Use queries otimizadas** no Firestore
-2. **Implemente paginação** se houver muitos tecidos
-3. **Cache imagens** quando possível
-4. **Otimize uploads** comprimindo imagens se necessário
+2. **Implemente paginaÃ§Ã£o** se houver muitos tecidos
+3. **Cache imagens** quando possÃ­vel
+4. **Otimize uploads** comprimindo imagens se necessÃ¡rio
 
 ### Manutenibilidade
 
-1. **Separe responsabilidades** (hooks, componentes, utilitários)
+1. **Separe responsabilidades** (hooks, componentes, utilitÃ¡rios)
 2. **Use TypeScript** para type safety
-3. **Documente funções complexas**
-4. **Siga padrões do projeto** (shadcn/ui, Tailwind CSS)
+3. **Documente funÃ§Ãµes complexas**
+4. **Siga padrÃµes do projeto** (shadcn/ui, Tailwind CSS)
 
 ## Troubleshooting
 
-### SKU não está sendo gerado
+### SKU nÃ£o estÃ¡ sendo gerado
 
 - Verifique se o documento `sku_control` existe no Firestore
-- Verifique permissões do Firestore
+- Verifique permissÃµes do Firestore
 - Verifique console para erros
 
-### Imagem não faz upload
+### Imagem nÃ£o faz upload
 
 - Verifique regras do Firebase Storage
 - Verifique tamanho e formato do arquivo
-- Verifique permissões de autenticação
+- Verifique permissÃµes de autenticaÃ§Ã£o
 
-### UI não atualiza após operação
+### UI nÃ£o atualiza apÃ³s operaÃ§Ã£o
 
-- Verifique se o hook está sendo usado corretamente
-- Verifique se há erros no console
-- Verifique se o Firestore está sincronizado
+- Verifique se o hook estÃ¡ sendo usado corretamente
+- Verifique se hÃ¡ erros no console
+- Verifique se o Firestore estÃ¡ sincronizado
 
-### Composição não valida
+### ComposiÃ§Ã£o nÃ£o valida
 
-- Verifique se a soma das porcentagens é exatamente 100%
-- Verifique se todos os campos estão preenchidos
-- Verifique se há itens duplicados
+- Verifique se a soma das porcentagens Ã© exatamente 100%
+- Verifique se todos os campos estÃ£o preenchidos
+- Verifique se hÃ¡ itens duplicados
 
-## Próximos Passos
+## PrÃ³ximos Passos
 
-- [ ] Implementar paginação na tabela
+- [ ] Implementar paginaÃ§Ã£o na tabela
 - [ ] Adicionar filtros e busca
-- [ ] Implementar ordenação
-- [ ] Adicionar exportação de dados
-- [ ] Implementar histórico de alterações
-- [ ] Adicionar suporte a múltiplas imagens
+- [ ] Implementar ordenaÃ§Ã£o
+- [ ] Adicionar exportaÃ§Ã£o de dados
+- [ ] Implementar histÃ³rico de alteraÃ§Ãµes
+- [ ] Adicionar suporte a mÃºltiplas imagens
 - [ ] Implementar categorias de tecidos
+
+

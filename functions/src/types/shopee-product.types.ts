@@ -16,6 +16,7 @@ export type SyncStatus = 'synced' | 'out_of_sync' | 'error';
 export interface TierOption {
   option_name: string;
   imagem_url?: string;
+  imagem_gerada?: boolean;
 }
 
 /**
@@ -123,6 +124,7 @@ export interface ShopeeProduct {
   
   // Descrição
   descricao: string;
+  titulo_anuncio?: string;
   descricao_customizada?: string;
   
   // Configurações
@@ -188,6 +190,7 @@ export interface CreateShopeeProductData {
     altura: number;
   };
   descricao_customizada?: string;
+  titulo_anuncio?: string;
   usar_imagens_publicas?: boolean;
   imagens_principais?: string[];
   template_id?: string;
@@ -229,6 +232,16 @@ export interface ShopeeAddItemResponse {
   response?: {
     item_id: number;
   };
+}
+
+/**
+ * Resposta da API delete_item na Shopee
+ */
+export interface ShopeeDeleteItemResponse {
+  error?: string;
+  message?: string;
+  request_id?: string;
+  response?: Record<string, never>;
 }
 
 /**

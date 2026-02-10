@@ -44,6 +44,7 @@ import { createZipFromImages } from '@/lib/zipUtils';
 import ExcelJS from 'exceljs';
 import { EditarVinculo } from './EditarVinculo';
 import { updateCorDataInVinculos } from '@/lib/firebase/cor-tecido';
+import { ImageLightbox } from '@/components/ui/image-lightbox';
 
 interface VinculosProps {
   onNavigateHome?: () => void;
@@ -83,6 +84,11 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
     description: string;
     onConfirm: () => void;
   }>({ open: false, title: '', description: '', onConfirm: () => {} });
+  const [lightboxImage, setLightboxImage] = useState<{
+    url: string;
+    title: string;
+    subtitle?: string;
+  } | null>(null);
 
   const showConfirm = useCallback((title: string, description: string, onConfirm: () => void) => {
     setConfirmDialog({ open: true, title, description, onConfirm });
@@ -1455,17 +1461,23 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                             </TableCell>
                             <TableCell>
                               {vinculo.imagemTingida ? (
-                                <a 
-                                  href={vinculo.imagemTingida} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setLightboxImage({
+                                      url: vinculo.imagemTingida!,
+                                      title: `${vinculo.corNome} em ${vinculo.tecidoNome}`,
+                                      subtitle: `SKU ${vinculo.sku || 'sem SKU'}`,
+                                    })
+                                  }
+                                  className="rounded-md focus:outline-none focus:ring-2 focus:ring-primary/60"
                                 >
                                   <img
                                     src={vinculo.imagemTingida}
                                     alt={`${vinculo.corNome} em ${vinculo.tecidoNome}`}
                                     className="w-14 h-14 rounded-md border border-gray-200 shadow-sm object-cover hover:scale-110 transition-transform"
                                   />
-                                </a>
+                                </button>
                               ) : (
                                 <div className="w-14 h-14 rounded-md border border-dashed border-gray-300 flex items-center justify-center">
                                   <ImageIcon className="w-5 h-5 text-gray-300" />
@@ -1525,6 +1537,16 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
           confirmDialog.onConfirm();
           setConfirmDialog(prev => ({ ...prev, open: false }));
         }}
+      />
+
+      <ImageLightbox
+        open={Boolean(lightboxImage)}
+        onOpenChange={(open) => {
+          if (!open) setLightboxImage(null);
+        }}
+        imageUrl={lightboxImage?.url || null}
+        title={lightboxImage?.title || 'Preview'}
+        subtitle={lightboxImage?.subtitle}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/config/firebase';
 import { Header } from '@/components/Layout/Header';
@@ -26,6 +26,8 @@ import { AdPreview } from '@/components/Shopee/AdPreview';
 import { generateBrandOverlay } from '@/lib/brandOverlay';
 import { FieldHint } from '@/components/Shopee/FieldHint';
 import { FiscalInfo } from '@/components/Shopee/FiscalInfo';
+import { listMosaicosByTecido } from '@/lib/firebase/gestao-imagens';
+import { GestaoImagemMosaico } from '@/types/gestao-imagens.types';
 import { 
   Loader2, 
   Save, 
@@ -59,6 +61,7 @@ interface CorConfig {
   cor_nome: string;
   cor_hex?: string;
   imagem_url?: string;
+  imagem_gerada?: boolean;
   estoque: number;
   selected: boolean;
 }
@@ -90,7 +93,7 @@ export function CriarAnuncioShopee({
   } = useShopeeProducts();
   const { shops } = useShopee();
 
-  // Estado do formulário
+  // Estado do formulÃ¡rio
   const [currentStep, setCurrentStep] = useState<Step>('tecido');
   const [selectedTecido, setSelectedTecido] = useState<Tecido | null>(null);
   const [coresConfig, setCoresConfig] = useState<CorConfig[]>([]);
@@ -103,9 +106,13 @@ export function CriarAnuncioShopee({
   const [peso, setPeso] = useState<number>(0.3);
   const [dimensoes, setDimensoes] = useState({ comprimento: 30, largura: 30, altura: 10 });
   const [descricaoCustomizada, setDescricaoCustomizada] = useState<string>('');
+  const [tituloAnuncio, setTituloAnuncio] = useState<string>('');
+  const [tituloEditadoManual, setTituloEditadoManual] = useState(false);
   const [usarImagensPublicas, setUsarImagensPublicas] = useState<boolean>(true);
   const [imagensPrincipais, setImagensPrincipais] = useState<string[]>([]);
   const [uploadingImages, setUploadingImages] = useState<boolean>(false);
+  const [mosaicosTecido, setMosaicosTecido] = useState<GestaoImagemMosaico[]>([]);
+  const [loadingMosaicosTecido, setLoadingMosaicosTecido] = useState(false);
   const [productId, setProductId] = useState<string | null>(draftId?.startsWith('duplicate_') ? null : draftId || null);
   
   // Novos campos opcionais
@@ -121,29 +128,29 @@ export function CriarAnuncioShopee({
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [overlayImages, setOverlayImages] = useState<Record<string, string>>({});
 
-  // Informações fiscais
+  // InformaÃ§Ãµes fiscais
   const [ncmPadrao, setNcmPadrao] = useState<string>('58013600');
   
   // Busca de categoria
   const [categorySearchTerm, setCategorySearchTerm] = useState<string>('');
   
-  // Validação inline
+  // ValidaÃ§Ã£o inline
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
 
-  // Estado de navegação de categorias
+  // Estado de navegaÃ§Ã£o de categorias
   const [categoryPath, setCategoryPath] = useState<ShopeeCategory[]>([]);
 
   // Shop selecionada
   const selectedShop = shops[0];
 
-  // Carrega categorias quando shop está disponível (silencioso na carga inicial)
+  // Carrega categorias quando shop estÃ¡ disponÃ­vel (silencioso na carga inicial)
   useEffect(() => {
     if (selectedShop?.shopId) {
       loadCategories(selectedShop.shopId, false, true);
     }
   }, [selectedShop?.shopId, loadCategories]);
 
-  // Carrega rascunho ou duplicação se draftId fornecido
+  // Carrega rascunho ou duplicaÃ§Ã£o se draftId fornecido
   useEffect(() => {
     if (draftId) {
       if (draftId.startsWith('duplicate_')) {
@@ -155,11 +162,40 @@ export function CriarAnuncioShopee({
     }
   }, [draftId]);
 
-  // Carrega valores padrão quando tecido é selecionado
+  // Carrega valores padrÃ£o quando tecido Ã© selecionado
   useEffect(() => {
     if (selectedTecido) {
       loadDefaultValues();
     }
+  }, [selectedTecido]);
+
+  useEffect(() => {
+    if (!selectedTecido) {
+      setMosaicosTecido([]);
+      return;
+    }
+
+    let active = true;
+    const loadMosaicos = async () => {
+      try {
+        setLoadingMosaicosTecido(true);
+        const data = await listMosaicosByTecido(selectedTecido.id);
+        if (active) {
+          setMosaicosTecido(data);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar mosaicos do tecido:', error);
+      } finally {
+        if (active) {
+          setLoadingMosaicosTecido(false);
+        }
+      }
+    };
+
+    void loadMosaicos();
+    return () => {
+      active = false;
+    };
   }, [selectedTecido]);
 
   const loadDraft = async (id: string) => {
@@ -172,13 +208,13 @@ export function CriarAnuncioShopee({
   const loadDraftForDuplicate = async (originalId: string) => {
     const product = await getProduct(originalId);
     if (product) {
-      // Carrega dados mas NÃO define productId (cria como novo)
+      // Carrega dados mas NÃƒO define productId (cria como novo)
       populateFromProduct(product, null);
     }
   };
 
   const populateFromProduct = async (product: ShopeeProduct, id: string | null) => {
-    // Preenche formulário com dados do produto
+    // Preenche formulÃ¡rio com dados do produto
     const tecido = tecidos.find(t => t.id === product.tecido_id);
     if (tecido) {
       setSelectedTecido(tecido);
@@ -191,6 +227,8 @@ export function CriarAnuncioShopee({
     setPeso(product.peso);
     setDimensoes(product.dimensoes);
     setDescricaoCustomizada(product.descricao_customizada || '');
+    setTituloAnuncio(product.titulo_anuncio || '');
+    setTituloEditadoManual(Boolean(product.titulo_anuncio));
     setUsarImagensPublicas(product.usar_imagens_publicas);
     if (product.imagens_principais && product.imagens_principais.length > 0) {
       setImagensPrincipais(product.imagens_principais);
@@ -207,6 +245,7 @@ export function CriarAnuncioShopee({
           cor_id: m.cor_id,
           cor_nome: m.cor_nome || '',
           imagem_url: m.imagem_url,
+          imagem_gerada: /\/gerada_/i.test(m.imagem_url || ''),
           estoque: m.estoque,
           selected: true,
         });
@@ -237,14 +276,14 @@ export function CriarAnuncioShopee({
     }
   };
 
-  // Quando tecido é selecionado, carrega vínculos
+  // Quando tecido Ã© selecionado, carrega vÃ­nculos
   const handleTecidoSelect = async (tecidoId: string) => {
     const tecido = tecidos.find(t => t.id === tecidoId);
     if (tecido) {
       setSelectedTecido(tecido);
       await getVinculosByTecido(tecidoId);
       
-      // Atualiza largura nas dimensões
+      // Atualiza largura nas dimensÃµes
       if (tecido.largura) {
         setDimensoes(prev => ({
           ...prev,
@@ -254,7 +293,7 @@ export function CriarAnuncioShopee({
     }
   };
 
-  // Quando vínculos são carregados, configura cores filtrando pelo tecido selecionado
+  // Quando vÃ­nculos sÃ£o carregados, configura cores filtrando pelo tecido selecionado
   useEffect(() => {
     if (vinculos.length > 0 && selectedTecido && !productId && coresConfig.length === 0) {
       const vinculosDoTecido = vinculos.filter(v => v.tecidoId === selectedTecido.id);
@@ -262,7 +301,8 @@ export function CriarAnuncioShopee({
         cor_id: v.corId,
         cor_nome: v.corNome,
         cor_hex: v.corHex,
-        imagem_url: v.imagemTingida,
+        imagem_url: v.imagemGerada || v.imagemTingida,
+        imagem_gerada: Boolean(v.imagemGerada),
         estoque: estoquePadrao,
         selected: false,
       }));
@@ -270,7 +310,7 @@ export function CriarAnuncioShopee({
     }
   }, [vinculos, selectedTecido, productId, estoquePadrao, coresConfig.length]);
 
-  // Toggle seleção de cor
+  // Toggle seleÃ§Ã£o de cor
   const toggleCorSelection = (corId: string) => {
     setCoresConfig(prev => prev.map(c => 
       c.cor_id === corId ? { ...c, selected: !c.selected } : c
@@ -284,12 +324,12 @@ export function CriarAnuncioShopee({
     ));
   };
 
-  // Atualiza preço de um tamanho
+  // Atualiza preÃ§o de um tamanho
   const updatePrecoTamanho = (tamanhoId: string, value: number) => {
     setPrecosPorTamanho(prev => ({ ...prev, [tamanhoId]: value }));
   };
 
-  // Toggle seleção de tamanho
+  // Toggle seleÃ§Ã£o de tamanho
   const toggleTamanhoSelection = (tamanhoId: string) => {
     setSelectedTamanhos(prev => 
       prev.includes(tamanhoId) 
@@ -298,7 +338,7 @@ export function CriarAnuncioShopee({
     );
   };
 
-  // Navegação de categorias
+  // NavegaÃ§Ã£o de categorias
   const handleCategorySelect = (category: ShopeeCategory) => {
     if (category.has_children) {
       setCategoryPath(prev => [...prev, category]);
@@ -317,33 +357,37 @@ export function CriarAnuncioShopee({
     ? getRootCategories()
     : getChildCategories(categoryPath[categoryPath.length - 1].id);
 
-  // Preço efetivo: se tem tamanhos, todos precisam ter preço; se não, usa precoUnico
+  // PreÃ§o efetivo: se tem tamanhos, todos precisam ter preÃ§o; se nÃ£o, usa precoUnico
   const temPrecoValido = selectedTamanhos.length > 0
     ? selectedTamanhos.every(id => (precosPorTamanho[id] || 0) > 0)
     : precoUnico > 0;
 
-  // Preço mínimo (para exibição)
+  // PreÃ§o mÃ­nimo (para exibiÃ§Ã£o)
   const precoMinimo = selectedTamanhos.length > 0
     ? Math.min(...selectedTamanhos.map(id => precosPorTamanho[id] || 0).filter(p => p > 0), Infinity)
     : precoUnico;
 
-  // Preço base para a API (o menor preço ou preço único)
+  // PreÃ§o base para a API (o menor preÃ§o ou preÃ§o Ãºnico)
   const precoBaseParaApi = selectedTamanhos.length > 0
     ? (precoMinimo === Infinity ? 0 : precoMinimo)
     : precoUnico;
 
-  // Validação de etapas
+  const tituloTrim = tituloAnuncio.trim();
+  const tituloValido = tituloTrim.length === 0 || (tituloTrim.length >= 20 && tituloTrim.length <= 120);
+
+  // ValidaÃ§Ã£o de etapas
   const canProceedFromTecido = selectedTecido !== null;
   const canProceedFromCores = coresConfig.some(c => c.selected);
   const canProceedFromConfiguracoes = 
     temPrecoValido && 
     categoriaId !== null && 
+    tituloValido &&
     peso > 0 && 
     dimensoes.comprimento > 0 && 
     dimensoes.largura > 0 && 
     dimensoes.altura > 0;
 
-  // Navegação entre etapas
+  // NavegaÃ§Ã£o entre etapas
   const goToNextStep = () => {
     const steps: Step[] = ['tecido', 'cores', 'configuracoes', 'preview'];
     const currentIndex = steps.indexOf(currentStep);
@@ -381,6 +425,15 @@ export function CriarAnuncioShopee({
       return;
     }
 
+    if (!tituloValido) {
+      toast({
+        title: 'Titulo invalido',
+        description: 'O titulo precisa ter entre 20 e 120 caracteres.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const data: CreateShopeeProductData = {
       shop_id: selectedShop.shopId,
       tecido_id: selectedTecido.id,
@@ -395,6 +448,7 @@ export function CriarAnuncioShopee({
       categoria_id: categoriaId!,
       peso,
       dimensoes,
+      titulo_anuncio: tituloTrim || undefined,
       descricao_customizada: descricaoCustomizada || undefined,
       usar_imagens_publicas: usarImagensPublicas,
       imagens_principais: imagensPrincipais.length > 0 ? imagensPrincipais : undefined,
@@ -437,10 +491,10 @@ export function CriarAnuncioShopee({
   // Cores selecionadas
   const selectedCores = coresConfig.filter(c => c.selected);
 
-  // Calcula total de combinações
+  // Calcula total de combinaÃ§Ãµes
   const totalCombinations = selectedCores.length * (selectedTamanhos.length || 1);
 
-  // Nome auto-gerado do anúncio
+  // Nome auto-gerado do anÃºncio
   const nomeAutoGerado = useMemo(() => {
     if (!selectedTecido) return '';
     const cores = selectedCores.map(c => c.cor_nome).join(', ');
@@ -448,13 +502,19 @@ export function CriarAnuncioShopee({
     return cores ? `${base} - ${cores}` : base;
   }, [selectedTecido, selectedCores]);
 
-  // Descrição auto-gerada
+  useEffect(() => {
+    if (!tituloEditadoManual) {
+      setTituloAnuncio(nomeAutoGerado);
+    }
+  }, [nomeAutoGerado, tituloEditadoManual]);
+
+  // DescriÃ§Ã£o auto-gerada
   const descricaoAutoGerada = useMemo(() => {
     if (!selectedTecido) return '';
     const lines = [`Tecido ${selectedTecido.nome} de alta qualidade.`];
     if (selectedTecido.largura) lines.push(`Largura: ${selectedTecido.largura}m`);
     if (selectedCores.length > 0) {
-      lines.push(`Cores disponíveis: ${selectedCores.map(c => c.cor_nome).join(', ')}`);
+      lines.push(`Cores disponÃ­veis: ${selectedCores.map(c => c.cor_nome).join(', ')}`);
     }
     if (selectedTamanhos.length > 0) {
       const nomesTamanhos = selectedTamanhos.map(id => tamanhos.find(t => t.id === id)?.nome).filter(Boolean);
@@ -463,20 +523,23 @@ export function CriarAnuncioShopee({
     return lines.join('\n');
   }, [selectedTecido, selectedCores, selectedTamanhos, tamanhos]);
 
-  // Marcar campo como "tocado" (para validação inline)
+  // Marcar campo como "tocado" (para validaÃ§Ã£o inline)
   const markTouched = useCallback((field: string) => {
     setTouchedFields(prev => new Set(prev).add(field));
   }, []);
 
-  // Validação detalhada para Step 3
+  // ValidaÃ§Ã£o detalhada para Step 3
   const validationErrors = useMemo(() => {
     const errors: Record<string, string> = {};
     if (!temPrecoValido) {
       if (selectedTamanhos.length > 0) {
-        errors.preco = 'Defina o preço para todos os tamanhos selecionados';
+        errors.preco = 'Defina o preÃ§o para todos os tamanhos selecionados';
       } else {
-        errors.preco = 'Preço deve ser maior que zero';
+        errors.preco = 'PreÃ§o deve ser maior que zero';
       }
+    }
+    if (!tituloValido) {
+      errors.titulo = 'Titulo deve ter entre 20 e 120 caracteres';
     }
     if (!categoriaId) errors.categoria = 'Selecione uma categoria';
     if (peso <= 0) errors.peso = 'Peso deve ser maior que zero';
@@ -484,17 +547,18 @@ export function CriarAnuncioShopee({
     if (dimensoes.largura <= 0) errors.largura = 'Largura deve ser maior que zero';
     if (dimensoes.altura <= 0) errors.altura = 'Altura deve ser maior que zero';
     return errors;
-  }, [temPrecoValido, selectedTamanhos, categoriaId, peso, dimensoes]);
+  }, [temPrecoValido, selectedTamanhos, tituloValido, categoriaId, peso, dimensoes]);
 
   // Progresso da etapa atual
   const stepProgress = useMemo(() => {
     if (currentStep === 'tecido') return selectedTecido ? 100 : 0;
     if (currentStep === 'cores') return selectedCores.length > 0 ? 100 : 0;
     if (currentStep === 'configuracoes') {
-      const totalFields = 6;
+      const totalFields = 7;
       let filled = 0;
       if (temPrecoValido) filled++;
       if (estoquePadrao > 0) filled++;
+      if (tituloValido) filled++;
       if (categoriaId) filled++;
       if (peso > 0) filled++;
       if (dimensoes.comprimento > 0 && dimensoes.largura > 0) filled++;
@@ -502,13 +566,13 @@ export function CriarAnuncioShopee({
       return Math.round((filled / totalFields) * 100);
     }
     return 100;
-  }, [currentStep, selectedTecido, selectedCores, temPrecoValido, estoquePadrao, categoriaId, peso, dimensoes]);
+  }, [currentStep, selectedTecido, selectedCores, temPrecoValido, estoquePadrao, tituloValido, categoriaId, peso, dimensoes]);
 
   // Gerar overlays de marca quando entrar no preview
   useEffect(() => {
     if (currentStep !== 'preview') return;
     selectedCores.forEach(cor => {
-      if (cor.imagem_url && !overlayImages[cor.cor_id]) {
+      if (cor.imagem_url && !cor.imagem_gerada && !overlayImages[cor.cor_id]) {
         generateBrandOverlay(cor.imagem_url, cor.cor_nome).then(dataUrl => {
           setOverlayImages(prev => ({ ...prev, [cor.cor_id]: dataUrl }));
         }).catch(() => {
@@ -540,7 +604,7 @@ export function CriarAnuncioShopee({
     if (imagensPrincipais.length + files.length > 9) {
       toast({
         title: 'Limite de imagens',
-        description: 'O máximo é 9 imagens principais por anúncio.',
+        description: 'O mÃ¡ximo Ã© 9 imagens principais por anÃºncio.',
         variant: 'destructive',
       });
       return;
@@ -575,6 +639,13 @@ export function CriarAnuncioShopee({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [imagensPrincipais, productId, toast]);
 
+  const useImageAsCover = useCallback((url: string) => {
+    setImagensPrincipais((previous) => {
+      const deduped = previous.filter((existing) => existing !== url);
+      return [url, ...deduped].slice(0, 9);
+    });
+  }, []);
+
   const removeMainImage = useCallback((index: number) => {
     setImagensPrincipais(prev => prev.filter((_, i) => i !== index));
   }, []);
@@ -596,8 +667,8 @@ export function CriarAnuncioShopee({
       <BreadcrumbNav
         items={[
           { label: 'Home', onClick: onNavigateHome },
-          { label: 'Anúncios Shopee', onClick: onNavigateToAnuncios },
-          { label: productId ? 'Editar Anúncio' : 'Criar Anúncio' }
+          { label: 'AnÃºncios Shopee', onClick: onNavigateToAnuncios },
+          { label: productId ? 'Editar AnÃºncio' : 'Criar AnÃºncio' }
         ]}
       />
 
@@ -656,7 +727,7 @@ export function CriarAnuncioShopee({
               {[
                 { key: 'tecido', label: 'Tecido', icon: Package },
                 { key: 'cores', label: 'Cores', icon: Palette },
-                { key: 'configuracoes', label: 'Configurações', icon: Ruler },
+                { key: 'configuracoes', label: 'ConfiguraÃ§Ãµes', icon: Ruler },
                 { key: 'preview', label: 'Preview', icon: ImageIcon },
               ].map((step, index) => {
                 const stepIndex = ['tecido', 'cores', 'configuracoes', 'preview'].indexOf(currentStep);
@@ -706,12 +777,12 @@ export function CriarAnuncioShopee({
         </div>
 
         <div className="bg-white rounded-lg shadow p-4 sm:p-6 pb-28 sm:pb-6">
-          {/* Etapa 1: Seleção de Tecido */}
+          {/* Etapa 1: SeleÃ§Ã£o de Tecido */}
           {currentStep === 'tecido' && (
             <div>
               <h2 className="text-xl font-semibold mb-2">Selecione o Tecido</h2>
               <p className="text-sm text-gray-500 mb-4">
-                Escolha o tecido base para o anúncio. As cores e imagens vinculadas serão carregadas automaticamente.
+                Escolha o tecido base para o anÃºncio. As cores e imagens vinculadas serÃ£o carregadas automaticamente.
               </p>
               
               {!selectedShop && (
@@ -766,19 +837,19 @@ export function CriarAnuncioShopee({
             </div>
           )}
 
-          {/* Etapa 2: Seleção de Cores */}
+          {/* Etapa 2: SeleÃ§Ã£o de Cores */}
           {currentStep === 'cores' && (
             <div>
               <h2 className="text-xl font-semibold mb-2">Selecione as Cores</h2>
               <p className="text-sm text-gray-500 mb-4">
-                Cada cor selecionada será uma variação do anúncio. A imagem vinculada ao tecido será usada como imagem da variação.
+                Cada cor selecionada serÃ¡ uma variaÃ§Ã£o do anÃºncio. A imagem vinculada ao tecido serÃ¡ usada como imagem da variaÃ§Ã£o.
               </p>
               
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <FieldHint
-                    label="Cores Disponíveis"
-                    hint="Cores vinculadas a este tecido no sistema. Cada cor vira uma variação de 'Cor' na Shopee."
+                    label="Cores DisponÃ­veis"
+                    hint="Cores vinculadas a este tecido no sistema. Cada cor vira uma variaÃ§Ã£o de 'Cor' na Shopee."
                   />
                   <Button
                     variant="outline"
@@ -827,7 +898,7 @@ export function CriarAnuncioShopee({
                 <div className="mt-6 border-t pt-6">
                   <FieldHint
                     label="Estoque por Cor"
-                    hint="Quantidade inicial de cada cor. Será sincronizado com o módulo de estoque Shopee."
+                    hint="Quantidade inicial de cada cor. SerÃ¡ sincronizado com o mÃ³dulo de estoque Shopee."
                     className="mb-4"
                   />
                   <div className="space-y-3">
@@ -854,12 +925,12 @@ export function CriarAnuncioShopee({
                 </div>
               )}
 
-              {/* Seleção de Tamanhos (opcional) */}
+              {/* SeleÃ§Ã£o de Tamanhos (opcional) */}
               <div className="mt-6 border-t pt-6">
                 <FieldHint
                   label="Tamanhos (Opcional)"
-                  hint="Adiciona uma segunda camada de variação (Tier 2). Ex: cada cor terá P, M, G. Se não selecionar, cada cor será uma variação única."
-                  description="Cada combinação cor × tamanho gera um SKU separado na Shopee."
+                  hint="Adiciona uma segunda camada de variaÃ§Ã£o (Tier 2). Ex: cada cor terÃ¡ P, M, G. Se nÃ£o selecionar, cada cor serÃ¡ uma variaÃ§Ã£o Ãºnica."
+                  description="Cada combinaÃ§Ã£o cor Ã— tamanho gera um SKU separado na Shopee."
                   className="mb-4"
                 />
                 
@@ -884,14 +955,14 @@ export function CriarAnuncioShopee({
                 )}
               </div>
 
-              {/* Preço por Tamanho ou Preço Único */}
+              {/* PreÃ§o por Tamanho ou PreÃ§o Ãšnico */}
               {selectedCores.length > 0 && (
                 <div className="mt-6 border-t pt-6">
                   {selectedTamanhos.length > 0 ? (
                     <>
                       <FieldHint
-                        label="Preço por Tamanho"
-                        hint="Defina o preço de venda para cada tamanho. O mesmo preço será aplicado a todas as cores. Cada combinação cor × tamanho terá esse preço na Shopee."
+                        label="PreÃ§o por Tamanho"
+                        hint="Defina o preÃ§o de venda para cada tamanho. O mesmo preÃ§o serÃ¡ aplicado a todas as cores. Cada combinaÃ§Ã£o cor Ã— tamanho terÃ¡ esse preÃ§o na Shopee."
                         required
                         className="mb-4"
                       />
@@ -920,9 +991,9 @@ export function CriarAnuncioShopee({
                     </>
                   ) : (
                     <FieldHint
-                      label="Preço de Venda"
+                      label="PreÃ§o de Venda"
                       required
-                      hint="Preço de venda aplicado a todas as variações de cor. Mínimo aceito pela Shopee: R$ 1,00."
+                      hint="PreÃ§o de venda aplicado a todas as variaÃ§Ãµes de cor. MÃ­nimo aceito pela Shopee: R$ 1,00."
                     >
                       <div className="relative max-w-xs">
                         <DollarSign className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
@@ -941,16 +1012,16 @@ export function CriarAnuncioShopee({
                 </div>
               )}
 
-              {/* Resumo de combinações */}
+              {/* Resumo de combinaÃ§Ãµes */}
               {selectedCores.length > 0 && (
                 <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                   <p className="text-sm text-blue-800">
-                    <strong>{totalCombinations}</strong> combinações serão criadas
-                    ({selectedCores.length} cores × {selectedTamanhos.length || 1} tamanhos)
+                    <strong>{totalCombinations}</strong> combinaÃ§Ãµes serÃ£o criadas
+                    ({selectedCores.length} cores Ã— {selectedTamanhos.length || 1} tamanhos)
                   </p>
                   {selectedTamanhos.length > 0 && precoMinimo > 0 && precoMinimo !== Infinity && (
                     <p className="text-xs text-blue-600 mt-1">
-                      Preço a partir de R$ {precoMinimo.toFixed(2)}
+                      PreÃ§o a partir de R$ {precoMinimo.toFixed(2)}
                     </p>
                   )}
                 </div>
@@ -958,12 +1029,12 @@ export function CriarAnuncioShopee({
             </div>
           )}
 
-          {/* Etapa 3: Configurações */}
+          {/* Etapa 3: ConfiguraÃ§Ãµes */}
           {currentStep === 'configuracoes' && (
             <div>
-              <h2 className="text-xl font-semibold mb-2">Configurações do Anúncio</h2>
+              <h2 className="text-xl font-semibold mb-2">ConfiguraÃ§Ãµes do AnÃºncio</h2>
               <p className="text-sm text-gray-500 mb-6">
-                Configure preço, envio, categoria e informações fiscais. Campos com <span className="text-red-500">*</span> são obrigatórios.
+                Configure preÃ§o, envio, categoria e informaÃ§Ãµes fiscais. Campos com <span className="text-red-500">*</span> sÃ£o obrigatÃ³rios.
               </p>
               
               {/* Alerta de campos faltantes */}
@@ -972,12 +1043,12 @@ export function CriarAnuncioShopee({
                   <div className="flex items-start gap-2">
                     <XCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-medium text-red-800">Campos que precisam de atenção:</p>
+                      <p className="text-sm font-medium text-red-800">Campos que precisam de atenÃ§Ã£o:</p>
                       <ul className="text-xs text-red-600 mt-1 space-y-0.5">
                         {Object.entries(validationErrors)
                           .filter(([key]) => touchedFields.has(key))
                           .map(([key, msg]) => (
-                            <li key={key}>• {msg}</li>
+                            <li key={key}>â€¢ {msg}</li>
                           ))}
                       </ul>
                     </div>
@@ -986,12 +1057,12 @@ export function CriarAnuncioShopee({
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Resumo de Preços (somente leitura — definidos na Step 2) */}
+                {/* Resumo de PreÃ§os (somente leitura â€” definidos na Step 2) */}
                 <div className="md:col-span-2 p-4 bg-green-50 border border-green-200 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <DollarSign className="w-4 h-4 text-green-600" />
-                    <span className="font-medium text-green-800">Preços definidos</span>
-                    <span className="text-xs text-green-600">(editável na etapa "Cores")</span>
+                    <span className="font-medium text-green-800">PreÃ§os definidos</span>
+                    <span className="text-xs text-green-600">(editÃ¡vel na etapa "Cores")</span>
                   </div>
                   {selectedTamanhos.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
@@ -1000,23 +1071,56 @@ export function CriarAnuncioShopee({
                         const preco = precosPorTamanho[id] || 0;
                         return (
                           <span key={id} className={`px-2 py-1 rounded text-sm ${preco > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'}`}>
-                            {tam?.nome}: {preco > 0 ? `R$ ${preco.toFixed(2)}` : 'Não definido'}
+                            {tam?.nome}: {preco > 0 ? `R$ ${preco.toFixed(2)}` : 'NÃ£o definido'}
                           </span>
                         );
                       })}
                     </div>
                   ) : (
                     <p className={`text-sm ${precoUnico > 0 ? 'text-green-700' : 'text-red-600'}`}>
-                      {precoUnico > 0 ? `R$ ${precoUnico.toFixed(2)} para todas as variações` : 'Preço não definido — volte à etapa anterior'}
+                      {precoUnico > 0 ? `R$ ${precoUnico.toFixed(2)} para todas as variaÃ§Ãµes` : 'PreÃ§o nÃ£o definido â€” volte Ã  etapa anterior'}
                     </p>
                   )}
                 </div>
 
-                {/* Estoque Padrão */}
+                <div className="md:col-span-2">
+                  <FieldHint
+                    label="Titulo do Anuncio"
+                    hint="Voce pode ajustar o titulo manualmente. Se ficar vazio, o sistema usa a sugestao automatica."
+                    description={`${tituloTrim.length}/120 caracteres`}
+                  >
+                    <Input
+                      value={tituloAnuncio}
+                      onChange={(e) => {
+                        setTituloAnuncio(e.target.value);
+                        setTituloEditadoManual(true);
+                      }}
+                      onBlur={() => markTouched('titulo')}
+                      className={touchedFields.has('titulo') && validationErrors.titulo ? 'border-red-400' : ''}
+                      placeholder={nomeAutoGerado || 'Titulo do anuncio'}
+                      maxLength={120}
+                    />
+                  </FieldHint>
+                  {touchedFields.has('titulo') && validationErrors.titulo ? (
+                    <p className="text-xs text-red-500 mt-1">{validationErrors.titulo}</p>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTituloEditadoManual(false);
+                      setTituloAnuncio(nomeAutoGerado);
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-700 mt-1"
+                  >
+                    Usar sugestao automatica
+                  </button>
+                </div>
+
+                {/* Estoque PadrÃ£o */}
                 <FieldHint
-                  label="Estoque Padrão"
-                  hint="Quantidade inicial para cores sem estoque individual definido. Será o estoque de cada variação na Shopee."
-                  description="Aplicado a todas as variações que não tenham estoque individual."
+                  label="Estoque PadrÃ£o"
+                  hint="Quantidade inicial para cores sem estoque individual definido. SerÃ¡ o estoque de cada variaÃ§Ã£o na Shopee."
+                  description="Aplicado a todas as variaÃ§Ãµes que nÃ£o tenham estoque individual."
                 >
                   <Input
                     type="number"
@@ -1046,13 +1150,13 @@ export function CriarAnuncioShopee({
                   />
                 </FieldHint>
 
-                {/* Dimensões */}
+                {/* DimensÃµes */}
                 <div className="md:col-span-2">
                   <FieldHint
-                    label="Dimensões da Embalagem (cm)"
+                    label="DimensÃµes da Embalagem (cm)"
                     required
-                    hint="Tamanho da embalagem em centímetros. Usado pela Shopee para calcular frete e definir o tipo de envio. A largura é preenchida automaticamente pela largura do tecido."
-                    description="Comprimento × Largura × Altura em cm."
+                    hint="Tamanho da embalagem em centÃ­metros. Usado pela Shopee para calcular frete e definir o tipo de envio. A largura Ã© preenchida automaticamente pela largura do tecido."
+                    description="Comprimento Ã— Largura Ã— Altura em cm."
                   />
                   <div className="grid grid-cols-3 gap-4 mt-2">
                     <div>
@@ -1096,7 +1200,7 @@ export function CriarAnuncioShopee({
                   <FieldHint
                     label="Categoria Shopee"
                     required
-                    hint="Categoria onde o produto será listado na Shopee. Navegue pelas subcategorias até encontrar a mais específica. Ex: Casa > Cama, Mesa e Banho > Tecidos"
+                    hint="Categoria onde o produto serÃ¡ listado na Shopee. Navegue pelas subcategorias atÃ© encontrar a mais especÃ­fica. Ex: Casa > Cama, Mesa e Banho > Tecidos"
                     description={categoriaId ? undefined : "Navegue e selecione a categoria final (sem filhos)."}
                   />
                   {categoriaId ? (
@@ -1152,7 +1256,7 @@ export function CriarAnuncioShopee({
                       ) : categoriesError ? (
                         <div className="flex flex-col items-center py-6 text-center">
                           <AlertCircle className="w-8 h-8 text-yellow-500 mb-2" />
-                          <p className="text-sm text-gray-600 mb-3">Não foi possível carregar as categorias.</p>
+                          <p className="text-sm text-gray-600 mb-3">NÃ£o foi possÃ­vel carregar as categorias.</p>
                           <Button
                             variant="outline"
                             size="sm"
@@ -1211,7 +1315,7 @@ export function CriarAnuncioShopee({
                   </div>
                 )}
 
-                {/* Informações Fiscais */}
+                {/* InformaÃ§Ãµes Fiscais */}
                 <div className="md:col-span-2">
                   <FiscalInfo
                     ncm={ncmPadrao}
@@ -1222,7 +1326,7 @@ export function CriarAnuncioShopee({
                   />
                 </div>
 
-                {/* Configuração de Frete */}
+                {/* ConfiguraÃ§Ã£o de Frete */}
                 {selectedShop && (
                   <div className="md:col-span-2">
                     <ShippingConfig
@@ -1245,23 +1349,23 @@ export function CriarAnuncioShopee({
                   </div>
                 )}
 
-                {/* Descrição Customizada */}
+                {/* DescriÃ§Ã£o Customizada */}
                 <div className="md:col-span-2">
                   <FieldHint
-                    label="Descrição do Anúncio"
-                    hint="Texto que aparece na página do produto na Shopee. Se deixar vazio, uma descrição será gerada automaticamente com os dados do tecido."
+                    label="DescriÃ§Ã£o do AnÃºncio"
+                    hint="Texto que aparece na pÃ¡gina do produto na Shopee. Se deixar vazio, uma descriÃ§Ã£o serÃ¡ gerada automaticamente com os dados do tecido."
                     description={`${(descricaoCustomizada || descricaoAutoGerada).length} caracteres`}
                   >
                     <Textarea
                       value={descricaoCustomizada}
                       onChange={(e) => setDescricaoCustomizada(e.target.value)}
-                      placeholder={descricaoAutoGerada || 'Deixe em branco para usar descrição automática baseada no tecido'}
+                      placeholder={descricaoAutoGerada || 'Deixe em branco para usar descriÃ§Ã£o automÃ¡tica baseada no tecido'}
                       rows={4}
                     />
                   </FieldHint>
                 </div>
 
-                {/* Descrição Estendida */}
+                {/* DescriÃ§Ã£o Estendida */}
                 <div className="md:col-span-2">
                   <ExtendedDescriptionEditor
                     value={extendedDescription}
@@ -1282,14 +1386,50 @@ export function CriarAnuncioShopee({
                   />
                 </div>
 
-                {/* Imagens Principais do Anúncio */}
+                {/* Imagens Principais do AnÃºncio */}
                 <div className="md:col-span-2">
                   <FieldHint
-                    label="Imagens Principais do Anúncio"
-                    hint="Essas são as fotos da galeria principal do anúncio. A primeira imagem será a capa. Máximo 9 imagens. Recomendado: quadradas (1:1), mínimo 500x500px."
+                    label="Imagens Principais do AnÃºncio"
+                    hint="Essas sÃ£o as fotos da galeria principal do anÃºncio. A primeira imagem serÃ¡ a capa. MÃ¡ximo 9 imagens. Recomendado: quadradas (1:1), mÃ­nimo 500x500px."
                     description={`${imagensPrincipais.length}/9 imagens`}
                   >
                     <div className="mt-2 space-y-3">
+                      {selectedTecido && (
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-medium text-gray-700">Capas prontas da Gestao de Imagens</p>
+                            {loadingMosaicosTecido ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />
+                            ) : null}
+                          </div>
+                          {mosaicosTecido.length === 0 ? (
+                            <p className="text-xs text-gray-500">
+                              Nenhum mosaico salvo para este tecido.
+                            </p>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                              {mosaicosTecido.slice(0, 8).map((mosaico) => (
+                                <button
+                                  key={mosaico.id}
+                                  type="button"
+                                  onClick={() => useImageAsCover(mosaico.outputSquareUrl)}
+                                  className="group rounded-md border border-gray-200 overflow-hidden hover:border-blue-300 hover:shadow-sm transition-all text-left"
+                                >
+                                  <img
+                                    src={mosaico.outputSquareUrl}
+                                    alt={`Mosaico ${mosaico.templateId}`}
+                                    className="w-full aspect-square object-cover"
+                                  />
+                                  <div className="px-2 py-1.5 text-[11px] text-gray-600 group-hover:text-blue-700 truncate">
+                                    Usar como capa
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Grid de imagens */}
                       {imagensPrincipais.length > 0 && (
                         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
@@ -1340,7 +1480,7 @@ export function CriarAnuncioShopee({
                         </div>
                       )}
 
-                      {/* Botão de upload */}
+                      {/* BotÃ£o de upload */}
                       {imagensPrincipais.length < 9 && (
                         <div>
                           <input
@@ -1371,18 +1511,18 @@ export function CriarAnuncioShopee({
                       {imagensPrincipais.length === 0 && (
                         <p className="text-sm text-amber-600 flex items-center gap-1.5">
                           <AlertCircle className="w-4 h-4" />
-                          Adicione pelo menos 1 imagem. Se não adicionar, será usada a imagem padrão do tecido.
+                          Adicione pelo menos 1 imagem. Se nÃ£o adicionar, serÃ¡ usada a imagem padrÃ£o do tecido.
                         </p>
                       )}
                     </div>
                   </FieldHint>
                 </div>
 
-                {/* Método de Upload */}
+                {/* MÃ©todo de Upload */}
                 <div className="md:col-span-2">
                   <FieldHint
-                    label="Método de Upload de Imagens"
-                    hint="URLs Públicas: usa links diretos das imagens (mais rápido). Upload Direto: envia via API da Shopee (mais confiável, funciona mesmo se as URLs mudarem)."
+                    label="MÃ©todo de Upload de Imagens"
+                    hint="URLs PÃºblicas: usa links diretos das imagens (mais rÃ¡pido). Upload Direto: envia via API da Shopee (mais confiÃ¡vel, funciona mesmo se as URLs mudarem)."
                   >
                     <div className="flex items-center gap-4 mt-2">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -1392,7 +1532,7 @@ export function CriarAnuncioShopee({
                           onChange={() => setUsarImagensPublicas(true)}
                           className="w-4 h-4"
                         />
-                        <span className="text-sm">URLs Públicas (mais rápido)</span>
+                        <span className="text-sm">URLs PÃºblicas (mais rÃ¡pido)</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -1415,31 +1555,32 @@ export function CriarAnuncioShopee({
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="text-xl font-semibold">Preview do Anúncio</h2>
-                  <p className="text-sm text-gray-500">Revise tudo antes de publicar. Corrija o que for necessário voltando às etapas anteriores.</p>
+                  <h2 className="text-xl font-semibold">Preview do AnÃºncio</h2>
+                  <p className="text-sm text-gray-500">Revise tudo antes de publicar. Corrija o que for necessÃ¡rio voltando Ã s etapas anteriores.</p>
                 </div>
                 <Button
                   variant="outline"
                   onClick={() => setShowPreviewModal(true)}
                 >
                   <Eye className="w-4 h-4 mr-2" />
-                  Simulação Shopee
+                  SimulaÃ§Ã£o Shopee
                 </Button>
               </div>
 
-              {/* Checklist de validação */}
+              {/* Checklist de validaÃ§Ã£o */}
               <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-                <h3 className="font-medium mb-3">Checklist de Publicação</h3>
+                <h3 className="font-medium mb-3">Checklist de PublicaÃ§Ã£o</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {[
                     { ok: !!selectedTecido, label: 'Tecido selecionado' },
                     { ok: selectedCores.length > 0, label: 'Pelo menos 1 cor selecionada' },
-                    { ok: temPrecoValido, label: selectedTamanhos.length > 0 ? 'Preço definido para todos os tamanhos' : 'Preço definido' },
+                    { ok: temPrecoValido, label: selectedTamanhos.length > 0 ? 'PreÃ§o definido para todos os tamanhos' : 'PreÃ§o definido' },
                     { ok: !!categoriaId, label: 'Categoria selecionada' },
                     { ok: peso > 0, label: 'Peso informado' },
-                    { ok: dimensoes.comprimento > 0 && dimensoes.largura > 0 && dimensoes.altura > 0, label: 'Dimensões preenchidas' },
+                    { ok: dimensoes.comprimento > 0 && dimensoes.largura > 0 && dimensoes.altura > 0, label: 'DimensÃµes preenchidas' },
                     { ok: imagensPrincipais.length > 0, label: 'Imagens principais adicionadas' },
                     { ok: selectedCores.every(c => c.imagem_url), label: 'Todas as cores com imagem' },
+                    { ok: tituloValido, label: 'Titulo do anuncio valido' },
                     { ok: !!ncmPadrao, label: 'NCM fiscal preenchido' },
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-2">
@@ -1457,16 +1598,16 @@ export function CriarAnuncioShopee({
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Informações do Produto */}
+                {/* InformaÃ§Ãµes do Produto */}
                 <div className="space-y-4">
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <h3 className="font-medium mb-2">Produto</h3>
-                    <p className="text-lg font-semibold">{nomeAutoGerado || selectedTecido?.nome}</p>
+                    <p className="text-lg font-semibold">{tituloTrim || nomeAutoGerado || selectedTecido?.nome}</p>
                     <p className="text-sm text-gray-500">SKU: {selectedTecido?.sku}</p>
                   </div>
 
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Preço e Estoque</h3>
+                    <h3 className="font-medium mb-2">PreÃ§o e Estoque</h3>
                     {selectedTamanhos.length > 0 ? (
                       <div className="space-y-1">
                         {selectedTamanhos.map(id => {
@@ -1479,43 +1620,43 @@ export function CriarAnuncioShopee({
                         })}
                       </div>
                     ) : (
-                      <p>Preço: <strong>R$ {precoUnico.toFixed(2)}</strong></p>
+                      <p>PreÃ§o: <strong>R$ {precoUnico.toFixed(2)}</strong></p>
                     )}
-                    <p className="mt-1">Estoque Padrão: <strong>{estoquePadrao}</strong></p>
+                    <p className="mt-1">Estoque PadrÃ£o: <strong>{estoquePadrao}</strong></p>
                   </div>
 
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <h3 className="font-medium mb-2">Categoria</h3>
-                    <p>{categoriaNome || <span className="text-red-500">Não selecionada</span>}</p>
+                    <p>{categoriaNome || <span className="text-red-500">NÃ£o selecionada</span>}</p>
                     {brandNome && <p className="text-sm text-gray-500">Marca: {brandNome}</p>}
                   </div>
 
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Dimensões e Peso</h3>
+                    <h3 className="font-medium mb-2">DimensÃµes e Peso</h3>
                     <p>Peso: {peso}kg</p>
-                    <p>Dimensões: {dimensoes.comprimento} × {dimensoes.largura} × {dimensoes.altura} cm</p>
+                    <p>DimensÃµes: {dimensoes.comprimento} Ã— {dimensoes.largura} Ã— {dimensoes.altura} cm</p>
                   </div>
 
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Informações Fiscais</h3>
-                    <p className="text-sm">NCM: <strong>{ncmPadrao || 'Não informado'}</strong></p>
+                    <h3 className="font-medium mb-2">InformaÃ§Ãµes Fiscais</h3>
+                    <p className="text-sm">NCM: <strong>{ncmPadrao || 'NÃ£o informado'}</strong></p>
                     <p className="text-sm">GTIN: <strong>00</strong> <span className="text-xs text-gray-400">(fixo)</span></p>
                     <p className="text-sm">Nome NF: <strong className="text-xs">Tecido {selectedTecido?.nome} [cor] [tamanho]</strong></p>
                   </div>
 
-                  {/* Descrição */}
+                  {/* DescriÃ§Ã£o */}
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Descrição</h3>
+                    <h3 className="font-medium mb-2">DescriÃ§Ã£o</h3>
                     <p className="text-sm text-gray-600 whitespace-pre-line">
-                      {descricaoCustomizada || descricaoAutoGerada || 'Descrição automática será gerada.'}
+                      {descricaoCustomizada || descricaoAutoGerada || 'DescriÃ§Ã£o automÃ¡tica serÃ¡ gerada.'}
                     </p>
                   </div>
 
-                  {/* Configurações extras */}
+                  {/* ConfiguraÃ§Ãµes extras */}
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Configurações Extras</h3>
+                    <h3 className="font-medium mb-2">ConfiguraÃ§Ãµes Extras</h3>
                     {logisticInfo.filter(l => l.enabled).length > 0 && (
-                      <p className="text-sm">{logisticInfo.filter(l => l.enabled).length} canal(is) de logística</p>
+                      <p className="text-sm">{logisticInfo.filter(l => l.enabled).length} canal(is) de logÃ­stica</p>
                     )}
                     {atributos.length > 0 && (
                       <p className="text-sm">{atributos.length} atributo(s) configurado(s)</p>
@@ -1527,17 +1668,17 @@ export function CriarAnuncioShopee({
                       <p className="text-sm">{wholesaleTiers.length} faixa(s) de atacado</p>
                     )}
                     {extendedDescEnabled && (
-                      <p className="text-sm">Descrição estendida habilitada</p>
+                      <p className="text-sm">DescriÃ§Ã£o estendida habilitada</p>
                     )}
                   </div>
                 </div>
 
-                {/* Variações */}
+                {/* VariaÃ§Ãµes */}
                 <div className="space-y-4">
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Variações</h3>
+                    <h3 className="font-medium mb-2">VariaÃ§Ãµes</h3>
                     <p className="text-sm text-gray-500 mb-2">
-                      {selectedCores.length} cores × {selectedTamanhos.length || 1} tamanhos = {totalCombinations} combinações
+                      {selectedCores.length} cores Ã— {selectedTamanhos.length || 1} tamanhos = {totalCombinations} combinaÃ§Ãµes
                     </p>
                     
                     <div className="space-y-2">
@@ -1571,7 +1712,7 @@ export function CriarAnuncioShopee({
 
                   {/* Imagens */}
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Imagens das Variações</h3>
+                    <h3 className="font-medium mb-2">Imagens das VariaÃ§Ãµes</h3>
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                       {selectedCores.map(cor => (
                         <div key={cor.cor_id} className="relative group">
@@ -1600,7 +1741,7 @@ export function CriarAnuncioShopee({
           {showPreviewModal && (
             <AdPreview
               data={{
-                nome: nomeAutoGerado || selectedTecido?.nome || '',
+                nome: tituloTrim || nomeAutoGerado || selectedTecido?.nome || '',
                 descricao: descricaoCustomizada || descricaoAutoGerada || `Tecido ${selectedTecido?.nome || ''} de alta qualidade`,
                 preco: precoBaseParaApi,
                 imagensPrincipais: imagensPrincipais.length > 0 ? imagensPrincipais : selectedCores.filter(c => c.imagem_url).map(c => c.imagem_url!),
@@ -1620,7 +1761,7 @@ export function CriarAnuncioShopee({
             />
           )}
 
-          {/* Navegação - sticky no mobile */}
+          {/* NavegaÃ§Ã£o - sticky no mobile */}
           <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-3 z-40 sm:static sm:shadow-none sm:border-t sm:p-0 sm:mt-8 sm:pt-6 safe-bottom">
             <div className="flex justify-between items-center gap-2 max-w-4xl mx-auto">
               <Button
@@ -1672,8 +1813,8 @@ export function CriarAnuncioShopee({
                     }
                     className="min-h-[44px]"
                   >
-                    <span className="hidden sm:inline">Próximo</span>
-                    <span className="sm:hidden">Avançar</span>
+                    <span className="hidden sm:inline">PrÃ³ximo</span>
+                    <span className="sm:hidden">AvanÃ§ar</span>
                     <ChevronRight className="w-4 h-4 ml-1 sm:ml-2" />
                   </Button>
                 )}
@@ -1685,3 +1826,4 @@ export function CriarAnuncioShopee({
     </div>
   );
 }
+

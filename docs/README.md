@@ -1,146 +1,48 @@
-# Documentação do RazaiSystem
+﻿# Documentacao do RazaiSystem
 
-Bem-vindo à documentação completa do projeto RazaiSystem. Esta documentação cobre todos os aspectos do projeto, desde a arquitetura até detalhes de implementação.
+Ultima atualizacao: 2026-02-10
 
-## Índice
+## Mapa rapido
 
-### Documentação Principal
+### Base do projeto
+1. [README.md](../README.md) - Visao geral, setup e deploy.
+2. [ARCHITECTURE.md](ARCHITECTURE.md) - Arquitetura atual, fluxos e modelos de dados.
+3. [COMPONENTS.md](COMPONENTS.md) - Componentes de layout e UI relevantes.
+4. [HOOKS.md](HOOKS.md) - Hooks principais e utilitarios de navegacao.
 
-1. **[README.md](../README.md)** - Visão geral do projeto, instalação e configuração
-2. **[CLAUDE.md](../CLAUDE.md)** - Guia completo para Claude Code (comandos, arquitetura, regras críticas)
-3. **[CONTEXT.md](../CONTEXT.md)** - Contexto técnico e padrões do projeto
-4. **[ARCHITECTURE.md](ARCHITECTURE.md)** - Arquitetura detalhada e fluxos de dados
+### UX e navegacao
+1. [UX_RESPONSIVIDADE.md](UX_RESPONSIVIDADE.md) - UX desktop/mobile e padroes de navegacao.
 
-### Documentação Técnica
+### Shopee
+1. [SHOPEE.md](SHOPEE.md) - Visao geral da integracao.
+2. [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md) - Fluxo completo de criacao/publicacao de anuncios.
+3. [SHOPEE_API_REFERENCIA.md](SHOPEE_API_REFERENCIA.md) - Referencia de endpoints.
+4. [SHOPEE_WEBHOOK_SETUP.md](SHOPEE_WEBHOOK_SETUP.md) - Setup de webhook.
+5. [SHOPEE_STOCK_REVIEW.md](SHOPEE_STOCK_REVIEW.md) - Revisao de estoque.
 
-4. **[COMPONENTS.md](COMPONENTS.md)** - Documentação de componentes React
-5. **[HOOKS.md](HOOKS.md)** - Documentação de custom hooks
-6. **[SHOPEE.md](SHOPEE.md)** - Documentação da integração Shopee
-7. **[SHOPEE_WEBHOOK_SETUP.md](SHOPEE_WEBHOOK_SETUP.md)** - Guia de configuração do webhook Shopee
-8. **[TECIDOS.md](../frontend/src/docs/TECIDOS.md)** - Documentação completa do módulo de Tecidos
-9. **[ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)** - Documentação do módulo de Estampas
-10. **[CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)** - Documentação do módulo de Captura de Cor com Colorímetro
-11. **[VINCULOS.md](../frontend/src/docs/VINCULOS.md)** - Documentação do módulo de Vínculos Cor-Tecido
+### Deploy
+1. [DEPLOY.md](DEPLOY.md)
+2. [DEPLOY_FIREBASE.md](DEPLOY_FIREBASE.md)
 
-## Guia Rápido
+### Documentacao de modulos (frontend)
+1. [TECIDOS.md](../frontend/src/docs/TECIDOS.md)
+2. [ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)
+3. [CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)
+4. [VINCULOS.md](../frontend/src/docs/VINCULOS.md)
+5. [GESTAO_IMAGENS.md](../frontend/src/docs/GESTAO_IMAGENS.md)
+6. [REINHARD.md](../frontend/src/docs/REINHARD.md)
 
-### Para Desenvolvedores Novos
+## O que mudou nesta atualizacao
+- Navegacao desktop persistente com `DesktopSidebar`, atalhos e historico recente.
+- Sincronizacao de modulo ativo com URL hash (`#/modulo`) sem React Router.
+- Novo modulo `Gestao de Imagens` com geracao de imagem, upload de modelo e mosaicos.
+- `Gestao de Imagens` agora agrupa por tecido e permite regeneracao em lote por tecido.
+- `Shopee` passou a ser modulo pai para `Criar Anuncio` e `Tamanhos`.
+- Integracao do fluxo Shopee com `titulo_anuncio` e selecao de capa por mosaico.
+- Ajustes no modulo Vinculos com ampliacao de imagem na tela.
+- Atualizacao das regras de Firebase para `gestao_imagens_mosaicos` e `mosaicos/**`.
 
-1. Comece pelo [README.md](../README.md) para entender a estrutura e instalação
-2. Leia [CLAUDE.md](../CLAUDE.md) para comandos essenciais e regras críticas
-3. Consulte [ARCHITECTURE.md](ARCHITECTURE.md) para entender a arquitetura
-4. Veja [CONTEXT.md](../CONTEXT.md) para padrões e convenções
-5. Explore [COMPONENTS.md](COMPONENTS.md) e [HOOKS.md](HOOKS.md) para entender os componentes
-
-### Para Trabalhar em Features
-
-1. Leia [CLAUDE.md](../CLAUDE.md) para regras críticas (Firestore undefined, soft-delete, etc.)
-2. Consulte [CONTEXT.md](../CONTEXT.md) para padrões do projeto
-3. Veja exemplos em [COMPONENTS.md](COMPONENTS.md) e [HOOKS.md](HOOKS.md)
-4. Siga os padrões de UI otimista documentados em [ARCHITECTURE.md](ARCHITECTURE.md)
-5. Documente novas features seguindo o formato existente
-
-### Para Entender um Módulo Específico
-
-- **Módulo de Tecidos**: [TECIDOS.md](../frontend/src/docs/TECIDOS.md)
-- **Módulo de Estampas**: [ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)
-  - Cadastro individual e em lote
-  - SKU automático por família
-  - Vinculação com tecidos estampados
-- **Módulo de Captura de Cor**: [CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)
-  - Captura via colorímetro Bluetooth LS173
-  - Validação de conflitos com Delta E 2000
-  - Resolução de conflitos (usar existente / criar nova)
-- **Módulo de Vínculos Cor-Tecido**: [VINCULOS.md](../frontend/src/docs/VINCULOS.md)
-  - Separação de Cor e CorTecido
-  - Agrupamento por tecido (expansível/colapsável)
-  - Ajustes Reinhard por vínculo
-  - Imagens PNG em resolução original (sem compressão)
-  - Geração de imagem com marca (logo + nome da cor)
-  - Cache de imagens com marca no Firebase Storage
-  - SKU automático do vínculo (TecidoSKU-CorSKU)
-  - Ações em lote por tecido (copiar SKUs/HEX/Nomes, download ZIP)
-  - Exportação XLSX com imagens como mídia (não URLs)
-  - Barra de progresso visual durante exportação
-- **Algoritmo Reinhard**: [REINHARD.md](../frontend/src/docs/REINHARD.md)
-  - Transferência de cor baseada em CIELAB
-  - Preservação de textura de alta frequência
-  - Saída em PNG sem perda de qualidade
-- **Componentes de Layout**: [COMPONENTS.md](COMPONENTS.md) - Seção "Componentes de Layout"
-- **Autenticação**: [HOOKS.md](HOOKS.md) - Seção "useAuth"
-- **Utilitários de Cor**: [HOOKS.md](HOOKS.md) - Seção "Utilitários de Cor" e "Utilitários de DeltaE"
-
-## Estrutura de Documentação
-
-```
-docs/
-├── README.md              # Este arquivo (índice)
-├── ARCHITECTURE.md        # Arquitetura e fluxos
-├── COMPONENTS.md          # Componentes React
-├── HOOKS.md               # Custom hooks
-├── DEPLOY_FIREBASE.md     # Guia de deploy
-├── SHOPEE.md              # Integração Shopee
-└── SHOPEE_WEBHOOK_SETUP.md # Configuração webhook Shopee
-
-frontend/src/docs/
-├── TECIDOS.md         # Documentação do módulo Tecidos
-├── ESTAMPAS.md        # Documentação do módulo Estampas
-├── CAPTURA_COR.md     # Documentação do módulo Captura de Cor
-├── VINCULOS.md        # Documentação do módulo Vínculos Cor-Tecido
-└── REINHARD.md        # Documentação do algoritmo Reinhard
-
-CONTEXT.md             # Contexto técnico e padrões
-README.md              # Documentação principal
-```
-
-## Convenções de Documentação
-
-- **Código**: Sempre em blocos de código com syntax highlighting
-- **Exemplos**: Sempre incluir exemplos práticos de uso
-- **Tipos**: Sempre documentar interfaces TypeScript
-- **Props**: Listar todas as props com tipos e descrições
-- **Fluxos**: Usar diagramas ASCII quando útil
-
-## Atualização da Documentação
-
-A documentação deve ser atualizada sempre que:
-- Novos componentes são criados
-- Novos hooks são adicionados
-- Padrões mudam
-- Arquitetura evolui
-- Novos módulos são implementados
-- Constantes globais são adicionadas (ex: `DELTA_E_LIMIAR_CONFLITO`)
-
-Consulte [CONTEXT.md](../CONTEXT.md) para mais detalhes sobre quando atualizar documentação.
-
-## Constantes Globais Importantes
-
-### Delta E Limiar de Conflito
-
-**Localização**: `frontend/src/lib/deltaE.ts`
-
-```typescript
-export const DELTA_E_LIMIAR_CONFLITO = 3;
-```
-
-Esta constante define o limiar usado em todo o projeto para detectar conflitos de cores. Valores abaixo de 3 indicam cores muito próximas que podem causar confusão.
-
-**Uso**: Sempre importe e use esta constante ao invés de valores hardcoded:
-
-```typescript
-import { DELTA_E_LIMIAR_CONFLITO } from '@/lib/deltaE';
-
-// ✅ Correto
-if (deltaE < DELTA_E_LIMIAR_CONFLITO) { ... }
-
-// ❌ Incorreto
-if (deltaE < 3) { ... }
-```
-
-## Contribuindo
-
-Ao adicionar novas funcionalidades:
-1. Documente no arquivo apropriado
-2. Atualize este índice se necessário
-3. Siga os padrões estabelecidos
-4. Inclua exemplos práticos
+## Convencoes
+- Sempre atualizar os docs quando houver mudanca de interface, fluxo ou modelo de dados.
+- Preferir nomes de campos exatamente como no codigo (`imagemGerada`, `titulo_anuncio`, etc.).
+- Quando houver regra de precedencia (ex.: inicializacao de pagina), documentar ordem explicitamente.

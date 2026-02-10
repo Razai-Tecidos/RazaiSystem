@@ -1,48 +1,48 @@
-rules_version = '2';
+﻿rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     // Regras para imagens de tecidos
     match /tecidos/{tecidoId}/{allPaths=**} {
-      // Leitura pública (evita expiração de tokens)
-      // Escrita apenas para usuários autenticados
+      // Leitura pÃºblica (evita expiraÃ§Ã£o de tokens)
+      // Escrita apenas para usuÃ¡rios autenticados
       allow read: if true;
       allow write: if request.auth != null;
     }
     
     // Regras para imagens de cores (tingimentos)
     match /cores/{corId}/{allPaths=**} {
-      // Leitura pública (evita expiração de tokens)
-      // Escrita apenas para usuários autenticados
+      // Leitura pÃºblica (evita expiraÃ§Ã£o de tokens)
+      // Escrita apenas para usuÃ¡rios autenticados
       allow read: if true;
       allow write: if request.auth != null;
     }
     
-    // Regras para imagens de vínculos cor-tecido (tingidas e com marca)
+    // Regras para imagens de vÃ­nculos cor-tecido (tingidas e com marca)
     match /cor-tecido/{vinculoId}/{allPaths=**} {
-      // Leitura pública (evita expiração de tokens)
-      // Escrita apenas para usuários autenticados
+      // Leitura pÃºblica (evita expiraÃ§Ã£o de tokens)
+      // Escrita apenas para usuÃ¡rios autenticados
       allow read: if true;
       allow write: if request.auth != null;
     }
     
     // Regras para imagens de estampas
     match /estampas/{estampaId}/{allPaths=**} {
-      // Leitura pública (evita expiração de tokens)
-      // Escrita apenas para usuários autenticados
+      // Leitura pÃºblica (evita expiraÃ§Ã£o de tokens)
+      // Escrita apenas para usuÃ¡rios autenticados
       allow read: if true;
       allow write: if request.auth != null;
     }
     
-    // Regras para modelos ML (compartilhados entre usuários autenticados)
+    // Regras para modelos ML (compartilhados entre usuÃ¡rios autenticados)
     match /ml-models/{modelId}/{allPaths=**} {
-      // Leitura pública para carregar modelo no frontend
-      // Escrita apenas para usuários autenticados
+      // Leitura pÃºblica para carregar modelo no frontend
+      // Escrita apenas para usuÃ¡rios autenticados
       allow read: if true;
       allow write: if request.auth != null;
     }
 
     // Arquivos de modelo ML na raiz (weights.bin, model.json)
-    // Necessário porque TensorFlow.js pode resolver paths relativamente
+    // NecessÃ¡rio porque TensorFlow.js pode resolver paths relativamente
     match /weights.bin {
       allow read: if true;
       allow write: if request.auth != null;
@@ -52,17 +52,23 @@ service firebase.storage {
       allow write: if request.auth != null;
     }
 
-    // Regras para imagens de anúncios Shopee
+    // Regras para imagens de anÃºncios Shopee
     match /shopee-anuncios/{productId}/{allPaths=**} {
-      // Leitura pública (imagens podem ser usadas em anúncios públicos)
-      // Escrita apenas para usuários autenticados
+      // Leitura pÃºblica (imagens podem ser usadas em anÃºncios pÃºblicos)
+      // Escrita apenas para usuÃ¡rios autenticados
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    // Regras para mosaicos da gestao de imagens
+    match /mosaicos/{tecidoId}/{allPaths=**} {
       allow read: if true;
       allow write: if request.auth != null;
     }
 
-    // Negar acesso a todos os outros caminhos por padrão
+    // Negar acesso a todos os outros caminhos por padrao
     match /{allPaths=**} {
       allow read, write: if false;
     }
   }
 }
+

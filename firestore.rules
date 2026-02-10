@@ -1,27 +1,27 @@
-rules_version = '2';
+﻿rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Regras para coleção de tecidos
+    // Regras para coleÃ§Ã£o de tecidos
     match /tecidos/{tecidoId} {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para coleção de cores
+    // Regras para coleÃ§Ã£o de cores
     match /cores/{corId} {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para coleção de vínculos cor-tecido
+    // Regras para coleÃ§Ã£o de vÃ­nculos cor-tecido
     match /cor_tecido/{vinculoId} {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para coleção de estampas
+    // Regras para coleÃ§Ã£o de estampas
     match /estampas/{estampaId} {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para coleção de tamanhos
+    // Regras para coleÃ§Ã£o de tamanhos
     match /tamanhos/{tamanhoId} {
       allow read, write: if request.auth != null;
     }
@@ -37,7 +37,7 @@ service cloud.firestore {
     }
     
     // Regras para lojas Shopee conectadas
-    // Escrita apenas via Admin SDK (backend) — tokens são sensíveis
+    // Escrita apenas via Admin SDK (backend) â€” tokens sÃ£o sensÃ­veis
     match /shopee_shops/{shopId} {
       allow read: if request.auth != null;
       allow write: if false;
@@ -48,17 +48,17 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para produtos/anúncios Shopee
+    // Regras para produtos/anÃºncios Shopee
     match /shopee_products/{productId} {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para preferências do usuário Shopee
+    // Regras para preferÃªncias do usuÃ¡rio Shopee
     match /shopee_user_preferences/{userId} {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para templates de anúncios Shopee
+    // Regras para templates de anÃºncios Shopee
     match /shopee_product_templates/{templateId} {
       allow read, write: if request.auth != null;
     }
@@ -69,7 +69,7 @@ service cloud.firestore {
       allow write: if false;
     }
     
-    // Regras para cache de logística Shopee (apenas leitura pelo frontend)
+    // Regras para cache de logÃ­stica Shopee (apenas leitura pelo frontend)
     match /shopee_logistics_cache/{cacheId} {
       allow read: if request.auth != null;
       allow write: if false;
@@ -103,21 +103,26 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para configurações globais do sistema
+    // Regras para configuraÃ§Ãµes globais do sistema
     match /system_config/{configId} {
       allow read, write: if request.auth != null;
     }
     
-    // Regras para catálogos compartilháveis
+    // Regras para catÃ¡logos compartilhÃ¡veis
     match /catalogos/{catalogoId} {
-      // Leitura pública (para links compartilháveis)
+      // Leitura pÃºblica (para links compartilhÃ¡veis)
       allow read: if true;
       allow write: if request.auth != null;
     }
-    
-    // Negar acesso a todas as outras coleções por padrão
+    // Regras para mosaicos da gestao de imagens
+    match /gestao_imagens_mosaicos/{mosaicoId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Negar acesso a todas as outras colecoes por padrao
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+

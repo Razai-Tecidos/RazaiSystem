@@ -49,6 +49,31 @@ export async function uploadImagemTingida(
 }
 
 /**
+ * Faz upload da imagem gerada com marca/nome da cor e retorna a URL
+ */
+export async function uploadImagemGerada(
+  vinculoId: string,
+  blob: Blob
+): Promise<string> {
+  const timestamp = Date.now();
+  return uploadCorTecidoImage(vinculoId, blob, `gerada_${timestamp}.png`);
+}
+
+/**
+ * Faz upload da foto de modelo e retorna a URL
+ */
+export async function uploadImagemModelo(
+  vinculoId: string,
+  fileOrBlob: File | Blob
+): Promise<string> {
+  const timestamp = Date.now();
+  const extension = fileOrBlob instanceof File
+    ? (fileOrBlob.name.split('.').pop() || 'jpg').toLowerCase()
+    : 'jpg';
+  return uploadCorTecidoImage(vinculoId, fileOrBlob, `modelo_${timestamp}.${extension}`);
+}
+
+/**
  * Gera o SKU do vínculo no formato "TecidoSKU-CorSKU"
  * Ex: "T007-MA001"
  */

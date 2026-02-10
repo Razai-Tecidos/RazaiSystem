@@ -27,9 +27,10 @@ import { useConfig } from '@/hooks/useConfig';
 
 interface CoresProps {
   onNavigateHome?: () => void;
+  onNavigateToVinculos?: () => void;
 }
 
-export function Cores({ onNavigateHome }: CoresProps) {
+export function Cores({ onNavigateHome, onNavigateToVinculos }: CoresProps) {
   const { cores, loading, error, createCor, updateCor, deleteCor, mesclarCores } = useCores();
   const { vinculos, loading: loadingVinculos, contarVinculosPorCor } = useCorTecido();
   const { deltaELimiar, setDeltaELimiar, loading: loadingConfig, saving: savingConfig } = useConfig();
@@ -37,7 +38,6 @@ export function Cores({ onNavigateHome }: CoresProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCor, setEditingCor] = useState<Cor | null>(null);
   const [editingCorId, setEditingCorId] = useState<string | null>(null);
-  const [navigateToVinculos, setNavigateToVinculos] = useState(false);
   const [mesclando, setMesclando] = useState(false);
   const [conflitoParaMesclar, setConflitoParaMesclar] = useState<ParConflito | null>(null);
   const [corSelecionadaParaManter, setCorSelecionadaParaManter] = useState<'cor1' | 'cor2' | null>(null);
@@ -139,7 +139,14 @@ export function Cores({ onNavigateHome }: CoresProps) {
   };
 
   const handleNavigateToVinculos = () => {
-    setNavigateToVinculos(true);
+    if (onNavigateToVinculos) {
+      onNavigateToVinculos();
+      return;
+    }
+
+    if (onNavigateHome) {
+      onNavigateHome();
+    }
   };
 
   const handleEditVinculo = (vinculo: CorTecido) => {
@@ -210,12 +217,6 @@ export function Cores({ onNavigateHome }: CoresProps) {
       throw error;
     }
   };
-
-  // Se estiver navegando para vínculos, redirecionar para Home com página de vínculos
-  if (navigateToVinculos && onNavigateHome) {
-    onNavigateHome();
-    return null;
-  }
 
   // Se estiver editando um vínculo, mostrar página de edição de vínculo
   if (editingVinculoId) {

@@ -24,9 +24,9 @@ RazaiSystem/
 │       └── types/     # Tipos TypeScript
 ├── frontend/          # Aplicação React + Vite
 │   └── src/
-│       ├── pages/     # 18 páginas React
+│       ├── pages/     # 19 páginas React
 │       ├── components/# Componentes organizados por feature
-│       ├── hooks/     # 22 custom hooks
+│       ├── hooks/     # 24 custom hooks
 │       └── lib/       # Utilitários e helpers
 ├── backend/           # Backend local (desenvolvimento)
 ├── docs/              # Documentação completa
@@ -280,13 +280,14 @@ functions/
 ```
 frontend/
 ├── src/
-│   ├── pages/          # Páginas React (18 arquivos)
+│   ├── pages/          # Páginas React (19 arquivos)
 │   │   ├── Login.tsx
 │   │   ├── Home.tsx
 │   │   ├── Tecidos.tsx
 │   │   ├── Cores.tsx
 │   │   ├── EditarCor.tsx
 │   │   ├── Vinculos.tsx            # Gestão vínculos cor-tecido
+│   │   ├── GestaoImagens.tsx       # Gestão de imagens e mosaicos
 │   │   ├── EditarVinculo.tsx       # Editor Reinhard
 │   │   ├── CapturaCor.tsx          # Bluetooth colorímetro
 │   │   ├── Estampas.tsx
@@ -299,7 +300,6 @@ frontend/
 │   │   ├── PreferenciasShopee.tsx
 │   │   ├── TemplatesShopee.tsx
 │   │   ├── MLDiagnostico.tsx       # Diagnóstico ML
-│   │   └── Funcionarios/           # Módulo funcionários
 │   ├── components/     # Componentes organizados por feature
 │   │   ├── Layout/     # Header, BreadcrumbNav
 │   │   ├── Tecidos/    # Componentes tecidos
@@ -307,16 +307,16 @@ frontend/
 │   │   ├── Estampas/   # Componentes estampas
 │   │   ├── Shopee/     # Componentes integração Shopee
 │   │   ├── Catalogo/   # Componentes catálogo
-│   │   └── ui/         # shadcn/ui (37 componentes)
-│   ├── hooks/          # Custom hooks (22 arquivos)
+│   │   └── ui/         # shadcn/ui (18 componentes locais)
+│   ├── hooks/          # Custom hooks (24 arquivos)
 │   │   ├── useAuth.ts
 │   │   ├── useTecidos.ts
 │   │   ├── useCores.ts
 │   │   ├── useEstampas.ts
 │   │   ├── useTamanhos.ts
-│   │   ├── useCapturaCor.ts        # Bluetooth colorímetro
+│   │   ├── useColorimetro.ts       # Bluetooth colorímetro
 │   │   ├── useShopee.ts            # Integração Shopee
-│   │   ├── useCatalogo.ts
+│   │   ├── useCatalogos.ts
 │   │   └── use-toast.ts
 │   ├── lib/            # Utilitários
 │   │   ├── firebase/   # CRUD Firestore
@@ -332,7 +332,8 @@ frontend/
 │       ├── ESTAMPAS.md
 │       ├── CAPTURA_COR.md
 │       ├── REINHARD.md
-│       └── VINCULOS.md
+│       ├── VINCULOS.md
+│       └── GESTAO_IMAGENS.md
 └── package.json
 ```
 
@@ -380,13 +381,24 @@ Sistema completo de CRUD de tecidos:
 - Relacionamento N:N entre cores e tecidos
 - SKU do vínculo: `TecidoSKU-CorSKU` (ex: "T007-AZ001")
 - Editor de tingimento Reinhard com sliders ajustáveis
+- Preview ampliado em modal (lightbox) ao clicar na imagem
 - Exportação XLSX com imagens embedded
 - Download ZIP de previews
 - Geração em lote de SKUs
 
 **Documentação**: `frontend/src/docs/CAPTURA_COR.md`, `frontend/src/docs/VINCULOS.md`, `frontend/src/docs/REINHARD.md`
 
-### 3. Estampas
+### 3. Gestão de Imagens
+
+Novo módulo dedicado para pipeline de imagens dos vínculos:
+- Geração de imagem final por vínculo (`imagemGerada`) com persistência no Firebase
+- Upload de foto de modelo por vínculo (`imagemModelo`)
+- Área de mosaico com 3 templates pré-definidos
+- Salvamento de mosaicos em Firestore + Storage para reaproveitar no fluxo Shopee
+
+**Documentação**: `frontend/src/docs/GESTAO_IMAGENS.md`
+
+### 4. Estampas
 
 Sistema de gerenciamento de padrões estampados:
 - Cadastro individual ou em lote
@@ -396,13 +408,13 @@ Sistema de gerenciamento de padrões estampados:
 
 **Documentação**: `frontend/src/docs/ESTAMPAS.md`
 
-### 4. Tamanhos e Preços
+### 5. Tamanhos e Preços
 
 - Definição de tamanhos personalizados (largura × altura)
 - Preços por tamanho (não por cor!)
 - Usado na criação de anúncios Shopee
 
-### 5. Integração Shopee
+### 6. Integração Shopee
 
 **OAuth e Conexão**
 - Fluxo OAuth 2.0 completo
@@ -411,6 +423,9 @@ Sistema de gerenciamento de padrões estampados:
 
 **Gerenciamento de Produtos**
 - Criação de anúncios com múltiplas variações
+- Campo de título customizado no fluxo de criação (`titulo_anuncio`)
+- Uso de mosaicos salvos como imagem de capa
+- Prioridade para imagens geradas na variação (fallback para imagem tingida)
 - Upload automático de imagens (compressão Sharp)
 - Sincronização de estoque
 - Webhooks para atualizações em tempo real
@@ -422,16 +437,20 @@ Sistema de gerenciamento de padrões estampados:
 
 **Documentação**: `docs/SHOPEE*.md`
 
-### 6. Catálogos Públicos
+### 7. Catálogos Públicos
 
 - Geração de catálogos compartilháveis
 - Links públicos (sem autenticação)
 - Preview de tecidos com cores tingidas
 
-### 7. Sistema de Navegação e UX
+### 8. Sistema de Navegação e UX
 
 - Header compartilhado com informações do usuário
 - Breadcrumb navegação hierárquica
+- Sidebar desktop persistente em todas as telas autenticadas
+- Troca de módulo em 1 clique sem voltar para Home
+- Sincronização de módulo com URL hash (`#/modulo`)
+- Atalhos de teclado (`Alt+H`, `Alt+1..7`) e seção de recentes
 - UI otimista para feedback instantâneo
 - Toasts para notificações
 - Responsividade mobile
@@ -499,7 +518,7 @@ firebase deploy --only functions
 
 ### Componentes e Código
 - **[COMPONENTS.md](docs/COMPONENTS.md)** - Documentação de componentes React
-- **[HOOKS.md](docs/HOOKS.md)** - Custom hooks React (22 hooks)
+- **[HOOKS.md](docs/HOOKS.md)** - Custom hooks React (24 hooks)
 - **[UX_RESPONSIVIDADE.md](docs/UX_RESPONSIVIDADE.md)** - Padrões de UX e responsividade
 
 ### Features
@@ -507,6 +526,7 @@ firebase deploy --only functions
 - **[ESTAMPAS.md](frontend/src/docs/ESTAMPAS.md)** - Módulo de estampas
 - **[CAPTURA_COR.md](frontend/src/docs/CAPTURA_COR.md)** - Captura Bluetooth e gestão de cores
 - **[VINCULOS.md](frontend/src/docs/VINCULOS.md)** - Vínculos cor-tecido
+- **[GESTAO_IMAGENS.md](frontend/src/docs/GESTAO_IMAGENS.md)** - Gestão de imagens e mosaicos
 - **[REINHARD.md](frontend/src/docs/REINHARD.md)** - Algoritmo de tingimento
 
 ### Shopee
@@ -526,7 +546,7 @@ O projeto inclui arquivos de regras de segurança versionados:
 
 ### firestore.rules
 Controla acesso ao Firestore:
-- **Collections com autenticação**: `tecidos`, `cores`, `cor_tecido`, `estampas`, `tamanhos`, `shopee_products`, `sku_control`
+- **Collections com autenticação**: `tecidos`, `cores`, `cor_tecido`, `estampas`, `tamanhos`, `shopee_products`, `sku_control`, `gestao_imagens_mosaicos`
 - **Collections backend-only**: `shopee_shops`, `shopee_categories_cache`, `shopee_logistics_cache`
 - **Collections públicas**: `catalogos` (read-only)
 - **Soft-delete**: Todas as queries filtram `deletedAt == null`
@@ -536,8 +556,11 @@ Controla acesso ao Cloud Storage:
 - Usuários autenticados podem upload/download em:
   - `tecidos/{tecidoId}/**`
   - `cores/{corId}/**`
+  - `cor-tecido/{vinculoId}/**`
   - `estampas/{estampaId}/**`
-  - `catalogos/**` (read público)
+  - `mosaicos/{tecidoId}/**`
+  - `shopee-anuncios/{productId}/**`
+  - `ml-models/{modelId}/**`
 
 ### firestore.indexes.json
 Define índices compostos necessários para queries complexas.

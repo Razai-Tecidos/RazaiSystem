@@ -52,29 +52,41 @@ export async function generateBrandOverlay(
   const logoH = Math.round(logoW * (logo.naturalHeight / logo.naturalWidth));
   const logoX = (size - logoW) / 2;
   const logoY = Math.round(size * 0.12);
+  // Sombra suave no logo para destacar sem pesar.
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.22)';
+  ctx.shadowBlur = Math.round(size * 0.012);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.round(size * 0.004);
   ctx.drawImage(logo, logoX, logoY, logoW, logoH);
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
 
-  // 3. Gradiente escuro no fundo (10% inferior)
-  const gradH = Math.round(size * 0.10);
-  const grad = ctx.createLinearGradient(0, size - gradH, 0, size);
-  grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, size - gradH, size, gradH);
-
-  // 4. Nome da cor (bold, 2.8% da largura, centralizado a 96% do topo)
-  const fontSize = Math.round(size * 0.028);
+  // 3. Nome da cor sem faixa/gradiente no rodape.
+  // Distancia da borda inferior: ~16% (4x maior que os ~4% anteriores).
+  const fontSize = Math.round(size * 0.0344); // ~30% maior que 0.028
   ctx.font = `700 ${fontSize}px Arial, Helvetica, sans-serif`;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.26)';
+  ctx.shadowBlur = Math.round(size * 0.010);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.round(size * 0.0035);
   ctx.fillStyle = 'white';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   // letter-spacing via canvas (browsers modernos)
   if ('letterSpacing' in ctx) {
-    (ctx as any).letterSpacing = `${(fontSize * -0.05).toFixed(1)}px`;
+    (ctx as any).letterSpacing = `${(fontSize * -0.01).toFixed(1)}px`;
   }
-  ctx.fillText(colorName, size / 2, Math.round(size * 0.96));
+  const textY = Math.round(size * 0.84);
+  ctx.fillText(colorName, size / 2, textY);
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
 
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  // PNG: preserva qualidade sem compressao com perdas (lossless).
+  const dataUrl = canvas.toDataURL('image/png');
   overlayCache.set(cacheKey, dataUrl);
   return dataUrl;
 }

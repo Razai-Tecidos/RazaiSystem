@@ -1,128 +1,82 @@
-# UX/UI e Responsividade Mobile
+﻿# UX e Responsividade
 
-Melhorias de UX/UI e responsividade mobile do RazaiSystem. Todas as páginas foram adaptadas para mobile com navegação, card views, modais fullscreen e acessibilidade.
+Ultima atualizacao: 2026-02-10
 
----
+## Objetivo
 
-## 1. PROBLEMAS CRÍTICOS (Alta Prioridade) — ✅ RESOLVIDOS
+Eliminar friccao de navegacao no desktop e manter consistencia mobile sem regressao.
 
-### 1.1 Navegação mobile ✅
-- Criado `MobileBottomNav` com 4 ícones fixos (Home, Tecidos, Cores, Shopee) + menu "Mais"
-- Integrado em todas as 16 páginas via wrapper no `Home.tsx`
-- Padding-bottom automático para não sobrepor conteúdo
+## Melhorias implementadas
 
-### 1.2 Tabelas com scroll horizontal ✅
-- Todas as tabelas envolvidas em `.scroll-smooth-x`
-- Tecidos, Cores, Tamanhos, Vínculos — scroll horizontal no desktop
-- Mobile: card views em vez de tabelas (Tecidos, Cores, Tamanhos, Anúncios)
+### Desktop
 
-### 1.3 Touch targets ≥ 44px ✅
-- Botões de ação aumentados para `h-9 w-9` (36px)
-- Botões principais com `min-h-[44px]`
-- CSS utility `.touch-target` para mobile
+1. Sidebar persistente (`DesktopSidebar`):
+- visivel em `md+`
+- fixa na lateral
+- colapsavel
+- estado salvo em `localStorage`
 
----
+2. Troca de modulo em 1 clique:
+- sem precisar voltar para Home
+- destaque claro do modulo ativo
 
-## 2. PROBLEMAS IMPORTANTES (Média Prioridade) — ✅ RESOLVIDOS
+3. URL hash sincronizada:
+- modulo ativo em `#/modulo`
+- refresh preserva contexto
+- back/forward alternam modulos corretamente
 
-### 2.1 Modais fullscreen no mobile ✅
-- `DialogContent` atualizado: fullscreen no mobile (`inset-0`), centrado no desktop (`sm:max-w-lg`)
-- `overflow-y-auto` para conteúdo longo
-- `DialogFooter` sticky no mobile
+4. Atalhos de teclado:
+- `Alt+H` -> Home
+- `Alt+1..7` -> modulos principais
 
-### 2.2 Formulários responsivos ✅
-- Tamanhos: modal com inputs `min-h-[44px]`, footer com botões full-width no mobile
-- CriarAnuncioShopee: navegação sticky no bottom, step indicator compacto no mobile
+5. Recentes na sidebar:
+- ultimos 5 modulos
+- exclui Home
 
-### 2.3 Filtros responsivos ✅
-- AnunciosShopee: filtros com scroll horizontal
-- Vínculos: filtros empilhados com `flex-col sm:flex-row`
-- Inputs de busca com `min-h-[44px]`
+6. Reorganizacao de modulos Shopee:
+- `Tamanhos` e `Criar Anuncio` sairam da navegacao principal
+- acesso agora via cards internos do modulo `Shopee`
+- `Pedidos` removido do menu Shopee
+- hashes legados continuam funcionando (`#/tamanhos`, `#/anuncios-shopee`)
 
-### 2.4 Shopee.tsx — refatoração parcial ✅
-- ConfirmDialog integrado para desconectar loja
+### Mobile
 
----
+- `MobileBottomNav` mantida como navegacao principal.
+- Sem quebra de comportamento da base mobile existente.
 
-## 3. MELHORIAS DE UX GERAL — ✅ IMPLEMENTADAS
+### Tabelas e imagem
 
-### 3.1 Confirmação de exclusão ✅
-- `confirm()` substituído por `ConfirmDialog` (AlertDialog) em:
-  - Tecidos.tsx
-  - Tamanhos.tsx
-  - AnunciosShopee.tsx
-  - Vinculos.tsx (3 ocorrências)
-  - Shopee.tsx (desconectar)
+1. Vinculos:
+- clique na miniatura abre imagem ampliada em modal (`ImageLightbox`)
+- preview usa `object-contain` para nao gerar scroll interno por tamanho da imagem
 
-### 3.2 Empty states ✅
-- Componente `EmptyState` reutilizável criado
-- Integrado em: Tamanhos, AnunciosShopee, Vínculos
+2. Gestao de Imagens:
+- tabelas operacionais separadas por tecido
+- botao de regeneracao em lote por tecido
+- preview e selecao para mosaicos
 
-### 3.3 Feedback visual ✅
-- Skeleton loading em: Tecidos, Tamanhos, AnunciosShopee, Vínculos
-- Animações CSS: `animate-fade-in-up`, `skeleton-shimmer`
+## Acessibilidade
 
-### 3.4 Acessibilidade ✅
-- `aria-label` em botões de ícone (Tecidos, Cores, Tamanhos, Header)
-- `aria-label` em selects de filtro
-- `role="navigation"` no MobileBottomNav
-- `aria-current="page"` no item ativo da navegação
+- `role="navigation"` no menu de navegacao
+- `aria-current="page"` no item ativo
+- labels de acao mantidas nos botoes de icone
 
----
+## Regras de navegacao documentadas
 
-## 4. MELHORIAS POR PÁGINA — STATUS
+Precedencia de abertura inicial:
+1. catalogo publico (`?catalogo=...`)
+2. callback Shopee (`code` + `shop_id`) ou `/shopee`
+3. hash valido
+4. fallback `home`
 
-| Página | Status |
-|--------|--------|
-| Home | ✅ Bottom nav + pb mobile |
-| Tecidos | ✅ Card view + scroll + AlertDialog + skeleton |
-| Estampas | ✅ Card view já existia |
-| Cores | ✅ Card view + scroll + aria-labels + touch targets |
-| Captura de Cor | ✅ Já responsivo |
-| Shopee (Hub) | ✅ AlertDialog integrado |
-| Vínculos | ✅ Scroll + EmptyState + AlertDialog + filtros + skeleton |
-| Catálogo | ✅ Responsivo |
-| Tamanhos | ✅ Card view + AlertDialog + EmptyState + skeleton |
-| CriarAnuncioShopee | ✅ Steps mobile + sticky footer |
-| AnunciosShopee | ✅ Card mobile + AlertDialog + EmptyState + skeleton + filtros |
-| TemplatesShopee | ✅ Grid responsivo |
-| PreferenciasShopee | ✅ Já responsivo |
+## Checklist de validacao manual
 
----
-
-## 5. COMPONENTES CRIADOS
-
-| Componente | Arquivo | Descrição |
-|------------|---------|-----------|
-| `MobileBottomNav` | `Layout/MobileBottomNav.tsx` | Barra de navegação inferior mobile com menu expansível |
-| `EmptyState` | `Layout/EmptyState.tsx` | Estado vazio reutilizável com ícone, título e ação |
-| `ConfirmDialog` | `ui/confirm-dialog.tsx` | Dialog de confirmação que substitui `window.confirm()` |
-
----
-
-## 6. ALTERAÇÕES EM COMPONENTES UI
-
-| Componente | Alteração |
-|------------|-----------|
-| `DialogContent` | Fullscreen mobile, centrado desktop, overflow-y-auto |
-| `DialogFooter` | Sticky no mobile, gap responsivo |
-| Botões de ação (todas tabelas) | h-9 w-9 + aria-labels |
-| Header | aria-label + touch target logout |
-
----
-
-## 7. MÉTRICAS DE SUCESSO
-
-| Métrica | Antes | Depois |
-|---------|-------|--------|
-| Touch targets ≥ 44px | ~60% | ✅ ~95% |
-| Tabelas com scroll mobile | ~30% | ✅ 100% |
-| Páginas com card view mobile | 1 (Estampas) | ✅ 6 (Tecidos, Cores, Tamanhos, Estampas, Anúncios, Vínculos) |
-| Modais fullscreen mobile | 0 | ✅ Todos |
-| `confirm()` nativo restante | 5+ | ✅ 0 |
-| Navegação entre módulos (taps) | 2+ (voltar Home + escolher) | ✅ 1 (bottom nav) |
-
----
-
-**Implementado:** 2026-02-07
-**Deploy:** https://razaisystem.web.app
+1. Em desktop, trocar entre modulos sem passar pela Home.
+2. Recarregar com hash e manter modulo.
+3. Usar back/forward e validar troca de modulo.
+4. Abrir sem hash e cair em Home.
+5. Confirmar mobile bottom nav funcionando.
+6. Recolher sidebar, recarregar e manter estado.
+7. Em Vinculos, abrir imagem ampliada sem scroll interno de imagem.
+8. Em Gestao de Imagens, validar regeneracao por tecido e ausencia de regeneracao individual.
+9. Acessar `#/tamanhos` e `#/anuncios-shopee` e confirmar highlight em `Shopee`.

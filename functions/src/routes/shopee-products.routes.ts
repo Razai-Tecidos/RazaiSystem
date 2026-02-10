@@ -138,6 +138,7 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       peso,
       dimensoes,
       descricao_customizada,
+      titulo_anuncio,
       usar_imagens_publicas,
       imagens_principais,
       template_id,
@@ -237,6 +238,7 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       peso,
       dimensoes,
       descricao_customizada,
+      titulo_anuncio,
       usar_imagens_publicas,
       imagens_principais,
       template_id,
@@ -306,7 +308,7 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response): Promise<
 
 /**
  * DELETE /api/shopee/products/:id
- * Exclui um produto/rascunho
+ * Exclui um produto/rascunho (incluindo anúncio publicado na Shopee)
  */
 router.delete('/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
@@ -338,7 +340,7 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response): Promi
   } catch (error: any) {
     console.error('Erro ao excluir produto:', error);
     
-    if (error.message.includes('permissão') || error.message.includes('publicado')) {
+    if (error.message.includes('permissão')) {
       res.status(403).json({
         success: false,
         error: error.message,

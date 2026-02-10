@@ -33,6 +33,7 @@ export type SyncStatus = 'synced' | 'out_of_sync' | 'error';
 export interface TierOption {
   option_name: string;
   imagem_url?: string;
+  imagem_gerada?: boolean;
 }
 
 /**
@@ -99,6 +100,7 @@ export interface ShopeeProduct {
     altura: number;
   };
   descricao: string;
+  titulo_anuncio?: string;
   descricao_customizada?: string;
   usar_imagens_publicas: boolean;
   condition: ProductCondition;
@@ -143,6 +145,7 @@ export interface CreateShopeeProductData {
     altura: number;
   };
   descricao_customizada?: string;
+  titulo_anuncio?: string;
   usar_imagens_publicas?: boolean;
   imagens_principais?: string[];
   template_id?: string;

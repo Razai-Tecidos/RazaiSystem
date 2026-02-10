@@ -107,6 +107,7 @@ export function AnunciosShopee({ onNavigateHome, onNavigateToCriar }: AnunciosSh
   // Confirm dialog state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingDeleteProduct, setPendingDeleteProduct] = useState<ShopeeProduct | null>(null);
 
   const selectedShop = shops[0];
 
@@ -116,8 +117,9 @@ export function AnunciosShopee({ onNavigateHome, onNavigateToCriar }: AnunciosSh
     }
   }, [selectedShop?.shopId, loadProducts]);
 
-  const handleDelete = (id: string) => {
-    setPendingDeleteId(id);
+  const handleDelete = (product: ShopeeProduct) => {
+    setPendingDeleteId(product.id);
+    setPendingDeleteProduct(product);
     setConfirmOpen(true);
   };
 
@@ -125,9 +127,13 @@ export function AnunciosShopee({ onNavigateHome, onNavigateToCriar }: AnunciosSh
     if (!pendingDeleteId) return;
     setConfirmOpen(false);
     setDeleting(pendingDeleteId);
-    await deleteProduct(pendingDeleteId);
-    setDeleting(null);
-    setPendingDeleteId(null);
+    try {
+      await deleteProduct(pendingDeleteId);
+    } finally {
+      setDeleting(null);
+      setPendingDeleteId(null);
+      setPendingDeleteProduct(null);
+    }
   };
 
   const handleEdit = (product: ShopeeProduct) => {
@@ -326,21 +332,22 @@ export function AnunciosShopee({ onNavigateHome, onNavigateToCriar }: AnunciosSh
                       </Button>
                     )}
 
-                    {product.status !== 'created' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="min-h-[40px] text-red-600 hover:bg-red-50 hover:text-red-700"
-                        onClick={() => handleDelete(product.id)}
-                        disabled={deleting === product.id}
-                      >
-                        {deleting === product.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </Button>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="min-h-[40px] text-red-600 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => handleDelete(product)}
+                      disabled={deleting === product.id}
+                    >
+                      {deleting === product.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          Excluir
+                        </>
+                      )}
+                    </Button>
                   </div>
 
                   {/* Variações */}
@@ -377,8 +384,12 @@ export function AnunciosShopee({ onNavigateHome, onNavigateToCriar }: AnunciosSh
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title="Excluir anúncio"
-        description="Tem certeza que deseja excluir este anúncio? Essa ação não pode ser desfeita."
+        title={pendingDeleteProduct?.status === 'created' ? 'Excluir anúncio publicado' : 'Excluir anúncio'}
+        description={
+          pendingDeleteProduct?.status === 'created'
+            ? 'Este anúncio será removido da Shopee e excluído do sistema. Essa ação não pode ser desfeita.'
+            : 'Tem certeza que deseja excluir este anúncio? Essa ação não pode ser desfeita.'
+        }
         confirmLabel="Excluir"
         variant="destructive"
         onConfirm={confirmDelete}

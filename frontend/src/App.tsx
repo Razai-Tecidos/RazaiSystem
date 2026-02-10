@@ -3,35 +3,40 @@ import { useAuth } from '@/hooks/useAuth';
 import { Login } from './pages/Login';
 import { Home } from './pages/Home';
 import { CatalogoPublico } from './pages/CatalogoPublico';
+import { PageId } from '@/navigation/modules';
+import { parsePageFromHash } from '@/navigation/url-state';
 
 function App() {
   const { user, loading } = useAuth();
-  const [initialPage, setInitialPage] = useState<'home' | 'shopee' | null>(null);
+  const [initialPage, setInitialPage] = useState<PageId | null>(null);
   const [catalogoId, setCatalogoId] = useState<string | null>(null);
 
-  // Detecta callback da Shopee ou catálogo público na URL
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const shopId = urlParams.get('shop_id');
     const catalogo = urlParams.get('catalogo');
     const path = window.location.pathname;
+    const pageFromHash = parsePageFromHash(window.location.hash);
 
-    // Se tem parâmetro de catálogo, exibe página pública (sem autenticação)
     if (catalogo) {
       setCatalogoId(catalogo);
       return;
     }
 
-    // Se tem parâmetros de callback da Shopee ou está na rota /shopee
     if ((code && shopId) || path === '/shopee') {
       setInitialPage('shopee');
-    } else {
-      setInitialPage('home');
+      return;
     }
+
+    if (pageFromHash) {
+      setInitialPage(pageFromHash);
+      return;
+    }
+
+    setInitialPage('home');
   }, []);
 
-  // Página pública de catálogo (não requer autenticação)
   if (catalogoId) {
     return <CatalogoPublico catalogoId={catalogoId} />;
   }
