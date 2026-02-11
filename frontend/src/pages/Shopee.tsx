@@ -17,7 +17,6 @@ import {
   ChevronRight,
   Package,
   PlusCircle,
-  Ruler,
   ArrowLeft
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,7 +26,6 @@ import { useToast } from '@/hooks/use-toast';
 interface ShopeeProps {
   onNavigateHome?: () => void;
   onNavigateToAnuncios?: () => void;
-  onNavigateToTamanhos?: () => void;
 }
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -225,7 +223,7 @@ function SubPageCard({ title, description, icon, onClick, color, disabled, badge
   );
 }
 
-export function Shopee({ onNavigateHome, onNavigateToAnuncios, onNavigateToTamanhos }: ShopeeProps) {
+export function Shopee({ onNavigateHome, onNavigateToAnuncios }: ShopeeProps) {
   const { 
     shops, 
     loading, 
@@ -1032,13 +1030,6 @@ export function Shopee({ onNavigateHome, onNavigateToAnuncios, onNavigateToTaman
               icon={<PlusCircle className="w-5 h-5 text-white" />}
               onClick={() => onNavigateToAnuncios?.()}
               color="blue"
-            />
-            <SubPageCard
-              title="Tamanhos"
-              description="Gerencie grades e medidas para os produtos"
-              icon={<Ruler className="w-5 h-5 text-white" />}
-              onClick={() => onNavigateToTamanhos?.()}
-              color="green"
             />
           </div>
         </main>

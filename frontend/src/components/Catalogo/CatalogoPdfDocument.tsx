@@ -326,11 +326,13 @@ interface CatalogoPdfDocumentProps {
  * Card individual de cor
  */
 function ColorCard({ vinculo }: { vinculo: CorTecido }) {
+  const imagemCatalogo = vinculo.imagemGerada || vinculo.imagemTingida;
+
   return (
     <View style={styles.colorCard} wrap={false}>
       <View style={styles.colorImage}>
-        {vinculo.imagemTingida ? (
-          <Image src={vinculo.imagemTingida} style={styles.colorImageContent} />
+        {imagemCatalogo ? (
+          <Image src={imagemCatalogo} style={styles.colorImageContent} />
         ) : (
           <View
             style={[

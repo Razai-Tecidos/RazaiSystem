@@ -19,7 +19,6 @@ import { Shopee } from './Shopee';
 import { MLDiagnostico } from './MLDiagnostico';
 import { Vinculos } from './Vinculos';
 import { Catalogo } from './Catalogo';
-import { Tamanhos } from './Tamanhos';
 import { AnunciosShopee } from './AnunciosShopee';
 import { CriarAnuncioShopee } from './CriarAnuncioShopee';
 import { GestaoImagens } from './GestaoImagens';
@@ -266,7 +265,21 @@ export function Home({ initialPage = 'home' }: HomeProps) {
     }
 
     if (currentPage === 'estampas') {
-      return <Estampas onNavigateHome={handleNavigateHome} />;
+      return (
+        <Estampas
+          onNavigateHome={handleNavigateHome}
+          onNavigateToVinculos={(tecidoId) => {
+            navigateToPage('vinculos');
+            if (tecidoId) {
+              window.setTimeout(() => {
+                window.dispatchEvent(
+                  new CustomEvent('vinculos:set-tecido-filter', { detail: { tecidoId } })
+                );
+              }, 0);
+            }
+          }}
+        />
+      );
     }
 
     if (currentPage === 'cores') {
@@ -282,12 +295,11 @@ export function Home({ initialPage = 'home' }: HomeProps) {
       return <CapturaCor onNavigateHome={handleNavigateHome} />;
     }
 
-    if (currentPage === 'shopee') {
+    if (currentPage === 'shopee' || currentPage === 'tamanhos') {
       return (
         <Shopee
           onNavigateHome={handleNavigateHome}
           onNavigateToAnuncios={() => navigateToPage('anuncios-shopee', { clearDraft: false })}
-          onNavigateToTamanhos={() => navigateToPage('tamanhos')}
         />
       );
     }
@@ -297,7 +309,12 @@ export function Home({ initialPage = 'home' }: HomeProps) {
     }
 
     if (currentPage === 'vinculos') {
-      return <Vinculos onNavigateHome={handleNavigateHome} />;
+      return (
+        <Vinculos
+          onNavigateHome={handleNavigateHome}
+          onNavigateToEstampas={() => navigateToPage('estampas')}
+        />
+      );
     }
 
     if (currentPage === 'gestao-imagens') {
@@ -306,10 +323,6 @@ export function Home({ initialPage = 'home' }: HomeProps) {
 
     if (currentPage === 'catalogo') {
       return <Catalogo onNavigateHome={handleNavigateHome} />;
-    }
-
-    if (currentPage === 'tamanhos') {
-      return <Tamanhos onNavigateHome={handleNavigateHome} />;
     }
 
     if (currentPage === 'anuncios-shopee') {

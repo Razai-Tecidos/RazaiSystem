@@ -54,6 +54,14 @@ export interface TaxInfo {
   item_name_in_invoice?: string;
 }
 
+export interface ProductLogisticInfo {
+  logistic_id: number;
+  enabled: boolean;
+  shipping_fee?: number;
+  size_id?: string;
+  is_free?: boolean;
+}
+
 /**
  * Modelo (combinação de variações)
  */
@@ -73,6 +81,27 @@ export interface ProductModel {
 }
 
 /**
+ * Parâmetros de precificação Shopee no anúncio
+ */
+export interface PrecificacaoShopee {
+  custo_metro: number;
+  margem_liquida_percentual: number;
+  modo_margem_lucro?: 'percentual' | 'valor_fixo';
+  margem_lucro_fixa?: number;
+  margem_por_tamanho?: Record<string, {
+    modo: 'percentual' | 'valor_fixo';
+    valor: number;
+  }>;
+  comissao_percentual: number;
+  taxa_fixa_item: number;
+  valor_minimo_baixo_valor: number;
+  adicional_baixo_valor: number;
+  teto_comissao: number;
+  aplicar_teto: boolean;
+  aplicar_baixo_valor: boolean;
+}
+
+/**
  * Produto Shopee (rascunho ou publicado)
  */
 export interface ShopeeProduct {
@@ -87,12 +116,15 @@ export interface ShopeeProduct {
   tier_variations: TierVariation[];
   modelos: ProductModel[];
   preco_base: number;
+  precificacao?: PrecificacaoShopee;
+  precos_por_tamanho?: Record<string, number> | null;
   estoque_padrao: number;
   categoria_id: number;
   categoria_nome?: string;
   atributos?: ProductAttributeValue[];
   brand_id?: number;
   brand_nome?: string;
+  logistic_info?: ProductLogisticInfo[];
   peso: number;
   dimensoes: {
     comprimento: number;
@@ -136,6 +168,7 @@ export interface CreateShopeeProductData {
   tamanhos?: string[];
   precos_por_tamanho?: Record<string, number>;
   preco_base: number;
+  precificacao?: PrecificacaoShopee;
   estoque_padrao: number;
   categoria_id: number;
   peso: number;
@@ -153,6 +186,7 @@ export interface CreateShopeeProductData {
   atributos?: ProductAttributeValue[];
   brand_id?: number;
   brand_nome?: string;
+  logistic_info?: ProductLogisticInfo[];
   condition?: ProductCondition;
   is_pre_order?: boolean;
   days_to_ship?: number;
@@ -181,6 +215,16 @@ export interface ShopeeCategory {
 export interface ShopeeUserPreferences {
   id: string;
   preco_base_padrao?: number;
+  comissao_percentual_padrao?: number;
+  taxa_fixa_item_padrao?: number;
+  margem_liquida_percentual_padrao?: number;
+  modo_margem_lucro_padrao?: 'percentual' | 'valor_fixo';
+  margem_lucro_fixa_padrao?: number;
+  valor_minimo_baixo_valor_padrao?: number;
+  adicional_baixo_valor_padrao?: number;
+  teto_comissao_padrao?: number;
+  aplicar_teto_padrao?: boolean;
+  aplicar_baixo_valor_padrao?: boolean;
   estoque_padrao_padrao?: number;
   categoria_id_padrao?: number;
   categoria_nome_padrao?: string;
@@ -235,6 +279,16 @@ export interface ShopeeProductTemplate {
  */
 export interface DefaultFormValues {
   preco_base?: number;
+  comissao_percentual_padrao?: number;
+  taxa_fixa_item_padrao?: number;
+  margem_liquida_percentual_padrao?: number;
+  modo_margem_lucro_padrao?: 'percentual' | 'valor_fixo';
+  margem_lucro_fixa_padrao?: number;
+  valor_minimo_baixo_valor_padrao?: number;
+  adicional_baixo_valor_padrao?: number;
+  teto_comissao_padrao?: number;
+  aplicar_teto_padrao?: boolean;
+  aplicar_baixo_valor_padrao?: boolean;
   estoque_padrao?: number;
   categoria_id?: number;
   categoria_nome?: string;

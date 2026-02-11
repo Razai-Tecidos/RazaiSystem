@@ -32,6 +32,7 @@ import { extrairNomeFamiliaEstampa } from '@/lib/firebase/estampas';
 
 interface EstampasProps {
   onNavigateHome?: () => void;
+  onNavigateToVinculos?: (tecidoId?: string) => void;
 }
 
 type SortField = 'nome' | 'sku' | 'tecido' | 'data';
@@ -39,7 +40,7 @@ type SortOrder = 'asc' | 'desc';
 type ViewMode = 'table' | 'grid';
 type GroupBy = 'none' | 'familia' | 'tecido';
 
-export function Estampas({ onNavigateHome }: EstampasProps) {
+export function Estampas({ onNavigateHome, onNavigateToVinculos }: EstampasProps) {
   const { estampas, loading, createEstampa, createEstampasBatch, updateEstampa, deleteEstampa } = useEstampas();
   const { tecidos, loading: loadingTecidos } = useTecidos();
   const { toast } = useToast();
@@ -490,6 +491,7 @@ export function Estampas({ onNavigateHome }: EstampasProps) {
               onDuplicate={handleDuplicate}
               onUpdateNome={handleUpdateNome}
               onUpdateSku={handleUpdateSku}
+              onNavigateVinculos={onNavigateToVinculos}
               loading={loading}
             />
           )}

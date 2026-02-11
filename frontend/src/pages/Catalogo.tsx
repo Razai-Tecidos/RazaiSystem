@@ -6,13 +6,12 @@ import { useEstampas } from '@/hooks/useEstampas';
 import { useCatalogos } from '@/hooks/useCatalogos';
 import { Tecido } from '@/types/tecido.types';
 import { Estampa } from '@/types/estampa.types';
-import { TecidoCheckboxList } from '@/components/Catalogo/TecidoCheckboxList';
-import { EstampaCheckboxList } from '@/components/Catalogo/EstampaCheckboxList';
 import { CatalogoPreview } from '@/components/Catalogo/CatalogoPreview';
 import { CatalogoPdfDocument } from '@/components/Catalogo/CatalogoPdfDocument';
 import { Header } from '@/components/Layout/Header';
 import { BreadcrumbNav } from '@/components/Layout/BreadcrumbNav';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, FileDown, Link2, Copy, Check, Palette, Image as ImageIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
@@ -29,7 +28,11 @@ export interface TecidoComEstampas {
   estampas: Estampa[];
 }
 
-type TabType = 'cores' | 'estampas';
+interface CatalogoListItem {
+  tecido: Tecido;
+  totalCores: number;
+  totalEstampas: number;
+}
 
 export function Catalogo({ onNavigateHome }: CatalogoProps) {
   const { vinculos, loading: loadingVinculos } = useCorTecido();
@@ -38,9 +41,7 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
   const { createCatalogoLink, generating } = useCatalogos();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<TabType>('cores');
   const [selectedTecidoIds, setSelectedTecidoIds] = useState<Set<string>>(new Set());
-  const [selectedEstampaTecidoIds, setSelectedEstampaTecidoIds] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -82,6 +83,33 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
     return grupos.sort((a, b) => a.tecido.nome.localeCompare(b.tecido.nome));
   }, [estampas, tecidos]);
 
+  const catalogoListItems = useMemo<CatalogoListItem[]>(() => {
+    const grouped = new Map<string, CatalogoListItem>();
+
+    tecidosComVinculos.forEach(({ tecido, vinculos }) => {
+      grouped.set(tecido.id, {
+        tecido,
+        totalCores: vinculos.length,
+        totalEstampas: 0,
+      });
+    });
+
+    tecidosComEstampas.forEach(({ tecido, estampas }) => {
+      const existing = grouped.get(tecido.id);
+      if (existing) {
+        existing.totalEstampas = estampas.length;
+      } else {
+        grouped.set(tecido.id, {
+          tecido,
+          totalCores: 0,
+          totalEstampas: estampas.length,
+        });
+      }
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => a.tecido.nome.localeCompare(b.tecido.nome));
+  }, [tecidosComVinculos, tecidosComEstampas]);
+
   // Tecidos selecionados com seus vínculos
   const selectedTecidosComVinculos = useMemo(
     () => tecidosComVinculos.filter((t) => selectedTecidoIds.has(t.tecido.id)),
@@ -90,8 +118,8 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
 
   // Tecidos selecionados com suas estampas
   const selectedTecidosComEstampas = useMemo(
-    () => tecidosComEstampas.filter((t) => selectedEstampaTecidoIds.has(t.tecido.id)),
-    [tecidosComEstampas, selectedEstampaTecidoIds]
+    () => tecidosComEstampas.filter((t) => selectedTecidoIds.has(t.tecido.id)),
+    [tecidosComEstampas, selectedTecidoIds]
   );
 
   // Total de cores selecionadas
@@ -106,8 +134,26 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
     [selectedTecidosComEstampas]
   );
 
-  // Toggle seleção de um tecido (cores)
-  const handleToggleCor = useCallback((id: string) => {
+  const totalCoresDisponiveis = useMemo(
+    () => catalogoListItems.reduce((acc, item) => acc + item.totalCores, 0),
+    [catalogoListItems]
+  );
+
+  const totalEstampasDisponiveis = useMemo(
+    () => catalogoListItems.reduce((acc, item) => acc + item.totalEstampas, 0),
+    [catalogoListItems]
+  );
+
+  useEffect(() => {
+    const validIds = new Set(catalogoListItems.map((item) => item.tecido.id));
+    setSelectedTecidoIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [catalogoListItems]);
+
+  // Toggle seleção de um tecido
+  const handleToggleTecido = useCallback((id: string) => {
     setSelectedTecidoIds((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
@@ -119,41 +165,24 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
     });
   }, []);
 
-  // Toggle seleção de um tecido (estampas)
-  const handleToggleEstampa = useCallback((id: string) => {
-    setSelectedEstampaTecidoIds((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  }, []);
+  // Selecionar todos da lista
+  const handleSelectAll = useCallback(() => {
+    setSelectedTecidoIds(new Set(catalogoListItems.map((item) => item.tecido.id)));
+  }, [catalogoListItems]);
 
-  // Selecionar todos (cores)
-  const handleSelectAllCores = useCallback(() => {
-    setSelectedTecidoIds(new Set(tecidosComVinculos.map((t) => t.tecido.id)));
-  }, [tecidosComVinculos]);
-
-  // Desmarcar todos (cores)
-  const handleDeselectAllCores = useCallback(() => {
+  // Desmarcar todos da lista
+  const handleDeselectAll = useCallback(() => {
     setSelectedTecidoIds(new Set());
   }, []);
 
-  // Selecionar todos (estampas)
-  const handleSelectAllEstampas = useCallback(() => {
-    setSelectedEstampaTecidoIds(new Set(tecidosComEstampas.map((t) => t.tecido.id)));
-  }, [tecidosComEstampas]);
+  const selectedCatalogoItemsCount = useMemo(
+    () => catalogoListItems.filter((item) => selectedTecidoIds.has(item.tecido.id)).length,
+    [catalogoListItems, selectedTecidoIds]
+  );
 
-  // Desmarcar todos (estampas)
-  const handleDeselectAllEstampas = useCallback(() => {
-    setSelectedEstampaTecidoIds(new Set());
-  }, []);
-
-  // Verificar se há algo selecionado
-  const hasSelection = selectedTecidosComVinculos.length > 0 || selectedTecidosComEstampas.length > 0;
+  const allSelected = catalogoListItems.length > 0 && selectedCatalogoItemsCount === catalogoListItems.length;
+  const someSelected = selectedCatalogoItemsCount > 0 && !allSelected;
+  const hasSelection = selectedCatalogoItemsCount > 0;
 
   // Cleanup do blob URL ao desmontar ou antes de criar novo
   useEffect(() => {
@@ -245,8 +274,43 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
     }
 
     const url = await createCatalogoLink(Array.from(selectedTecidoIds));
-    if (url) {
-      setGeneratedLink(url);
+    if (!url) return;
+
+    setGeneratedLink(url);
+
+    const shareData = {
+      title: 'Catalogo Razai',
+      text: 'Confira este catalogo',
+      url,
+    };
+
+    const canUseNativeShare =
+      typeof navigator !== 'undefined' &&
+      typeof navigator.share === 'function' &&
+      (typeof navigator.canShare !== 'function' || navigator.canShare({ url }));
+
+    if (canUseNativeShare) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (error) {
+        if ((error as { name?: string })?.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: 'Link criado!',
+        description: 'Link copiado para a area de transferencia.',
+      });
+    } catch {
+      toast({
+        title: 'Link criado!',
+        description: 'Copie o link no campo abaixo.',
+      });
     }
   }, [createCatalogoLink, selectedTecidoIds, toast]);
 
@@ -335,88 +399,82 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Coluna esquerda: Seleção */}
               <div>
-                {/* Abas */}
-                <div className="flex gap-1 p-1 bg-gray-100 rounded-lg mb-4">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('cores')}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
-                      activeTab === 'cores'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    )}
-                  >
-                    <Palette className="h-4 w-4" />
-                    Cores
-                    {tecidosComVinculos.length > 0 && (
-                      <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
-                        {tecidosComVinculos.length}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('estampas')}
-                    className={cn(
-                      'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
-                      activeTab === 'estampas'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-500 hover:text-gray-700'
-                    )}
-                  >
-                    <ImageIcon className="h-4 w-4" />
-                    Estampas
-                    {tecidosComEstampas.length > 0 && (
-                      <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">
-                        {tecidosComEstampas.length}
-                      </span>
-                    )}
-                  </button>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">
+                  Tecidos (liso + estampado) ({catalogoListItems.length})
+                </h3>
+
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border mb-3">
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={allSelected}
+                      data-state={someSelected ? 'indeterminate' : allSelected ? 'checked' : 'unchecked'}
+                      onCheckedChange={() => {
+                        if (allSelected || someSelected) {
+                          handleDeselectAll();
+                        } else {
+                          handleSelectAll();
+                        }
+                      }}
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      {allSelected
+                        ? 'Todos selecionados'
+                        : someSelected
+                        ? `${selectedCatalogoItemsCount} de ${catalogoListItems.length} tecidos`
+                        : 'Selecionar todos'}
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-gray-500 text-right">
+                    <div>{totalCoresDisponiveis} cores</div>
+                    <div>{totalEstampasDisponiveis} estampas</div>
+                  </div>
                 </div>
 
-                {/* Conteúdo da aba */}
-                {activeTab === 'cores' ? (
-                  tecidosComVinculos.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed">
-                      <Palette className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-sm">Nenhum tecido com cores cadastradas</p>
-                    </div>
-                  ) : (
-                    <>
-                      <h3 className="text-sm font-medium text-gray-700 mb-3">
-                        Tecidos com cores ({tecidosComVinculos.length})
-                      </h3>
-                      <TecidoCheckboxList
-                        tecidosComVinculos={tecidosComVinculos}
-                        selectedIds={selectedTecidoIds}
-                        onToggle={handleToggleCor}
-                        onSelectAll={handleSelectAllCores}
-                        onDeselectAll={handleDeselectAllCores}
-                      />
-                    </>
-                  )
-                ) : (
-                  tecidosComEstampas.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed">
-                      <ImageIcon className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-sm">Nenhum tecido com estampas cadastradas</p>
-                    </div>
-                  ) : (
-                    <>
-                      <h3 className="text-sm font-medium text-gray-700 mb-3">
-                        Tecidos com estampas ({tecidosComEstampas.length})
-                      </h3>
-                      <EstampaCheckboxList
-                        tecidosComEstampas={tecidosComEstampas}
-                        selectedIds={selectedEstampaTecidoIds}
-                        onToggle={handleToggleEstampa}
-                        onSelectAll={handleSelectAllEstampas}
-                        onDeselectAll={handleDeselectAllEstampas}
-                      />
-                    </>
-                  )
-                )}
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-2">
+                  {catalogoListItems.map((item) => {
+                    const isSelected = selectedTecidoIds.has(item.tecido.id);
+
+                    return (
+                      <div
+                        key={item.tecido.id}
+                        className={cn(
+                          'flex items-center gap-4 p-3 rounded-lg border cursor-pointer transition-all',
+                          isSelected
+                            ? 'bg-primary/5 border-primary/30'
+                            : 'bg-white hover:bg-gray-50 border-gray-200'
+                        )}
+                        onClick={() => handleToggleTecido(item.tecido.id)}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleToggleTecido(item.tecido.id)}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-gray-900 truncate">{item.tecido.nome}</span>
+                            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium">
+                              {item.tecido.sku}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-gray-500">
+                            <span className="inline-flex items-center gap-1">
+                              <Palette className="h-3 w-3" />
+                              {item.totalCores} {item.totalCores === 1 ? 'cor' : 'cores'}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <ImageIcon className="h-3 w-3" />
+                              {item.totalEstampas} {item.totalEstampas === 1 ? 'estampa' : 'estampas'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Coluna direita: Preview e ações */}

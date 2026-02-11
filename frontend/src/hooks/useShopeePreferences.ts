@@ -10,6 +10,16 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
  */
 interface UpdatePreferencesData {
   preco_base_padrao?: number;
+  comissao_percentual_padrao?: number;
+  taxa_fixa_item_padrao?: number;
+  margem_liquida_percentual_padrao?: number;
+  modo_margem_lucro_padrao?: 'percentual' | 'valor_fixo';
+  margem_lucro_fixa_padrao?: number;
+  valor_minimo_baixo_valor_padrao?: number;
+  adicional_baixo_valor_padrao?: number;
+  teto_comissao_padrao?: number;
+  aplicar_teto_padrao?: boolean;
+  aplicar_baixo_valor_padrao?: boolean;
   estoque_padrao_padrao?: number;
   categoria_id_padrao?: number;
   peso_padrao?: number;
@@ -20,6 +30,8 @@ interface UpdatePreferencesData {
   };
   usar_imagens_publicas_padrao?: boolean;
   descricao_template?: string;
+  ncm_padrao?: string;
+  categoria_nome_padrao?: string;
 }
 
 /**

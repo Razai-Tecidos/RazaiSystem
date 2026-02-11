@@ -73,6 +73,10 @@ app.use('/api/tecidos', tecidosRoutes);
 import coresRoutes from './routes/cores.routes';
 app.use('/api/cores', coresRoutes);
 
+// Rotas de tamanhos
+import tamanhosRoutes from './routes/tamanhos.routes';
+app.use('/api/tamanhos', tamanhosRoutes);
+
 // Rotas do Shopee
 import shopeeRoutes from './routes/shopee.routes';
 app.use('/api/shopee', shopeeRoutes);

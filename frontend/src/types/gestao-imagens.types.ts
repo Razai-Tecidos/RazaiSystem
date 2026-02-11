@@ -12,6 +12,7 @@ export interface GestaoImagemMosaico {
   selectedImageUrls: string[];
   outputSquareUrl: string;
   outputPortraitUrl: string;
+  isDefaultForTecido?: boolean;
   createdBy: string;
   createdAt: Timestamp;
 }
@@ -25,5 +26,6 @@ export interface CreateGestaoImagemMosaicoData {
   selectedImageUrls: string[];
   outputSquareUrl: string;
   outputPortraitUrl: string;
+  isDefaultForTecido?: boolean;
   createdBy: string;
 }

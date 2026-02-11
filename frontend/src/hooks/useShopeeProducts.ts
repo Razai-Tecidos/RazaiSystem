@@ -264,6 +264,16 @@ export function useShopeeProducts() {
       console.error('Erro ao buscar valores padrão:', err);
       // Retorna valores padrão do sistema
       return {
+        comissao_percentual_padrao: 20,
+        taxa_fixa_item_padrao: 4,
+        margem_liquida_percentual_padrao: 20,
+        modo_margem_lucro_padrao: 'percentual',
+        margem_lucro_fixa_padrao: 0,
+        valor_minimo_baixo_valor_padrao: 8,
+        adicional_baixo_valor_padrao: 1,
+        teto_comissao_padrao: 100,
+        aplicar_teto_padrao: true,
+        aplicar_baixo_valor_padrao: true,
         peso: 0.3,
         estoque_padrao: 100,
         dimensoes: {

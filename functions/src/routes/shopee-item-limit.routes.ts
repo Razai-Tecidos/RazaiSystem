@@ -121,16 +121,19 @@ router.get('/size-chart-support', authMiddleware, async (req: Request, res: Resp
 router.get('/size-charts', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string);
-    
-    if (!shopId) {
+    const categoryId = parseInt(req.query.category_id as string);
+    const pageSize = parseInt(req.query.page_size as string) || 50;
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+
+    if (!shopId || !categoryId) {
       res.status(400).json({
         success: false,
-        error: 'shop_id é obrigatório',
+        error: 'shop_id e category_id são obrigatórios',
       });
       return;
     }
-    
-    const sizeCharts = await itemLimitService.getSizeCharts(shopId);
+
+    const sizeCharts = await itemLimitService.getSizeCharts(shopId, categoryId, pageSize, cursor);
     
     res.json({
       success: true,
@@ -148,3 +151,4 @@ router.get('/size-charts', authMiddleware, async (req: Request, res: Response): 
 });
 
 export default router;
+

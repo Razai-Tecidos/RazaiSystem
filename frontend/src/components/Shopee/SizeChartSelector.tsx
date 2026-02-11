@@ -8,6 +8,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 interface SizeChart {
   size_chart_id: number;
+  size_chart_name?: string;
   name?: string;
 }
 
@@ -63,7 +64,7 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange }: SizeC
   const loadSizeCharts = async (token: string) => {
     try {
       const response = await fetch(
-        `${API_BASE}/api/shopee/item-limit/size-charts?shop_id=${shopId}`,
+        `${API_BASE}/api/shopee/item-limit/size-charts?shop_id=${shopId}&category_id=${categoryId}&page_size=50`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -117,7 +118,7 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange }: SizeC
           <option value="">Selecione uma tabela de medidas...</option>
           {sizeCharts.map(sc => (
             <option key={sc.size_chart_id} value={sc.size_chart_id}>
-              {sc.name || `Size Chart #${sc.size_chart_id}`}
+              {sc.name || sc.size_chart_name || `Size Chart #${sc.size_chart_id}`}
             </option>
           ))}
         </select>

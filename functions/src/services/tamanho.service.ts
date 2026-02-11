@@ -72,22 +72,37 @@ async function invalidateTamanhoSku(sku: string): Promise<void> {
  * Lista todos os tamanhos ativos
  */
 export async function listTamanhos(includeInactive = false): Promise<Tamanho[]> {
-  let query = db.collection(TAMANHOS_COLLECTION)
-    .where('deletedAt', '==', null)
-    .orderBy('ordem', 'asc');
-  
-  if (!includeInactive) {
-    query = db.collection(TAMANHOS_COLLECTION)
-      .where('deletedAt', '==', null)
-      .where('ativo', '==', true)
-      .orderBy('ordem', 'asc');
-  }
-  
-  const snapshot = await query.get();
-  return snapshot.docs.map(doc => ({
+  // Compatibilidade: registros legados podem nao ter os campos `ativo`/`deletedAt`.
+  // Nao usamos orderBy no Firestore para nao excluir docs sem campo `ordem`.
+  const snapshot = await db.collection(TAMANHOS_COLLECTION).get();
+
+  const tamanhos = snapshot.docs.map(doc => ({
     id: doc.id,
     ...doc.data(),
   } as Tamanho));
+
+  return tamanhos
+    .filter((tamanho) => {
+      const notDeleted = tamanho.deletedAt == null;
+      if (!notDeleted) {
+        return false;
+      }
+
+      if (includeInactive) {
+        return true;
+      }
+
+      // Se `ativo` nao existir (legado), assume ativo.
+      return tamanho.ativo !== false;
+    })
+    .sort((a, b) => {
+      const ordemA = typeof a.ordem === 'number' ? a.ordem : Number.MAX_SAFE_INTEGER;
+      const ordemB = typeof b.ordem === 'number' ? b.ordem : Number.MAX_SAFE_INTEGER;
+      if (ordemA !== ordemB) {
+        return ordemA - ordemB;
+      }
+      return (a.nome || '').localeCompare(b.nome || '');
+    });
 }
 
 /**

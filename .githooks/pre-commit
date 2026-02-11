@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "[pre-commit] npm is required to run encoding checks." >&2
+  exit 1
+fi
+
+echo "[pre-commit] running staged encoding guard..."
+npm run -s encoding:check:staged

@@ -42,7 +42,7 @@ describe('POST /api/shopee/update-color-availability', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(mockedEnsureValidToken).toHaveBeenCalledWith(803215808);
-    expect(mockedCallShopeeApi).toHaveBeenCalledWith(
+    expect(mockedCallShopeeApi).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: '/api/v2/product/update_model' })
     );
     expect(mockedCallShopeeApi).toHaveBeenCalledWith(
@@ -59,15 +59,24 @@ describe('POST /api/shopee/update-color-availability', () => {
     expect(res.body.success).toBe(false);
   });
 
-  it('deve retornar 500 se update_model falhar', async () => {
+  it('deve retornar 500 se update_stock falhar no fluxo NORMAL', async () => {
     mockedEnsureValidToken.mockResolvedValue('access-token');
-    mockedCallShopeeApi.mockResolvedValueOnce({ error: 'invalid' });
+    mockedCallShopeeApi
+      .mockResolvedValueOnce({ response: { item_list: [{ item_sku: 'SKU-1' }] } }) // get_item_base_info
+      .mockResolvedValueOnce({
+        response: {
+          tier_variation: [{ option_list: [{ option: 'Azul' }] }],
+          model: [{ model_id: 1, tier_index: [0] }],
+        },
+      }) // get_model_list (color option)
+      .mockResolvedValueOnce({ error: 'invalid_stock' }); // update_stock
 
     const res = await request(app)
       .post('/api/shopee/update-color-availability')
       .send({
         shop_id: 803215808,
-        model_status: 'UNAVAILABLE',
+        model_status: 'NORMAL',
+        stock: 500,
         targets: [
           { item_id: 111, model_ids: [1] },
         ],

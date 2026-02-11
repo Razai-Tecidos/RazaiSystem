@@ -42,6 +42,7 @@ interface EstampasTableProps {
   onDuplicate: (estampa: EstampaWithStatus) => void;
   onUpdateNome: (id: string, nome: string) => Promise<void>;
   onUpdateSku: (id: string, sku: string) => Promise<void>;
+  onNavigateVinculos?: (tecidoBaseId?: string) => void;
   loading?: boolean;
 }
 
@@ -55,6 +56,7 @@ function EstampaCard({
   onDelete,
   onDuplicate,
   onStartEditingNome,
+  onNavigateVinculos,
   isGridView = false,
 }: {
   estampa: EstampaWithStatus;
@@ -62,6 +64,7 @@ function EstampaCard({
   onDelete: (estampa: EstampaWithStatus) => void;
   onDuplicate: (estampa: EstampaWithStatus) => void;
   onStartEditingNome: (estampa: EstampaWithStatus) => void;
+  onNavigateVinculos?: (tecidoBaseId?: string) => void;
   isGridView?: boolean;
 }) {
   const isSaving = estampa._status === 'saving';
@@ -138,9 +141,28 @@ function EstampaCard({
           >
             {estampa.nome}
           </h4>
-          <p className="text-xs text-gray-500 truncate mt-0.5">
-            Vinculo: {estampa.tecidoBaseNome || 'N/A'}
-          </p>
+          {estampa.tecidoBaseNome ? (
+            <div className="mt-1 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
+                <span className="text-xs font-medium text-blue-600">1 tecido</span>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-gray-600">
+                <span className="truncate">{estampa.tecidoBaseNome}</span>
+                {onNavigateVinculos && estampa.tecidoBaseId && (
+                  <button
+                    type="button"
+                    className="text-blue-600 hover:underline"
+                    onClick={() => onNavigateVinculos(estampa.tecidoBaseId)}
+                  >
+                    abrir
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 mt-0.5">Nenhum vinculo</p>
+          )}
         </div>
       </div>
     );
@@ -225,10 +247,28 @@ function EstampaCard({
 
           {/* Detalhes */}
           <div className="mt-2 pt-2 border-t border-gray-100 text-xs">
-            <span className="text-gray-500">Vinculo:</span>
-            <span className="font-medium text-gray-700 ml-1">
-              {estampa.tecidoBaseNome || 'N/A'}
-            </span>
+            {estampa.tecidoBaseNome ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
+                  <span className="text-xs font-medium text-blue-600">1 tecido</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-600">
+                  <span className="truncate">{estampa.tecidoBaseNome}</span>
+                  {onNavigateVinculos && estampa.tecidoBaseId && (
+                    <button
+                      type="button"
+                      className="text-blue-600 hover:underline"
+                      onClick={() => onNavigateVinculos(estampa.tecidoBaseId)}
+                    >
+                      abrir
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <span className="text-gray-400">Nenhum vinculo</span>
+            )}
           </div>
         </div>
       </div>
@@ -249,6 +289,7 @@ export function EstampasTable({
   onDuplicate,
   onUpdateNome,
   onUpdateSku,
+  onNavigateVinculos,
   loading,
 }: EstampasTableProps) {
   // Estado para edição inline
@@ -477,6 +518,7 @@ export function EstampasTable({
                     onDelete={onDelete}
                     onDuplicate={onDuplicate}
                     onStartEditingNome={startEditingNome}
+                    onNavigateVinculos={onNavigateVinculos}
                     isGridView
                   />
                 ))}
@@ -495,6 +537,7 @@ export function EstampasTable({
                       onDelete={onDelete}
                       onDuplicate={onDuplicate}
                       onStartEditingNome={startEditingNome}
+                      onNavigateVinculos={onNavigateVinculos}
                     />
                   ))}
                 </div>
@@ -504,11 +547,11 @@ export function EstampasTable({
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gray-50/80">
-                        <TableHead className="font-semibold w-20">Preview</TableHead>
                         <TableHead className="font-semibold w-28">SKU</TableHead>
                         <TableHead className="font-semibold">Nome</TableHead>
-                        <TableHead className="font-semibold">Vinculo</TableHead>
-                        <TableHead className="text-right font-semibold w-36">Ações</TableHead>
+                        <TableHead className="font-semibold w-20">Preview</TableHead>
+                        <TableHead className="font-semibold">Vinculos</TableHead>
+                        <TableHead className="text-right font-semibold w-36">Acoes</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -527,31 +570,6 @@ export function EstampasTable({
                             )}
                             style={{ animationDelay: `${index * 30}ms` }}
                           >
-                            {/* Preview */}
-                            <TableCell>
-                              {estampa.imagem ? (
-                                <a
-                                  href={estampa.imagem}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="block w-12 h-12 rounded overflow-hidden border hover:opacity-80 transition-opacity relative group"
-                                >
-                                  <img
-                                    src={estampa.imagem}
-                                    alt={estampa.nome}
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <ExternalLink className="h-4 w-4 text-white" />
-                                  </div>
-                                </a>
-                              ) : (
-                                <div className="w-12 h-12 rounded bg-gray-100 flex items-center justify-center">
-                                  <ImageIcon className="h-5 w-5 text-gray-400" />
-                                </div>
-                              )}
-                            </TableCell>
-
                             {/* SKU - Editável */}
                             <TableCell>
                               {isEditingSku ? (
@@ -673,12 +691,55 @@ export function EstampasTable({
                               )}
                             </TableCell>
 
-                            {/* Vinculo */}
+                            {/* Preview */}
                             <TableCell>
-                              <div className="flex items-center gap-2 text-gray-600">
-                                <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
-                                <span>{estampa.tecidoBaseNome || 'N/A'}</span>
-                              </div>
+                              {estampa.imagem ? (
+                                <a
+                                  href={estampa.imagem}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block w-12 h-12 rounded overflow-hidden border hover:opacity-80 transition-opacity relative group"
+                                >
+                                  <img
+                                    src={estampa.imagem}
+                                    alt={estampa.nome}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <ExternalLink className="h-4 w-4 text-white" />
+                                  </div>
+                                </a>
+                              ) : (
+                                <div className="w-12 h-12 rounded bg-gray-100 flex items-center justify-center">
+                                  <ImageIcon className="h-5 w-5 text-gray-400" />
+                                </div>
+                              )}
+                            </TableCell>
+
+                            {/* Vinculos */}
+                            <TableCell>
+                              {estampa.tecidoBaseNome ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
+                                    <span className="text-sm font-medium text-blue-600">1 tecido</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <span className="truncate">{estampa.tecidoBaseNome}</span>
+                                    {onNavigateVinculos && (
+                                      <button
+                                        type="button"
+                                        className="text-blue-600 hover:underline"
+                                        onClick={() => onNavigateVinculos(estampa.tecidoBaseId)}
+                                      >
+                                        abrir
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 text-sm">Nenhum vinculo</span>
+                              )}
                             </TableCell>
 
                             {/* Ações */}
@@ -734,3 +795,4 @@ export function EstampasTable({
 
   return <div className="animate-fade-in">{estampasAgrupadas.map(renderGrupo)}</div>;
 }
+

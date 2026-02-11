@@ -47,7 +47,7 @@ export function BrandSelector({ shopId, categoryId, value, onChange }: BrandSele
 
       if (data.success) {
         setBrands(data.data?.brands || []);
-        setIsMandatory(data.data?.isMandatory || false);
+        setIsMandatory(Boolean(data.data?.is_mandatory ?? data.data?.isMandatory));
       }
     } catch (err) {
       console.error('Erro ao carregar marcas:', err);

@@ -25,7 +25,7 @@ const db = admin.firestore();
 const PRODUCTS_COLLECTION = 'shopee_products';
 const TECIDOS_COLLECTION = 'tecidos';
 const COR_TECIDO_COLLECTION = 'cor_tecido';
-const TAMANHOS_COLLECTION = 'tamanhos';
+const COMPRIMENTOS_PADRAO_METROS: number[] = [1, 2, 3];
 
 /**
  * Remove valores undefined recursivamente de um objeto
@@ -55,6 +55,12 @@ function removeUndefinedValues(obj: Record<string, unknown>): Record<string, unk
   }
   
   return cleaned;
+}
+
+function getProductOwnerId(product: Partial<ShopeeProduct>): string | null {
+  if (product.created_by) return product.created_by;
+  if (product.user_id) return product.user_id;
+  return null;
 }
 
 /**
@@ -239,29 +245,62 @@ async function getCorTecidoData(tecidoId: string, corIds: string[]): Promise<Arr
   return vinculos;
 }
 
-/**
- * Busca dados dos tamanhos
- */
-async function getTamanhosData(tamanhoIds: string[]): Promise<Array<{
-  id: string;
-  nome: string;
-  sku?: string;
-}>> {
-  const tamanhos: Array<{ id: string; nome: string; sku?: string }> = [];
-  
-  for (const id of tamanhoIds) {
-    const doc = await db.collection(TAMANHOS_COLLECTION).doc(id).get();
-    if (doc.exists && !doc.data()?.deletedAt) {
-      const data = doc.data();
-      tamanhos.push({
-        id: doc.id,
-        nome: data?.nome || '',
-        sku: data?.sku,
-      });
-    }
+function formatLarguraLabel(largura?: number): string {
+  if (typeof largura !== 'number' || Number.isNaN(largura) || largura <= 0) {
+    return '-';
   }
-  
-  return tamanhos;
+
+  return `${largura.toFixed(2).replace('.', ',')}m`;
+}
+
+function normalizeComprimentoIds(tamanhoIds?: string[]): string[] {
+  const source = tamanhoIds === undefined
+    ? COMPRIMENTOS_PADRAO_METROS.map((metros) => String(metros))
+    : tamanhoIds;
+
+  return source.filter((id, index, array) => {
+    const metros = Number(id);
+    const isValid = COMPRIMENTOS_PADRAO_METROS.includes(metros);
+    if (!isValid) return false;
+    return array.indexOf(id) === index;
+  });
+}
+
+function extractComprimentoIdsFromModels(modelos: ProductModel[] = []): string[] {
+  const ids = modelos
+    .map((model) => {
+      if (model.tamanho_id && COMPRIMENTOS_PADRAO_METROS.includes(Number(model.tamanho_id))) {
+        return String(model.tamanho_id);
+      }
+
+      if (model.tamanho_nome) {
+        const match = model.tamanho_nome.match(/^(\d+(?:[.,]\d+)?)m/i);
+        if (match) {
+          const metros = Number(match[1].replace(',', '.'));
+          if (COMPRIMENTOS_PADRAO_METROS.includes(metros)) {
+            return String(metros);
+          }
+        }
+      }
+
+      return null;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return normalizeComprimentoIds(ids);
+}
+
+function buildComprimentosData(
+  tamanhoIds: string[] | undefined,
+  larguraTecido?: number
+): Array<{ id: string; nome: string; sku?: string }> {
+  const larguraLabel = formatLarguraLabel(larguraTecido);
+
+  return normalizeComprimentoIds(tamanhoIds).map((id) => ({
+    id,
+    nome: `${id}m x ${larguraLabel}`,
+    sku: id,
+  }));
 }
 
 /**
@@ -459,10 +498,8 @@ export async function createProduct(
     throw new Error('Nenhum vínculo cor-tecido encontrado');
   }
   
-  // Busca tamanhos (se selecionados)
-  const tamanhos = data.tamanhos && data.tamanhos.length > 0
-    ? await getTamanhosData(data.tamanhos)
-    : undefined;
+  // Comprimentos selecionados (automatizados por largura do tecido)
+  const tamanhos = buildComprimentosData(data.tamanhos, tecido.largura);
   
   // Busca preferências do usuário para template de descrição
   const preferences = await preferencesService.getUserPreferences(userId);
@@ -507,12 +544,14 @@ export async function createProduct(
     tier_variations: tierVariations,
     modelos,
     preco_base: data.preco_base,
+    precificacao: data.precificacao || null,
     precos_por_tamanho: data.precos_por_tamanho || null,
     estoque_padrao: data.estoque_padrao,
     categoria_id: data.categoria_id,
     atributos: data.atributos || [],
     brand_id: data.brand_id ?? null,
     brand_nome: data.brand_nome || null,
+    logistic_info: data.logistic_info || null,
     peso: data.peso,
     dimensoes: data.dimensoes,
     descricao,
@@ -531,6 +570,7 @@ export async function createProduct(
     created_at: now,
     updated_at: now,
     created_by: userId,
+    user_id: userId,
     template_id: data.template_id || null,
   };
   
@@ -560,7 +600,7 @@ export async function updateProduct(
   const existingData = doc.data() as ShopeeProduct;
   
   // Verifica se o usuário é o dono
-  if (existingData.created_by !== userId) {
+  if (getProductOwnerId(existingData) !== userId) {
     throw new Error('Sem permissão para editar este produto');
   }
   
@@ -578,53 +618,83 @@ export async function updateProduct(
     updated_at: admin.firestore.Timestamp.now(),
   };
   
+  const hasCoresField = Object.prototype.hasOwnProperty.call(data, 'cores');
+  const hasTamanhosField = Object.prototype.hasOwnProperty.call(data, 'tamanhos');
+
   // Se mudou cores ou tamanhos, recalcula modelos
-  if (data.cores || data.tamanhos) {
+  if (hasCoresField || hasTamanhosField) {
     const tecidoId = data.tecido_id || existingData.tecido_id;
     const tecido = await getTecidoData(tecidoId);
     
     if (tecido) {
-      const corIds = (data.cores || existingData.modelos.map(m => m.cor_id!)).filter(Boolean) as string[];
+      const coresConfig = hasCoresField
+        ? (data.cores || [])
+        : existingData.modelos
+            .filter(m => Boolean(m.cor_id))
+            .map(m => ({
+              cor_id: m.cor_id!,
+              estoque: m.estoque,
+            }));
+      const corIds = coresConfig.map(c => c.cor_id).filter(Boolean) as string[];
+
+      if (corIds.length === 0) {
+        throw new Error('Pelo menos uma cor deve ser selecionada');
+      }
       const vinculos = await getCorTecidoData(tecidoId, corIds);
 
       if (vinculos.length === 0) {
         throw new Error('Nenhum vínculo cor-tecido encontrado para as cores selecionadas');
       }
 
-      const tamanhoIds = data.tamanhos || existingData.tier_variations
-        .find(t => t.tier_name === 'Tamanho')?.options
-        .map((_, i) => existingData.modelos.find(m => m.tier_index[1] === i)?.tamanho_id)
-        .filter(Boolean) as string[] || [];
-      
-      const tamanhos = tamanhoIds.length > 0 ? await getTamanhosData(tamanhoIds) : undefined;
+      const tamanhoIds = hasTamanhosField
+        ? normalizeComprimentoIds(data.tamanhos)
+        : extractComprimentoIdsFromModels(existingData.modelos);
+
+      const tamanhos = buildComprimentosData(tamanhoIds, tecido.largura);
       
       updateData.tier_variations = buildTierVariations(vinculos, tamanhos);
       updateData.modelos = buildModelList(
         tecido.sku,
         vinculos,
         tamanhos,
-        data.cores || existingData.modelos.map(m => ({
-          cor_id: m.cor_id!,
-          estoque: m.estoque,
-        })),
+        coresConfig,
         data.preco_base ?? existingData.preco_base,
-        data.precos_por_tamanho,
+        data.precos_por_tamanho ?? existingData.precos_por_tamanho ?? undefined,
         data.estoque_padrao ?? existingData.estoque_padrao
       );
+
+      if (hasTamanhosField && tamanhoIds.length === 0) {
+        updateData.precos_por_tamanho = null;
+      }
     }
   }
   
   // Atualiza campos simples
   if (data.preco_base !== undefined) updateData.preco_base = data.preco_base;
+  if (data.precificacao !== undefined) updateData.precificacao = data.precificacao;
   if (data.precos_por_tamanho !== undefined) updateData.precos_por_tamanho = data.precos_por_tamanho;
   if (data.estoque_padrao !== undefined) updateData.estoque_padrao = data.estoque_padrao;
   if (data.categoria_id !== undefined) updateData.categoria_id = data.categoria_id;
+  if (data.atributos !== undefined) updateData.atributos = data.atributos;
+  if (data.brand_id !== undefined) updateData.brand_id = data.brand_id;
+  if (data.brand_nome !== undefined) updateData.brand_nome = data.brand_nome;
+  if (data.logistic_info !== undefined) updateData.logistic_info = data.logistic_info;
   if (data.peso !== undefined) updateData.peso = data.peso;
   if (data.dimensoes !== undefined) updateData.dimensoes = data.dimensoes;
+  if (data.video_url !== undefined) updateData.video_url = data.video_url;
   if (data.descricao_customizada !== undefined) updateData.descricao_customizada = data.descricao_customizada;
   if (data.titulo_anuncio !== undefined) updateData.titulo_anuncio = data.titulo_anuncio;
   if (data.usar_imagens_publicas !== undefined) updateData.usar_imagens_publicas = data.usar_imagens_publicas;
   if (data.imagens_principais !== undefined) updateData.imagens_principais = data.imagens_principais;
+  if (data.condition !== undefined) updateData.condition = data.condition;
+  if (data.is_pre_order !== undefined) updateData.is_pre_order = data.is_pre_order;
+  if (data.days_to_ship !== undefined) updateData.days_to_ship = data.days_to_ship;
+  if (data.size_chart_id !== undefined) updateData.size_chart_id = data.size_chart_id;
+  if (data.description_type !== undefined) updateData.description_type = data.description_type;
+  if (data.extended_description !== undefined) updateData.extended_description = data.extended_description;
+  if (data.wholesale !== undefined) updateData.wholesale = data.wholesale;
+  if (data.ncm_padrao !== undefined) updateData.ncm_padrao = data.ncm_padrao;
+  if (data.template_id !== undefined) updateData.template_id = data.template_id;
   
   await docRef.update(updateData);
   
@@ -649,7 +719,7 @@ export async function deleteProduct(id: string, userId: string): Promise<boolean
   const data = doc.data() as ShopeeProduct;
   
   // Verifica se o usuário é o dono
-  if (data.created_by !== userId) {
+  if (getProductOwnerId(data) !== userId) {
     throw new Error('Sem permissão para excluir este produto');
   }
 
@@ -696,7 +766,7 @@ export async function publishProduct(
   const product = { id: doc.id, ...doc.data() } as ShopeeProduct;
   
   // Verifica se o usuário é o dono
-  if (product.created_by !== userId) {
+  if (getProductOwnerId(product) !== userId) {
     throw new Error('Sem permissão para publicar este produto');
   }
   
@@ -759,14 +829,50 @@ export async function publishProduct(
   try {
     const accessToken = dryRun ? 'DRY_RUN' : await ensureValidToken(product.shop_id);
 
-    // Busca canais de logística habilitados
+    // Busca canais de logística compatíveis com peso/dimensões
     console.log('Buscando canais de logística...');
-    const logisticInfo = await logisticsService.buildLogisticInfoForProduct(
+    const compatibleLogisticInfo = await logisticsService.buildLogisticInfoForProduct(
       product.shop_id,
       product.peso,
       product.dimensoes
     );
-    console.log(`${logisticInfo.length} canais de logística configurados`);
+
+    const configuredLogisticInfo = Array.isArray(product.logistic_info)
+      ? product.logistic_info
+      : [];
+    const enabledConfiguredLogisticInfo = configuredLogisticInfo.filter((item) => item.enabled);
+
+    let logisticInfo = compatibleLogisticInfo;
+
+    if (configuredLogisticInfo.length > 0 && enabledConfiguredLogisticInfo.length === 0) {
+      throw new Error('Nenhum canal de logística foi habilitado no rascunho');
+    }
+
+    if (enabledConfiguredLogisticInfo.length > 0) {
+      const selectedById = new Map(
+        enabledConfiguredLogisticInfo.map((item) => [item.logistic_id, item] as const)
+      );
+      const selectedCompatible = compatibleLogisticInfo
+        .filter((item) => selectedById.has(item.logistic_id))
+        .map((item) => {
+          const selected = selectedById.get(item.logistic_id)!;
+          return {
+            ...item,
+            ...(selected.size_id ? { size_id: selected.size_id } : {}),
+            ...(selected.is_free !== undefined ? { is_free: selected.is_free } : {}),
+            ...(selected.shipping_fee !== undefined ? { shipping_fee: selected.shipping_fee } : {}),
+          };
+        });
+
+      if (selectedCompatible.length === 0) {
+        throw new Error('Nenhum canal de logística selecionado é compatível com peso/dimensões do produto');
+      }
+
+      logisticInfo = selectedCompatible;
+      console.log(`${logisticInfo.length} canal(is) de logística configurado(s) pela UI`);
+    } else {
+      console.log(`${logisticInfo.length} canal(is) de logística configurado(s) automaticamente`);
+    }
 
     let processedMainImages: string[];
     let processedTierVariations: Array<{ name: string; option_list: Array<{ option: string; image?: { image_id: string } }> }>;
@@ -904,9 +1010,11 @@ export async function publishProduct(
       };
     }
     
-    // Adiciona size chart se disponível
+    // Adiciona size chart se disponível (contrato v2)
     if (product.size_chart_id) {
-      shopeePayload.size_chart = product.size_chart_id;
+      shopeePayload.size_chart_info = {
+        size_chart_id: product.size_chart_id,
+      };
     }
     
     // Adiciona descrição estendida se disponível (para vendedores whitelisted)
@@ -1059,4 +1167,3 @@ export async function publishProduct(
     throw error;
   }
 }
-

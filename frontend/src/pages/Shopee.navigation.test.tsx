@@ -35,12 +35,12 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
 }));
 
 describe('Shopee navigation cards', () => {
-  it('renders Estoque, Criar Anuncio and Tamanhos cards without Pedidos', () => {
+  it('renders Estoque and Criar Anuncio cards without Pedidos and Tamanhos', () => {
     render(<Shopee />);
 
     expect(screen.getByRole('button', { name: /Estoque/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Criar Anuncio/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Tamanhos/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Tamanhos/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Pedidos/i })).not.toBeInTheDocument();
   });
 
@@ -50,13 +50,5 @@ describe('Shopee navigation cards', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Criar Anuncio/i }));
     expect(onNavigateToAnuncios).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls tamanhos callback when clicking Tamanhos', () => {
-    const onNavigateToTamanhos = vi.fn();
-    render(<Shopee onNavigateToTamanhos={onNavigateToTamanhos} />);
-
-    fireEvent.click(screen.getByRole('button', { name: /Tamanhos/i }));
-    expect(onNavigateToTamanhos).toHaveBeenCalledTimes(1);
   });
 });

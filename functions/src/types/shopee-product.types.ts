@@ -56,6 +56,38 @@ export interface ProductModel {
 }
 
 /**
+ * Parâmetros de precificação Shopee no anúncio
+ */
+export interface PrecificacaoShopee {
+  custo_metro: number;
+  margem_liquida_percentual: number;
+  modo_margem_lucro?: 'percentual' | 'valor_fixo';
+  margem_lucro_fixa?: number;
+  margem_por_tamanho?: Record<string, {
+    modo: 'percentual' | 'valor_fixo';
+    valor: number;
+  }>;
+  comissao_percentual: number;
+  taxa_fixa_item: number;
+  valor_minimo_baixo_valor: number;
+  adicional_baixo_valor: number;
+  teto_comissao: number;
+  aplicar_teto: boolean;
+  aplicar_baixo_valor: boolean;
+}
+
+/**
+ * Configuracao de logistica por item enviada no add_item
+ */
+export interface ProductLogisticInfo {
+  logistic_id: number;
+  enabled: boolean;
+  shipping_fee?: number;
+  size_id?: string;
+  is_free?: boolean;
+}
+
+/**
  * Snapshot dos dados na Shopee (para sincronização)
  */
 export interface ShopeeDataSnapshot {
@@ -100,7 +132,8 @@ export interface ShopeeProduct {
   
   // Configurações de preço e estoque
   preco_base: number;
-  precos_por_tamanho?: Record<string, number> | null; // Preço por tamanho (quando há tamanhos)
+  precificacao?: PrecificacaoShopee;
+  precos_por_tamanho?: Record<string, number> | null; // Preço por comprimento (quando há segunda variação)
   estoque_padrao: number;
   
   // Categoria
@@ -113,6 +146,9 @@ export interface ShopeeProduct {
   // Marca (brand)
   brand_id?: number;
   brand_nome?: string;
+
+  // Logistica customizada selecionada no formulario
+  logistic_info?: ProductLogisticInfo[];
   
   // Dimensões e peso
   peso: number; // kg
@@ -178,9 +214,10 @@ export interface CreateShopeeProductData {
     cor_id: string;
     estoque: number;
   }>;
-  tamanhos?: string[]; // IDs dos tamanhos selecionados
-  precos_por_tamanho?: Record<string, number>; // Preço por tamanho (tamanhoId -> preço)
-  preco_base: number; // Preço único quando não há tamanhos
+  tamanhos?: string[]; // Comprimentos selecionados ("1", "2", "3")
+  precos_por_tamanho?: Record<string, number>; // Preço por comprimento (id -> preço)
+  preco_base: number; // Preço único quando não há comprimentos selecionados
+  precificacao?: PrecificacaoShopee;
   estoque_padrao: number;
   categoria_id: number;
   peso: number;
@@ -200,6 +237,7 @@ export interface CreateShopeeProductData {
   atributos?: ProductAttributeValue[];
   brand_id?: number;
   brand_nome?: string;
+  logistic_info?: ProductLogisticInfo[];
   condition?: ProductCondition;
   is_pre_order?: boolean;
   days_to_ship?: number;

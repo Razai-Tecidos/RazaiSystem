@@ -128,9 +128,15 @@ export async function getDtsLimits(shopId: number, categoryId: number): Promise<
 /**
  * Busca size charts disponíveis para a loja
  */
-export async function getSizeCharts(shopId: number): Promise<Array<{
+export async function getSizeCharts(
+  shopId: number,
+  categoryId: number,
+  pageSize: number = 50,
+  cursor?: string
+): Promise<Array<{
   size_chart_id: number;
   size_chart_name: string;
+  name: string;
 }>> {
   try {
     const accessToken = await ensureValidToken(shopId);
@@ -142,12 +148,18 @@ export async function getSizeCharts(shopId: number): Promise<Array<{
       method: 'GET',
       shopId,
       accessToken,
+      query: {
+        category_id: categoryId,
+        page_size: pageSize,
+        ...(cursor ? { cursor } : {}),
+      },
     }) as {
       error?: string;
       response?: {
         size_chart_list: Array<{
           size_chart_id: number;
-          size_chart_name: string;
+          size_chart_name?: string;
+          name?: string;
         }>;
       };
     };
@@ -157,7 +169,14 @@ export async function getSizeCharts(shopId: number): Promise<Array<{
       return [];
     }
     
-    return response.response?.size_chart_list || [];
+    return (response.response?.size_chart_list || []).map((item) => {
+      const resolvedName = item.name || item.size_chart_name || `Size Chart #${item.size_chart_id}`;
+      return {
+        size_chart_id: item.size_chart_id,
+        size_chart_name: item.size_chart_name || resolvedName,
+        name: resolvedName,
+      };
+    });
   } catch (error: any) {
     console.warn('Erro ao buscar size charts:', error.message);
     return [];
@@ -166,19 +185,15 @@ export async function getSizeCharts(shopId: number): Promise<Array<{
 
 /**
  * Verifica se a categoria suporta size chart
- * Nota: A API /api/v2/product/support_size_chart nao existe no modulo product
- * (apenas em globalproductcb_seller_only). Retornamos true por padrao
- * e deixamos a validacao para a API add_item.
+ * Baseado em get_item_limit.size_chart_supported
  */
 export async function checkSizeChartSupport(shopId: number, categoryId: number): Promise<{
   supported: boolean;
   sizeChartType?: string;
 }> {
-  // A API support_size_chart nao existe no modulo product (apenas cross-border)
-  // Retornamos supported=true para permitir selecao de size chart
-  // A API add_item validara se o size chart e aplicavel
+  const supported = await isSizeChartSupported(shopId, categoryId);
   return {
-    supported: true,
+    supported,
     sizeChartType: undefined,
   };
 }

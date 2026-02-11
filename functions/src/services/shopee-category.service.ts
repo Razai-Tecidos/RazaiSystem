@@ -172,29 +172,50 @@ export async function getCategoryPath(shopId: number, categoryId: number): Promi
  */
 export async function getCategoryAttributes(shopId: number, categoryId: number): Promise<ShopeeCategoryAttribute[]> {
   const accessToken = await ensureValidToken(shopId);
-  
-  const response = await callShopeeApi({
-    path: '/api/v2/product/get_attribute_tree',
-    method: 'GET',
-    shopId,
-    accessToken,
-    query: {
-      category_id: categoryId,
-      language: 'pt-BR',
-    },
-  }) as {
-    error?: string;
-    message?: string;
-    response?: {
-      attribute_list: ShopeeCategoryAttribute[];
-    };
-  };
-  
-  if (response.error) {
-    throw new Error(`Erro ao buscar atributos: ${response.error} - ${response.message}`);
+
+  const queryAttempts: Array<Record<string, string | number | boolean>> = [
+    // Contrato atual da OpenAPI v2
+    { category_id_list: String(categoryId), language: 'pt-BR' },
+    // Compatibilidade com variantes observadas em alguns ambientes
+    { category_ids: String(categoryId), language: 'pt-BR' },
+    { category_id: categoryId, language: 'pt-BR' },
+  ];
+
+  let lastErrorMessage: string | null = null;
+
+  for (let attempt = 0; attempt < queryAttempts.length; attempt += 1) {
+    try {
+      const response = await callShopeeApi({
+        path: '/api/v2/product/get_attribute_tree',
+        method: 'GET',
+        shopId,
+        accessToken,
+        query: queryAttempts[attempt],
+      }) as {
+        error?: string;
+        message?: string;
+        response?: {
+          attribute_list: ShopeeCategoryAttribute[];
+        };
+      };
+
+      if (!response.error) {
+        return response.response?.attribute_list || [];
+      }
+
+      lastErrorMessage = `${response.error} - ${response.message || 'sem detalhes'}`;
+      console.warn(
+        `[getCategoryAttributes] tentativa ${attempt + 1}/${queryAttempts.length} falhou: ${lastErrorMessage}`
+      );
+    } catch (error: any) {
+      lastErrorMessage = error?.message || 'falha ao chamar get_attribute_tree';
+      console.warn(
+        `[getCategoryAttributes] tentativa ${attempt + 1}/${queryAttempts.length} falhou com exceção: ${lastErrorMessage}`
+      );
+    }
   }
-  
-  return response.response?.attribute_list || [];
+
+  throw new Error(`Erro ao buscar atributos: ${lastErrorMessage || 'falha de contrato no endpoint get_attribute_tree'}`);
 }
 
 /**

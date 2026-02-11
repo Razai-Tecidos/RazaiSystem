@@ -142,6 +142,17 @@ A autenticação é restrita por email. Configure emails autorizados no Firebase
 - `npm run install:all` - Instala dependências de todos os projetos
 - `npm run encoding:fix` - Corrige mojibake e normaliza arquivos texto para UTF-8
 - `npm run encoding:check` - Verifica se ainda existe mojibake/encoding inconsistente
+- `npm run encoding:check:staged` - Verifica apenas arquivos em stage (usado no pre-commit)
+
+### Proteção anti-mojibake (recomendado)
+
+Ative o hook versionado do repositório uma vez:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Com isso, todo commit executa `encoding:check:staged` e bloqueia texto com encoding quebrado antes de entrar no git.
 
 ### Cloud Functions (dentro de `functions/`)
 

@@ -14,8 +14,9 @@ import { useTamanhos } from '@/hooks/useTamanhos';
 import { useShopeeCategories } from '@/hooks/useShopeeCategories';
 import { useShopeeProducts } from '@/hooks/useShopeeProducts';
 import { useShopee } from '@/hooks/useShopee';
+import { useShopeePreferences } from '@/hooks/useShopeePreferences';
 import { Tecido } from '@/types/tecido.types';
-import { ShopeeCategory, CreateShopeeProductData, ShopeeProduct, ProductAttributeValue, ExtendedDescription, WholesaleTier } from '@/types/shopee-product.types';
+import { ShopeeCategory, CreateShopeeProductData, ShopeeProduct, ProductAttributeValue, ExtendedDescription, WholesaleTier, PrecificacaoShopee, ProductLogisticInfo } from '@/types/shopee-product.types';
 import { CategoryAttributes } from '@/components/Shopee/CategoryAttributes';
 import { BrandSelector } from '@/components/Shopee/BrandSelector';
 import { ShippingConfig } from '@/components/Shopee/ShippingConfig';
@@ -24,6 +25,7 @@ import { WholesaleConfig } from '@/components/Shopee/WholesaleConfig';
 import { SizeChartSelector } from '@/components/Shopee/SizeChartSelector';
 import { AdPreview } from '@/components/Shopee/AdPreview';
 import { generateBrandOverlay } from '@/lib/brandOverlay';
+import { ShopeePricingParams, ShopeeMarginConfig, ShopeeMarginMode, ShopeeMarginOverridesByLength, DEFAULT_CNPJ_PRICING_PARAMS, calculateLengthPrices, calculateNetProfitReais, calculateSuggestedPrice, roundUpToPreferredCents, validatePricingParams } from '@/lib/shopeePricing';
 import { FieldHint } from '@/components/Shopee/FieldHint';
 import { FiscalInfo } from '@/components/Shopee/FiscalInfo';
 import { listMosaicosByTecido } from '@/lib/firebase/gestao-imagens';
@@ -54,7 +56,7 @@ interface CriarAnuncioShopeeProps {
   draftId?: string;
 }
 
-type Step = 'tecido' | 'imagens' | 'cores' | 'configuracoes' | 'preview';
+type Step = 'tecido' | 'cores' | 'tamanhos_precificacao' | 'imagens' | 'configuracoes' | 'preview';
 
 interface CorConfig {
   cor_id: string;
@@ -66,6 +68,59 @@ interface CorConfig {
   selected: boolean;
 }
 
+type MargemPorTamanho = Record<string, ShopeeMarginConfig>;
+
+const STEP_ORDER: Step[] = ['tecido', 'cores', 'tamanhos_precificacao', 'imagens', 'configuracoes', 'preview'];
+const FORCED_PRICING_FLAGS = {
+  aplicar_teto: true,
+  aplicar_baixo_valor: true,
+} as const;
+
+function extractMetersFromTamanhoNome(nome?: string): number | null {
+  if (!nome) return null;
+  const match = nome.trim().match(/^(\d+(?:[.,]\d+)?)/);
+  if (!match) return null;
+  const value = Number.parseFloat(match[1].replace(',', '.'));
+  return Number.isFinite(value) ? value : null;
+}
+
+function toPrecificacaoPayload(
+  params: ShopeePricingParams,
+  margemPorTamanho: MargemPorTamanho
+): PrecificacaoShopee {
+  return {
+    custo_metro: params.custo_metro,
+    margem_liquida_percentual: params.margem_liquida_percentual,
+    modo_margem_lucro: params.modo_margem_lucro,
+    margem_lucro_fixa: params.margem_lucro_fixa,
+    margem_por_tamanho: margemPorTamanho,
+    comissao_percentual: params.comissao_percentual,
+    taxa_fixa_item: params.taxa_fixa_item,
+    valor_minimo_baixo_valor: params.valor_minimo_baixo_valor,
+    adicional_baixo_valor: params.adicional_baixo_valor,
+    teto_comissao: params.teto_comissao,
+    aplicar_teto: true,
+    aplicar_baixo_valor: true,
+  };
+}
+
+function fromPrecificacaoPayload(payload?: PrecificacaoShopee | null): ShopeePricingParams {
+  if (!payload) return { ...DEFAULT_CNPJ_PRICING_PARAMS };
+  return {
+    custo_metro: payload.custo_metro ?? DEFAULT_CNPJ_PRICING_PARAMS.custo_metro,
+    margem_liquida_percentual: payload.margem_liquida_percentual ?? DEFAULT_CNPJ_PRICING_PARAMS.margem_liquida_percentual,
+    modo_margem_lucro: payload.modo_margem_lucro ?? DEFAULT_CNPJ_PRICING_PARAMS.modo_margem_lucro,
+    margem_lucro_fixa: payload.margem_lucro_fixa ?? DEFAULT_CNPJ_PRICING_PARAMS.margem_lucro_fixa,
+    comissao_percentual: payload.comissao_percentual ?? DEFAULT_CNPJ_PRICING_PARAMS.comissao_percentual,
+    taxa_fixa_item: payload.taxa_fixa_item ?? DEFAULT_CNPJ_PRICING_PARAMS.taxa_fixa_item,
+    valor_minimo_baixo_valor: payload.valor_minimo_baixo_valor ?? DEFAULT_CNPJ_PRICING_PARAMS.valor_minimo_baixo_valor,
+    adicional_baixo_valor: payload.adicional_baixo_valor ?? DEFAULT_CNPJ_PRICING_PARAMS.adicional_baixo_valor,
+    teto_comissao: payload.teto_comissao ?? DEFAULT_CNPJ_PRICING_PARAMS.teto_comissao,
+    aplicar_teto: true,
+    aplicar_baixo_valor: true,
+  };
+}
+
 export function CriarAnuncioShopee({ 
   onNavigateHome, 
   onNavigateToAnuncios,
@@ -74,7 +129,7 @@ export function CriarAnuncioShopee({
   const { toast } = useToast();
   const { tecidos, loading: loadingTecidos } = useTecidos();
   const { vinculos, getVinculosByTecido } = useCorTecido();
-  const { tamanhos, loading: loadingTamanhos } = useTamanhos();
+  const { tamanhos, loading: loadingTamanhos, error: errorTamanhos } = useTamanhos();
   const { 
     loading: loadingCategories, 
     error: categoriesError,
@@ -88,9 +143,13 @@ export function CriarAnuncioShopee({
     publishProduct,
     getDefaultValues,
     getProduct,
-    saving,
+    saving: savingDraft,
     publishing,
   } = useShopeeProducts();
+  const {
+    savePreferences: saveShopeePreferences,
+    saving: savingPreferences,
+  } = useShopeePreferences();
   const { shops } = useShopee();
 
   // Estado do formulário
@@ -100,6 +159,9 @@ export function CriarAnuncioShopee({
   const [selectedTamanhos, setSelectedTamanhos] = useState<string[]>([]);
   const [precoUnico, setPrecoUnico] = useState<number>(0);
   const [precosPorTamanho, setPrecosPorTamanho] = useState<Record<string, number>>({});
+  const [margemPorTamanho, setMargemPorTamanho] = useState<MargemPorTamanho>({});
+  const [precificacaoParams, setPrecificacaoParams] = useState<ShopeePricingParams>({ ...DEFAULT_CNPJ_PRICING_PARAMS });
+  const [pricingError, setPricingError] = useState<string | null>(null);
   const [estoquePadrao, setEstoquePadrao] = useState<number>(100);
   const [categoriaId, setCategoriaId] = useState<number | null>(null);
   const [categoriaNome, setCategoriaNome] = useState<string>('');
@@ -119,7 +181,7 @@ export function CriarAnuncioShopee({
   const [atributos, setAtributos] = useState<ProductAttributeValue[]>([]);
   const [brandId, setBrandId] = useState<number | undefined>(0);
   const [brandNome, setBrandNome] = useState<string>('');
-  const [logisticInfo, setLogisticInfo] = useState<Array<{ logistic_id: number; enabled: boolean; shipping_fee?: number; is_free?: boolean }>>([]);
+  const [logisticInfo, setLogisticInfo] = useState<ProductLogisticInfo[]>([]);
   const [extendedDescEnabled, setExtendedDescEnabled] = useState(false);
   const [extendedDescription, setExtendedDescription] = useState<ExtendedDescription | undefined>(undefined);
   const [wholesaleEnabled, setWholesaleEnabled] = useState(false);
@@ -142,6 +204,67 @@ export function CriarAnuncioShopee({
 
   // Shop selecionada
   const selectedShop = shops[0];
+
+  const availableTamanhos = useMemo(
+    () => tamanhos.filter((tamanho) => extractMetersFromTamanhoNome(tamanho.nome) !== 4),
+    [tamanhos]
+  );
+
+  const normalizePricingParams = useCallback(
+    (params: ShopeePricingParams): ShopeePricingParams => ({
+      ...params,
+      ...FORCED_PRICING_FLAGS,
+    }),
+    []
+  );
+
+  const pricingParamErrors = useMemo(
+    () => validatePricingParams(normalizePricingParams(precificacaoParams)),
+    [precificacaoParams, normalizePricingParams]
+  );
+
+  const getGlobalMarginDefault = useCallback((mode: ShopeeMarginMode) => {
+    if (mode === 'valor_fixo') {
+      return precificacaoParams.margem_lucro_fixa;
+    }
+    return precificacaoParams.margem_liquida_percentual;
+  }, [precificacaoParams.margem_lucro_fixa, precificacaoParams.margem_liquida_percentual]);
+
+  const getMarginConfigForSize = useCallback((tamanhoId: string): ShopeeMarginConfig => {
+    return margemPorTamanho[tamanhoId] ?? {
+      modo: precificacaoParams.modo_margem_lucro,
+      valor: getGlobalMarginDefault(precificacaoParams.modo_margem_lucro),
+    };
+  }, [margemPorTamanho, precificacaoParams.modo_margem_lucro, getGlobalMarginDefault]);
+
+  useEffect(() => {
+    const allowedIds = new Set(availableTamanhos.map((tamanho) => tamanho.id));
+
+    setSelectedTamanhos((previous) => {
+      const next = previous.filter((id) => allowedIds.has(id));
+      return next.length === previous.length ? previous : next;
+    });
+
+    setPrecosPorTamanho((previous) => {
+      const next = Object.entries(previous).reduce<Record<string, number>>((acc, [id, value]) => {
+        if (allowedIds.has(id)) {
+          acc[id] = value;
+        }
+        return acc;
+      }, {});
+      return Object.keys(next).length === Object.keys(previous).length ? previous : next;
+    });
+
+    setMargemPorTamanho((previous) => {
+      const next = Object.entries(previous).reduce<MargemPorTamanho>((acc, [id, value]) => {
+        if (allowedIds.has(id)) {
+          acc[id] = value;
+        }
+        return acc;
+      }, {});
+      return Object.keys(next).length === Object.keys(previous).length ? previous : next;
+    });
+  }, [availableTamanhos]);
 
   // Carrega categorias quando shop está disponível (silencioso na carga inicial)
   useEffect(() => {
@@ -221,6 +344,10 @@ export function CriarAnuncioShopee({
       await getVinculosByTecido(tecido.id);
     }
     setPrecoUnico(product.preco_base);
+    setPrecosPorTamanho(product.precos_por_tamanho || {});
+    setPrecificacaoParams(normalizePricingParams(fromPrecificacaoPayload(product.precificacao)));
+    setMargemPorTamanho(product.precificacao?.margem_por_tamanho || {});
+    setPricingError(null);
     setEstoquePadrao(product.estoque_padrao);
     setCategoriaId(product.categoria_id);
     setCategoriaNome(product.categoria_nome || '');
@@ -230,6 +357,16 @@ export function CriarAnuncioShopee({
     setTituloAnuncio(product.titulo_anuncio || '');
     setTituloEditadoManual(Boolean(product.titulo_anuncio));
     setUsarImagensPublicas(product.usar_imagens_publicas);
+    setAtributos(product.atributos || []);
+    setBrandId(product.brand_id ?? 0);
+    setBrandNome(product.brand_nome || '');
+    setLogisticInfo(product.logistic_info || []);
+    setExtendedDescEnabled(product.description_type === 'extended');
+    setExtendedDescription(product.extended_description || undefined);
+    setWholesaleEnabled(Boolean(product.wholesale && product.wholesale.length > 0));
+    setWholesaleTiers(product.wholesale || []);
+    setSizeChartId(product.size_chart_id);
+    setNcmPadrao(product.ncm_padrao || '58013600');
     if (product.imagens_principais && product.imagens_principais.length > 0) {
       setImagensPrincipais(product.imagens_principais);
     }
@@ -258,7 +395,11 @@ export function CriarAnuncioShopee({
       .find(t => t.tier_name === 'Tamanho')?.options
       .map((_, i) => product.modelos.find(m => m.tier_index[1] === i)?.tamanho_id)
       .filter(Boolean) as string[] || [];
-    setSelectedTamanhos(tamanhoIds);
+    const filteredTamanhoIds = tamanhoIds.filter((id) => {
+      const tamanho = tamanhos.find((item) => item.id === id);
+      return extractMetersFromTamanhoNome(tamanho?.nome) !== 4;
+    });
+    setSelectedTamanhos(filteredTamanhoIds);
   };
 
   const loadDefaultValues = async () => {
@@ -273,6 +414,20 @@ export function CriarAnuncioShopee({
       setUsarImagensPublicas(defaults.usar_imagens_publicas);
       if (defaults.descricao_template) setDescricaoCustomizada(defaults.descricao_template);
       if (defaults.ncm_padrao) setNcmPadrao(defaults.ncm_padrao);
+      setPrecificacaoParams((current) => ({
+        ...current,
+        comissao_percentual: defaults.comissao_percentual_padrao ?? current.comissao_percentual,
+        taxa_fixa_item: defaults.taxa_fixa_item_padrao ?? current.taxa_fixa_item,
+        margem_liquida_percentual: defaults.margem_liquida_percentual_padrao ?? current.margem_liquida_percentual,
+        modo_margem_lucro: defaults.modo_margem_lucro_padrao ?? current.modo_margem_lucro,
+        margem_lucro_fixa: defaults.margem_lucro_fixa_padrao ?? current.margem_lucro_fixa,
+        valor_minimo_baixo_valor: defaults.valor_minimo_baixo_valor_padrao ?? current.valor_minimo_baixo_valor,
+        adicional_baixo_valor: defaults.adicional_baixo_valor_padrao ?? current.adicional_baixo_valor,
+        teto_comissao: defaults.teto_comissao_padrao ?? current.teto_comissao,
+        aplicar_teto: true,
+        aplicar_baixo_valor: true,
+      }));
+      setPricingError(null);
     }
   };
 
@@ -324,6 +479,89 @@ export function CriarAnuncioShopee({
     ));
   };
 
+  const applySuggestedPrices = useCallback((
+    params: ShopeePricingParams = precificacaoParams,
+    tamanhoIds: string[] = selectedTamanhos,
+    marginsBySize: MargemPorTamanho = margemPorTamanho
+  ) => {
+    const effectiveParams = normalizePricingParams(params);
+    const errors = validatePricingParams(effectiveParams);
+    if (errors.length > 0) {
+      setPricingError(errors[0]);
+      return false;
+    }
+
+    try {
+      if (tamanhoIds.length > 0) {
+        const selectedLengths = tamanhoIds
+          .map((id) => availableTamanhos.find((t) => t.id === id))
+          .filter((tamanho): tamanho is (typeof availableTamanhos)[number] => Boolean(tamanho))
+          .map((tamanho) => ({ id: tamanho.id, metros: extractMetersFromTamanhoNome(tamanho.nome) || 1 }));
+        const marginOverrides = selectedLengths.reduce<ShopeeMarginOverridesByLength>((acc, item) => {
+          const margin = marginsBySize[item.id];
+          if (margin) {
+            acc[item.id] = margin;
+          }
+          return acc;
+        }, {});
+        const suggestedPrices = calculateLengthPrices(effectiveParams, selectedLengths, marginOverrides);
+        const roundedPrices = Object.entries(suggestedPrices).reduce<Record<string, number>>((acc, [id, price]) => {
+          acc[id] = roundUpToPreferredCents(price);
+          return acc;
+        }, {});
+        setPrecosPorTamanho(roundedPrices);
+      } else {
+        setPrecoUnico(calculateSuggestedPrice(effectiveParams, 1));
+        setPrecosPorTamanho({});
+      }
+      setPricingError(null);
+      return true;
+    } catch (error: any) {
+      setPricingError(error.message || 'Nao foi possivel calcular os precos sugeridos.');
+      return false;
+    }
+  }, [precificacaoParams, selectedTamanhos, margemPorTamanho, availableTamanhos, normalizePricingParams]);
+
+  const updatePrecificacaoParam = useCallback((patch: Partial<ShopeePricingParams>) => {
+    const nextParams = normalizePricingParams({ ...precificacaoParams, ...patch });
+    setPrecificacaoParams(nextParams);
+    applySuggestedPrices(nextParams, selectedTamanhos, margemPorTamanho);
+  }, [precificacaoParams, applySuggestedPrices, selectedTamanhos, margemPorTamanho, normalizePricingParams]);
+
+  const updateMargemPorTamanho = useCallback((
+    tamanhoId: string,
+    patch: Partial<ShopeeMarginConfig>
+  ) => {
+    setMargemPorTamanho((previous) => {
+      const current = previous[tamanhoId] ?? getMarginConfigForSize(tamanhoId);
+      const nextConfig: ShopeeMarginConfig = {
+        modo: patch.modo ?? current.modo,
+        valor: patch.valor ?? current.valor,
+      };
+      const nextMargins = {
+        ...previous,
+        [tamanhoId]: nextConfig,
+      };
+      applySuggestedPrices(precificacaoParams, selectedTamanhos, nextMargins);
+      return nextMargins;
+    });
+  }, [applySuggestedPrices, getMarginConfigForSize, precificacaoParams, selectedTamanhos]);
+
+  const savePricingDefaults = useCallback(async () => {
+    await saveShopeePreferences({
+      comissao_percentual_padrao: precificacaoParams.comissao_percentual,
+      taxa_fixa_item_padrao: precificacaoParams.taxa_fixa_item,
+      margem_liquida_percentual_padrao: precificacaoParams.margem_liquida_percentual,
+      modo_margem_lucro_padrao: precificacaoParams.modo_margem_lucro,
+      margem_lucro_fixa_padrao: precificacaoParams.margem_lucro_fixa,
+      valor_minimo_baixo_valor_padrao: precificacaoParams.valor_minimo_baixo_valor,
+      adicional_baixo_valor_padrao: precificacaoParams.adicional_baixo_valor,
+      teto_comissao_padrao: precificacaoParams.teto_comissao,
+      aplicar_teto_padrao: true,
+      aplicar_baixo_valor_padrao: true,
+    });
+  }, [saveShopeePreferences, precificacaoParams]);
+
   // Atualiza preço de um tamanho
   const updatePrecoTamanho = (tamanhoId: string, value: number) => {
     setPrecosPorTamanho(prev => ({ ...prev, [tamanhoId]: value }));
@@ -331,11 +569,21 @@ export function CriarAnuncioShopee({
 
   // Toggle seleção de tamanho
   const toggleTamanhoSelection = (tamanhoId: string) => {
-    setSelectedTamanhos(prev => 
-      prev.includes(tamanhoId) 
+    setSelectedTamanhos(prev => {
+      const nextSelection = prev.includes(tamanhoId)
         ? prev.filter(id => id !== tamanhoId)
-        : [...prev, tamanhoId]
-    );
+        : [...prev, tamanhoId];
+
+      const nextMargins = nextSelection.reduce<MargemPorTamanho>((acc, id) => {
+        if (margemPorTamanho[id]) {
+          acc[id] = margemPorTamanho[id];
+        }
+        return acc;
+      }, {});
+      setMargemPorTamanho(nextMargins);
+      applySuggestedPrices(precificacaoParams, nextSelection, nextMargins);
+      return nextSelection;
+    });
   };
 
   // Navegação de categorias
@@ -372,6 +620,36 @@ export function CriarAnuncioShopee({
     ? (precoMinimo === Infinity ? 0 : precoMinimo)
     : precoUnico;
 
+  const lucroLiquidoPorTamanho = useMemo(() => {
+    return selectedTamanhos.reduce<Record<string, number | null>>((acc, id) => {
+      const tamanho = tamanhos.find((t) => t.id === id);
+      const metros = parseFloat(tamanho?.nome || '') || 1;
+      const price = precosPorTamanho[id] || 0;
+      if (price <= 0) {
+        acc[id] = null;
+        return acc;
+      }
+
+      try {
+        acc[id] = calculateNetProfitReais(precificacaoParams, metros, price);
+      } catch {
+        acc[id] = null;
+      }
+      return acc;
+    }, {});
+  }, [selectedTamanhos, tamanhos, precosPorTamanho, precificacaoParams]);
+
+  const lucroLiquidoPrecoUnico = useMemo(() => {
+    if (precoUnico <= 0) {
+      return null;
+    }
+    try {
+      return calculateNetProfitReais(precificacaoParams, 1, precoUnico);
+    } catch {
+      return null;
+    }
+  }, [precoUnico, precificacaoParams]);
+
   const tituloTrim = tituloAnuncio.trim();
   const tituloValido = tituloTrim.length === 0 || (tituloTrim.length >= 20 && tituloTrim.length <= 120);
 
@@ -379,10 +657,13 @@ export function CriarAnuncioShopee({
   const canProceedFromTecido = selectedTecido !== null;
   const canProceedFromImagens = true;
   const canProceedFromCores = coresConfig.some(c => c.selected);
+  const hasEnabledLogistics = logisticInfo.some((channel) => channel.enabled);
+  const canProceedFromTamanhosPrecificacao = temPrecoValido && !pricingError && pricingParamErrors.length === 0;
   const canProceedFromConfiguracoes = 
     temPrecoValido && 
     categoriaId !== null && 
     tituloValido &&
+    hasEnabledLogistics &&
     peso > 0 && 
     dimensoes.comprimento > 0 && 
     dimensoes.largura > 0 && 
@@ -390,18 +671,16 @@ export function CriarAnuncioShopee({
 
   // Navegação entre etapas
   const goToNextStep = () => {
-    const steps: Step[] = ['tecido', 'imagens', 'cores', 'configuracoes', 'preview'];
-    const currentIndex = steps.indexOf(currentStep);
-    if (currentIndex < steps.length - 1) {
-      setCurrentStep(steps[currentIndex + 1]);
+    const currentIndex = STEP_ORDER.indexOf(currentStep);
+    if (currentIndex < STEP_ORDER.length - 1) {
+      setCurrentStep(STEP_ORDER[currentIndex + 1]);
     }
   };
 
   const goToPreviousStep = () => {
-    const steps: Step[] = ['tecido', 'imagens', 'cores', 'configuracoes', 'preview'];
-    const currentIndex = steps.indexOf(currentStep);
+    const currentIndex = STEP_ORDER.indexOf(currentStep);
     if (currentIndex > 0) {
-      setCurrentStep(steps[currentIndex - 1]);
+      setCurrentStep(STEP_ORDER[currentIndex - 1]);
     }
   };
 
@@ -445,6 +724,7 @@ export function CriarAnuncioShopee({
       tamanhos: selectedTamanhos.length > 0 ? selectedTamanhos : undefined,
       precos_por_tamanho: selectedTamanhos.length > 0 ? precosPorTamanho : undefined,
       preco_base: precoBaseParaApi,
+      precificacao: toPrecificacaoPayload(precificacaoParams, margemPorTamanho),
       estoque_padrao: estoquePadrao,
       categoria_id: categoriaId!,
       peso,
@@ -456,6 +736,7 @@ export function CriarAnuncioShopee({
       atributos: atributos.length > 0 ? atributos : undefined,
       brand_id: brandId,
       brand_nome: brandNome || undefined,
+      logistic_info: logisticInfo,
       size_chart_id: sizeChartId,
       description_type: extendedDescEnabled ? 'extended' : 'normal',
       extended_description: extendedDescEnabled ? extendedDescription : undefined,
@@ -553,8 +834,15 @@ export function CriarAnuncioShopee({
   // Progresso da etapa atual
   const stepProgress = useMemo(() => {
     if (currentStep === 'tecido') return selectedTecido ? 100 : 0;
-    if (currentStep === 'imagens') return imagensPrincipais.length > 0 ? 100 : 0;
     if (currentStep === 'cores') return selectedCores.length > 0 ? 100 : 0;
+    if (currentStep === 'tamanhos_precificacao') {
+      let filled = 0;
+      if (selectedTamanhos.length > 0 || precoUnico > 0) filled++;
+      if (temPrecoValido) filled++;
+      if (pricingParamErrors.length === 0) filled++;
+      return Math.round((filled / 3) * 100);
+    }
+    if (currentStep === 'imagens') return imagensPrincipais.length > 0 ? 100 : 0;
     if (currentStep === 'configuracoes') {
       const totalFields = 7;
       let filled = 0;
@@ -568,7 +856,7 @@ export function CriarAnuncioShopee({
       return Math.round((filled / totalFields) * 100);
     }
     return 100;
-  }, [currentStep, selectedTecido, imagensPrincipais.length, selectedCores, temPrecoValido, estoquePadrao, tituloValido, categoriaId, peso, dimensoes]);
+  }, [currentStep, selectedTecido, imagensPrincipais.length, selectedCores, selectedTamanhos.length, precoUnico, temPrecoValido, pricingParamErrors.length, estoquePadrao, tituloValido, categoriaId, peso, dimensoes]);
 
   // Gerar overlays de marca quando entrar no preview
   useEffect(() => {
@@ -843,12 +1131,13 @@ export function CriarAnuncioShopee({
             <div className="flex items-center justify-between mb-2">
               {[
                 { key: 'tecido', label: 'Tecido', icon: Package },
-                { key: 'imagens', label: 'Imagens', icon: ImageIcon },
                 { key: 'cores', label: 'Cores', icon: Palette },
+                { key: 'tamanhos_precificacao', label: 'Preços', icon: DollarSign },
+                { key: 'imagens', label: 'Imagens', icon: ImageIcon },
                 { key: 'configuracoes', label: 'Config', icon: Ruler },
                 { key: 'preview', label: 'Preview', icon: ImageIcon },
               ].map((step, index) => {
-                const stepIndex = ['tecido', 'imagens', 'cores', 'configuracoes', 'preview'].indexOf(currentStep);
+                const stepIndex = STEP_ORDER.indexOf(currentStep);
                 const isCompleted = index < stepIndex;
                 const isCurrent = currentStep === step.key;
                 return (
@@ -890,12 +1179,13 @@ export function CriarAnuncioShopee({
             <div className="flex items-center justify-center space-x-4">
               {[
                 { key: 'tecido', label: 'Tecido', icon: Package },
-                { key: 'imagens', label: 'Imagens', icon: ImageIcon },
                 { key: 'cores', label: 'Cores', icon: Palette },
+                { key: 'tamanhos_precificacao', label: 'Tamanhos e Preços', icon: DollarSign },
+                { key: 'imagens', label: 'Imagens', icon: ImageIcon },
                 { key: 'configuracoes', label: 'Configurações', icon: Ruler },
                 { key: 'preview', label: 'Preview', icon: ImageIcon },
               ].map((step, index) => {
-                const stepIndex = ['tecido', 'imagens', 'cores', 'configuracoes', 'preview'].indexOf(currentStep);
+                const stepIndex = STEP_ORDER.indexOf(currentStep);
                 const isCompleted = index < stepIndex;
                 const isCurrent = currentStep === step.key;
                 return (
@@ -920,7 +1210,7 @@ export function CriarAnuncioShopee({
                     }`}>
                       {step.label}
                     </span>
-                    {index < 4 && (
+                    {index < STEP_ORDER.length - 1 && (
                       <ChevronRight className="w-5 h-5 mx-2 text-gray-300" />
                     )}
                   </div>
@@ -965,7 +1255,6 @@ export function CriarAnuncioShopee({
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {[1,2,3,4,5,6,7,8].map(i => (
                     <div key={i} className="border-2 border-gray-200 rounded-lg p-4 animate-pulse">
-                      <div className="w-full h-32 bg-gray-200 rounded mb-2" />
                       <div className="h-4 bg-gray-200 rounded w-3/4 mb-1" />
                       <div className="h-3 bg-gray-200 rounded w-1/2" />
                     </div>
@@ -983,13 +1272,6 @@ export function CriarAnuncioShopee({
                           : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                       }`}
                     >
-                      {tecido.imagemPadrao && (
-                        <img
-                          src={tecido.imagemPadrao}
-                          alt={tecido.nome}
-                          className="w-full h-32 object-cover rounded mb-2"
-                        />
-                      )}
                       <h3 className="font-medium text-gray-900">{tecido.nome}</h3>
                       <p className="text-sm text-gray-500">SKU: {tecido.sku}</p>
                       {tecido.largura && (
@@ -1002,12 +1284,12 @@ export function CriarAnuncioShopee({
             </div>
           )}
 
-          {/* Etapa 2: Selecao de Imagens */}
+          {/* Etapa 5: Selecao de Imagens */}
           {currentStep === 'imagens' && (
             <div>
               <h2 className="text-xl font-semibold mb-2">Selecione as Imagens</h2>
               <p className="text-sm text-gray-500 mb-4">
-                Escolha as imagens principais do anuncio antes de configurar cores e demais dados.
+                Escolha as imagens principais depois de definir cores, tamanhos e precificacao.
               </p>
               {renderImageSelectionStep()}
             </div>
@@ -1018,14 +1300,14 @@ export function CriarAnuncioShopee({
             <div>
               <h2 className="text-xl font-semibold mb-2">Selecione as Cores</h2>
               <p className="text-sm text-gray-500 mb-4">
-                Cada cor selecionada será uma variação do anúncio. A imagem vinculada ao tecido será usada como imagem da variação.
+                Cada cor selecionada sera uma variacao do anuncio. A imagem vinculada ao tecido sera usada como imagem da variacao.
               </p>
-              
+
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <FieldHint
-                    label="Cores Disponíveis"
-                    hint="Cores vinculadas a este tecido no sistema. Cada cor vira uma variação de 'Cor' na Shopee."
+                    label="Cores Disponiveis"
+                    hint="Cores vinculadas a este tecido no sistema. Cada cor vira uma variacao de Cor na Shopee."
                   />
                   <Button
                     variant="outline"
@@ -1035,46 +1317,51 @@ export function CriarAnuncioShopee({
                     {coresConfig.every(c => c.selected) ? 'Desmarcar Todas' : 'Selecionar Todas'}
                   </Button>
                 </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                   {coresConfig.map(cor => (
                     <div
                       key={cor.cor_id}
                       onClick={() => toggleCorSelection(cor.cor_id)}
-                      className={`cursor-pointer border-2 rounded-lg p-4 transition-all ${
+                      className={`cursor-pointer border-2 rounded-lg p-3 aspect-square flex flex-col transition-all ${
                         cor.selected
                           ? 'border-blue-600 bg-blue-50 shadow-md'
                           : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                       }`}
                     >
-                      {cor.imagem_url && (
-                        <img
-                          src={cor.imagem_url}
-                          alt={cor.cor_nome}
-                          className="w-full h-24 object-cover rounded mb-2"
-                        />
-                      )}
-                      <div className="flex items-center">
-                        <Checkbox checked={cor.selected} className="mr-2" />
-                        <span className="font-medium">{cor.cor_nome}</span>
+                      <div className="flex-1 min-h-0 bg-white rounded-md border border-gray-100 overflow-hidden">
+                        {cor.imagem_url ? (
+                          <img
+                            src={cor.imagem_url}
+                            alt={cor.cor_nome}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-300">
+                            <ImageIcon className="w-6 h-6" />
+                          </div>
+                        )}
                       </div>
-                      {cor.cor_hex && (
-                        <div
-                          className="w-6 h-6 rounded-full border mt-2"
-                          style={{ backgroundColor: cor.cor_hex }}
-                        />
-                      )}
+                      <div className="flex items-center mt-2">
+                        <Checkbox checked={cor.selected} className="mr-2" />
+                        <span className="font-medium text-sm truncate">{cor.cor_nome}</span>
+                        {cor.cor_hex && (
+                          <div
+                            className="w-4 h-4 rounded-full border ml-auto flex-shrink-0"
+                            style={{ backgroundColor: cor.cor_hex }}
+                          />
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Estoque por Cor */}
               {selectedCores.length > 0 && (
                 <div className="mt-6 border-t pt-6">
                   <FieldHint
                     label="Estoque por Cor"
-                    hint="Quantidade inicial de cada cor. Será sincronizado com o módulo de estoque Shopee."
+                    hint="Quantidade inicial de cada cor. Sera sincronizado com o modulo de estoque Shopee."
                     className="mb-4"
                   />
                   <div className="space-y-3">
@@ -1101,24 +1388,46 @@ export function CriarAnuncioShopee({
                 </div>
               )}
 
-              {/* Seleção de Tamanhos (opcional) */}
-              <div className="mt-6 border-t pt-6">
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  {selectedCores.length > 0
+                    ? `${selectedCores.length} cores selecionadas.`
+                    : 'Selecione pelo menos uma cor para continuar.'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Etapa 4: Tamanhos e Precificacao */}
+          {currentStep === 'tamanhos_precificacao' && (
+            <div>
+              <h2 className="text-xl font-semibold mb-2">Tamanhos e Precificacao</h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Defina os comprimentos e parametros de precificacao para gerar sugestoes automaticas de preco.
+              </p>
+
+              <div className="mt-4">
                 <FieldHint
-                  label="Tamanhos (Opcional)"
-                  hint="Adiciona uma segunda camada de variação (Tier 2). Ex: cada cor terá P, M, G. Se não selecionar, cada cor será uma variação única."
-                  description="Cada combinação cor × tamanho gera um SKU separado na Shopee."
+                  label="Comprimentos"
+                  hint="Selecione os comprimentos que serao publicados. Sem comprimentos selecionados, sera usado preco unico."
                   className="mb-4"
                 />
-                
+
                 {loadingTamanhos ? (
                   <div className="flex gap-2">
-                    {[1,2,3,4].map(i => (
+                    {[1, 2, 3, 4].map(i => (
                       <div key={i} className="h-10 w-16 bg-gray-200 rounded animate-pulse" />
                     ))}
                   </div>
+                ) : availableTamanhos.length === 0 ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    {errorTamanhos
+                      ? `Nao foi possivel carregar os comprimentos: ${errorTamanhos}`
+                      : 'Nenhum comprimento ativo encontrado. Cadastre/ative tamanhos para aparecer aqui.'}
+                  </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {tamanhos.map(tamanho => (
+                    {availableTamanhos.map(tamanho => (
                       <Button
                         key={tamanho.id}
                         variant={selectedTamanhos.includes(tamanho.id) ? 'default' : 'outline'}
@@ -1131,81 +1440,183 @@ export function CriarAnuncioShopee({
                 )}
               </div>
 
-              {/* Preço por Tamanho ou Preço Único */}
-              {selectedCores.length > 0 && (
-                <div className="mt-6 border-t pt-6">
-                  {selectedTamanhos.length > 0 ? (
-                    <>
-                      <FieldHint
-                        label="Preço por Tamanho"
-                        hint="Defina o preço de venda para cada tamanho. O mesmo preço será aplicado a todas as cores. Cada combinação cor × tamanho terá esse preço na Shopee."
-                        required
-                        className="mb-4"
-                      />
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {selectedTamanhos.map(id => {
-                          const tam = tamanhos.find(t => t.id === id);
-                          return (
-                            <div key={id} className="p-3 bg-gray-50 rounded-lg">
-                              <span className="text-sm font-medium block mb-1">{tam?.nome || id}</span>
-                              <div className="relative">
-                                <DollarSign className="absolute left-2 top-2.5 w-3.5 h-3.5 text-gray-400" />
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={precosPorTamanho[id] || ''}
-                                  onChange={(e) => updatePrecoTamanho(id, parseFloat(e.target.value) || 0)}
-                                  className="pl-7 text-sm"
-                                  placeholder="0.00"
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : (
-                    <FieldHint
-                      label="Preço de Venda"
-                      required
-                      hint="Preço de venda aplicado a todas as variações de cor. Mínimo aceito pela Shopee: R$ 1,00."
+              <div className="mt-6 border-t pt-6">
+                <FieldHint
+                  label="Parametros de Precificacao"
+                  hint="Defina custo por metro e margem para gerar precos sugeridos automaticamente."
+                  className="mb-4"
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-xs text-gray-500">Custo por metro (R$)</span>
+                    <Input type="number" step="0.01" min="0" value={precificacaoParams.custo_metro} onChange={(e) => updatePrecificacaoParam({ custo_metro: parseFloat(e.target.value) || 0 })} />
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500">Modo da margem</span>
+                    <select
+                      value={precificacaoParams.modo_margem_lucro}
+                      onChange={(e) => updatePrecificacaoParam({ modo_margem_lucro: e.target.value as ShopeeMarginMode })}
+                      className="mt-1 w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
-                      <div className="relative max-w-xs">
-                        <DollarSign className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={precoUnico || ''}
-                          onChange={(e) => setPrecoUnico(parseFloat(e.target.value) || 0)}
-                          className="pl-10"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </FieldHint>
-                  )}
+                      <option value="percentual">Percentual (%)</option>
+                      <option value="valor_fixo">Valor fixo (R$)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500">
+                      {precificacaoParams.modo_margem_lucro === 'valor_fixo' ? 'Margem liquida fixa (R$)' : 'Margem liquida (%)'}
+                    </span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={precificacaoParams.modo_margem_lucro === 'valor_fixo' ? precificacaoParams.margem_lucro_fixa : precificacaoParams.margem_liquida_percentual}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value) || 0;
+                        if (precificacaoParams.modo_margem_lucro === 'valor_fixo') {
+                          updatePrecificacaoParam({ margem_lucro_fixa: value });
+                        } else {
+                          updatePrecificacaoParam({ margem_liquida_percentual: value });
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {(pricingError || pricingParamErrors.length > 0) && (
+                  <p className="mt-3 text-sm text-red-600">{pricingError || pricingParamErrors[0]}</p>
+                )}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => applySuggestedPrices()}>
+                    Calcular precos sugeridos
+                  </Button>
+                  <Button type="button" variant="outline" onClick={savePricingDefaults} disabled={savingPreferences}>
+                    {savingPreferences ? 'Salvando...' : 'Salvar como padrao'}
+                  </Button>
+                </div>
+              </div>
+
+              {selectedTamanhos.length > 0 && (
+                <div className="mt-6 border-t pt-6">
+                  <FieldHint
+                    label="Margem por Comprimento"
+                    hint="Opcional: defina margem especifica por comprimento. Quando vazio, usa a margem global."
+                    className="mb-4"
+                  />
+                  <div className="space-y-3">
+                    {selectedTamanhos.map((id) => {
+                      const tam = tamanhos.find((t) => t.id === id);
+                      const marginConfig = getMarginConfigForSize(id);
+                      return (
+                        <div key={`margem-${id}`} className="grid grid-cols-1 md:grid-cols-[1fr_180px_180px] gap-3 p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm font-medium text-gray-700 flex items-center">
+                            {tam?.nome || id}
+                          </div>
+                          <select
+                            value={marginConfig.modo}
+                            onChange={(e) => {
+                              const modo = e.target.value as ShopeeMarginMode;
+                              updateMargemPorTamanho(id, { modo, valor: getGlobalMarginDefault(modo) });
+                            }}
+                            className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="percentual">Percentual (%)</option>
+                            <option value="valor_fixo">Valor fixo (R$)</option>
+                          </select>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={marginConfig.valor}
+                            onChange={(e) => updateMargemPorTamanho(id, { valor: parseFloat(e.target.value) || 0 })}
+                            placeholder={marginConfig.modo === 'valor_fixo' ? 'R$ 0,00' : '0%'}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
-              {/* Resumo de combinações */}
-              {selectedCores.length > 0 && (
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    <strong>{totalCombinations}</strong> combinações serão criadas
-                    ({selectedCores.length} cores × {selectedTamanhos.length || 1} tamanhos)
+              <div className="mt-6 border-t pt-6">
+                {selectedTamanhos.length > 0 ? (
+                  <>
+                    <FieldHint
+                      label="Preco por Comprimento"
+                      hint="Alterar parametros de precificacao sobrescreve os valores manuais."
+                      required
+                      className="mb-4"
+                    />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {selectedTamanhos.map(id => {
+                        const tam = tamanhos.find(t => t.id === id);
+                        return (
+                          <div key={id} className="p-3 bg-gray-50 rounded-lg">
+                            <span className="text-sm font-medium block mb-1">{tam?.nome || id}</span>
+                            <div className="relative">
+                              <DollarSign className="absolute left-2 top-2.5 w-3.5 h-3.5 text-gray-400" />
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={precosPorTamanho[id] || ''}
+                                onChange={(e) => updatePrecoTamanho(id, parseFloat(e.target.value) || 0)}
+                                className="pl-7 text-sm"
+                                placeholder="0.00"
+                              />
+                            </div>
+                            {lucroLiquidoPorTamanho[id] !== null && lucroLiquidoPorTamanho[id] !== undefined && (
+                              <p className="mt-2 text-xs text-emerald-700">
+                                Lucro liquido: R$ {lucroLiquidoPorTamanho[id]!.toFixed(2)}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <FieldHint
+                    label="Preco Unico"
+                    required
+                    hint="Sem comprimentos selecionados, este preco vale para todas as variacoes de cor."
+                  >
+                    <div className="relative max-w-xs">
+                      <DollarSign className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={precoUnico || ''}
+                        onChange={(e) => setPrecoUnico(parseFloat(e.target.value) || 0)}
+                        className="pl-10"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    {lucroLiquidoPrecoUnico !== null && (
+                      <p className="mt-2 text-xs text-emerald-700">
+                        Lucro liquido estimado: R$ {lucroLiquidoPrecoUnico.toFixed(2)}
+                      </p>
+                    )}
+                  </FieldHint>
+                )}
+              </div>
+
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>{totalCombinations}</strong> combinacoes serao criadas
+                  ({selectedCores.length} cores x {selectedTamanhos.length || 1} comprimentos)
+                </p>
+                {selectedTamanhos.length > 0 && precoMinimo > 0 && precoMinimo !== Infinity && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Preco a partir de R$ {precoMinimo.toFixed(2)}
                   </p>
-                  {selectedTamanhos.length > 0 && precoMinimo > 0 && precoMinimo !== Infinity && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      Preço a partir de R$ {precoMinimo.toFixed(2)}
-                    </p>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
-
-          {/* Etapa 4: Configurações */}
+          {/* Etapa 6: Configuracoes */}
           {currentStep === 'configuracoes' && (
             <div>
               <h2 className="text-xl font-semibold mb-2">Configurações do Anúncio</h2>
@@ -1233,12 +1644,12 @@ export function CriarAnuncioShopee({
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Resumo de Preços (somente leitura — definidos na Step 2) */}
+                {/* Resumo de Preços (somente leitura — definidos na etapa de tamanhos e precificacao) */}
                 <div className="md:col-span-2 p-4 bg-green-50 border border-green-200 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <DollarSign className="w-4 h-4 text-green-600" />
                     <span className="font-medium text-green-800">Preços definidos</span>
-                    <span className="text-xs text-green-600">(editável na etapa "Cores")</span>
+                    <span className="text-xs text-green-600">(editavel na etapa "Tamanhos e Precificacao")</span>
                   </div>
                   {selectedTamanhos.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
@@ -1794,10 +2205,10 @@ export function CriarAnuncioShopee({
                 <Button
                   variant="outline"
                   onClick={handleSaveDraft}
-                  disabled={saving || !selectedTecido || selectedCores.length === 0}
+                  disabled={savingDraft || !selectedTecido || selectedCores.length === 0}
                   className="min-h-[44px]"
                 >
-                  {saving ? (
+                  {savingDraft ? (
                     <Loader2 className="w-4 h-4 sm:mr-2 animate-spin" />
                   ) : (
                     <Save className="w-4 h-4 sm:mr-2" />
@@ -1824,8 +2235,9 @@ export function CriarAnuncioShopee({
                     onClick={goToNextStep}
                     disabled={
                       (currentStep === 'tecido' && !canProceedFromTecido) ||
-                      (currentStep === 'imagens' && !canProceedFromImagens) ||
                       (currentStep === 'cores' && !canProceedFromCores) ||
+                      (currentStep === 'tamanhos_precificacao' && !canProceedFromTamanhosPrecificacao) ||
+                      (currentStep === 'imagens' && !canProceedFromImagens) ||
                       (currentStep === 'configuracoes' && !canProceedFromConfiguracoes)
                     }
                     className="min-h-[44px]"
@@ -1843,4 +2255,3 @@ export function CriarAnuncioShopee({
     </div>
   );
 }
-

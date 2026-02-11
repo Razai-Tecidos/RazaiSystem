@@ -27,18 +27,13 @@ vi.mock('./CapturaCor', () => ({
 vi.mock('./Shopee', () => ({
   Shopee: ({
     onNavigateToAnuncios,
-    onNavigateToTamanhos,
   }: {
     onNavigateToAnuncios?: () => void;
-    onNavigateToTamanhos?: () => void;
   }) => (
     <div>
       PAGE_SHOPEE
       <button type="button" onClick={() => onNavigateToAnuncios?.()}>
         IR_ANUNCIOS
-      </button>
-      <button type="button" onClick={() => onNavigateToTamanhos?.()}>
-        IR_TAMANHOS
       </button>
     </div>
   ),
@@ -51,9 +46,6 @@ vi.mock('./Vinculos', () => ({
 }));
 vi.mock('./Catalogo', () => ({
   Catalogo: () => <div>PAGE_CATALOGO</div>,
-}));
-vi.mock('./Tamanhos', () => ({
-  Tamanhos: () => <div>PAGE_TAMANHOS</div>,
 }));
 vi.mock('./AnunciosShopee', () => ({
   AnunciosShopee: ({ onNavigateToCriar }: { onNavigateToCriar?: (draftId?: string) => void }) => (

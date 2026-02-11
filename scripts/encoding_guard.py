@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -73,37 +74,18 @@ BINARY_EXTENSIONS = {
     ".lockb",
 }
 
-MOJIBAKE_TOKENS = [
-    "Ã¡",
-    "Ã¢",
-    "Ã£",
-    "Ã¤",
-    "Ã©",
-    "Ãª",
-    "Ã­",
-    "Ã³",
-    "Ã´",
-    "Ãµ",
-    "Ãº",
-    "Ã§",
-    "Ã€",
-    "Ã‰",
-    "Ã“",
-    "Ãš",
-    "Ã‡",
-    "Ãƒ",
-    "Ã‚",
-    "Â·",
-    "Â ",
-    "â€¢",
-    "â€“",
-    "â€”",
-    "â€˜",
-    "â€™",
-    "â€œ",
-    "â€�",
-    "â€¦",
-    "�",
+MOJIBAKE_REGEXES = [
+    # Common UTF-8 interpreted as cp1252/latin1:
+    # "Ã£", "Ã§", "Ã¡", etc.
+    re.compile(r"\u00c3[\u0080-\u00bf]"),
+    # Non-breaking space / symbols rendered as "Â ".
+    re.compile(r"\u00c2[\u0080-\u00bf ]"),
+    # Curly quotes and dash sequences rendered as "â...".
+    re.compile(r"\u00e2[\u0080-\u00bf]{1,3}"),
+    # Literal UTF-8 bytes for replacement char shown as text.
+    re.compile(r"\u00ef\u00bf\u00bd"),
+    # Replacement character itself.
+    re.compile(r"\ufffd"),
 ]
 
 
@@ -116,9 +98,9 @@ def is_text_file(path: Path) -> bool:
     return path.name in {".env", ".gitignore", ".gitattributes", ".editorconfig", "Dockerfile"}
 
 
-def tracked_files() -> list[Path]:
+def git_paths_from_command(command: list[str]) -> list[Path]:
     result = subprocess.run(
-        ["git", "ls-files", "-z"],
+        command,
         cwd=REPO_ROOT,
         check=True,
         stdout=subprocess.PIPE,
@@ -128,8 +110,29 @@ def tracked_files() -> list[Path]:
     return [REPO_ROOT / f for f in files]
 
 
+def tracked_files() -> list[Path]:
+    return git_paths_from_command(["git", "ls-files", "-z"])
+
+
+def staged_files() -> list[Path]:
+    return git_paths_from_command(["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"])
+
+
 def contains_mojibake(text: str) -> bool:
-    return any(token in text for token in MOJIBAKE_TOKENS)
+    return any(regex.search(text) for regex in MOJIBAKE_REGEXES)
+
+
+def suspicious_line_samples(text: str, limit: int = 3) -> list[str]:
+    samples: list[str] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if contains_mojibake(line):
+            clean_line = line.strip().replace("\t", " ")
+            if len(clean_line) > 160:
+                clean_line = f"{clean_line[:157]}..."
+            samples.append(f"L{line_number}: {clean_line}")
+        if len(samples) >= limit:
+            break
+    return samples
 
 
 def decode_text(raw: bytes) -> tuple[str, bool]:
@@ -151,13 +154,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fix/check mojibake and UTF-8 encoding in tracked text files.")
     parser.add_argument("--apply", action="store_true", help="Apply fixes in-place (UTF-8).")
     parser.add_argument("--check", action="store_true", help="Check only; exit 1 if issues are found.")
+    parser.add_argument("--staged", action="store_true", help="Process only staged files.")
     args = parser.parse_args()
 
-    apply = args.apply and not args.check
+    if args.apply and args.check:
+        parser.error("Use either --apply or --check, not both.")
+
+    apply = args.apply
     changed_files: list[Path] = []
     suspect_files: list[Path] = []
+    suspect_examples: dict[Path, list[str]] = {}
 
-    for file_path in tracked_files():
+    target_files = staged_files() if args.staged else tracked_files()
+
+    for file_path in target_files:
         if not file_path.exists() or not is_text_file(file_path):
             continue
 
@@ -170,6 +180,7 @@ def main() -> int:
 
         if contains_mojibake(fixed_text):
             suspect_files.append(file_path)
+            suspect_examples[file_path] = suspicious_line_samples(fixed_text)
 
         should_write = (fixed_text != original_text) or (not was_utf8)
         if should_write:
@@ -180,10 +191,17 @@ def main() -> int:
     if args.check:
         if changed_files or suspect_files:
             print(f"[encoding_guard] pending fixes: {len(changed_files)} file(s)")
+            if changed_files:
+                for p in changed_files[:50]:
+                    print(f" - {p.relative_to(REPO_ROOT)}")
+                if len(changed_files) > 50:
+                    print(f" ... and {len(changed_files) - 50} more")
             if suspect_files:
                 print(f"[encoding_guard] suspicious mojibake remains in: {len(suspect_files)} file(s)")
                 for p in suspect_files[:50]:
                     print(f" - {p.relative_to(REPO_ROOT)}")
+                    for sample in suspect_examples.get(p, []):
+                        print(f"   {sample}")
                 if len(suspect_files) > 50:
                     print(f" ... and {len(suspect_files) - 50} more")
             return 1
@@ -196,16 +214,21 @@ def main() -> int:
             print(f"[encoding_guard] warning: {len(suspect_files)} file(s) still suspicious")
             for p in suspect_files[:50]:
                 print(f" - {p.relative_to(REPO_ROOT)}")
+                for sample in suspect_examples.get(p, []):
+                    print(f"   {sample}")
             if len(suspect_files) > 50:
                 print(f" ... and {len(suspect_files) - 50} more")
     else:
         print(f"[encoding_guard] dry-run: {len(changed_files)} file(s) would be updated")
         if suspect_files:
             print(f"[encoding_guard] suspicious mojibake in {len(suspect_files)} file(s)")
+            for p in suspect_files[:50]:
+                print(f" - {p.relative_to(REPO_ROOT)}")
+            if len(suspect_files) > 50:
+                print(f" ... and {len(suspect_files) - 50} more")
 
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -87,13 +87,32 @@ router.post('/sync-all', authMiddleware, async (req: Request, res: Response): Pr
  */
 router.get('/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const userId = req.user?.uid;
     const { id } = req.params;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        error: 'Usuário não autenticado',
+      });
+      return;
+    }
+
     const product = await productService.getProductById(id);
     
     if (!product) {
       res.status(404).json({
         success: false,
         error: 'Produto não encontrado',
+      });
+      return;
+    }
+
+    const ownerId = product.created_by || product.user_id;
+    if (!ownerId || ownerId !== userId) {
+      res.status(403).json({
+        success: false,
+        error: 'Sem permissão para acessar este produto',
       });
       return;
     }
@@ -132,7 +151,9 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       tecido_id,
       cores,
       tamanhos,
+      precos_por_tamanho,
       preco_base,
+      precificacao,
       estoque_padrao,
       categoria_id,
       peso,
@@ -142,6 +163,19 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       usar_imagens_publicas,
       imagens_principais,
       template_id,
+      video_url,
+      atributos,
+      brand_id,
+      brand_nome,
+      logistic_info,
+      condition,
+      is_pre_order,
+      days_to_ship,
+      size_chart_id,
+      description_type,
+      extended_description,
+      wholesale,
+      ncm_padrao,
     } = req.body;
     
     // Validações
@@ -232,7 +266,9 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       tecido_id,
       cores,
       tamanhos,
+      precos_por_tamanho,
       preco_base,
+      precificacao,
       estoque_padrao,
       categoria_id,
       peso,
@@ -242,6 +278,19 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       usar_imagens_publicas,
       imagens_principais,
       template_id,
+      video_url,
+      atributos,
+      brand_id,
+      brand_nome,
+      logistic_info,
+      condition,
+      is_pre_order,
+      days_to_ship,
+      size_chart_id,
+      description_type,
+      extended_description,
+      wholesale,
+      ncm_padrao,
     });
     
     res.status(201).json({
@@ -444,7 +493,8 @@ router.post('/:id/sync', authMiddleware, async (req: Request, res: Response): Pr
       return;
     }
     
-    if (product.user_id !== userId) {
+    const ownerId = product.created_by || product.user_id;
+    if (!ownerId || ownerId !== userId) {
       res.status(403).json({
         success: false,
         error: 'Sem permissão para sincronizar este produto',
@@ -476,3 +526,4 @@ router.post('/:id/sync', authMiddleware, async (req: Request, res: Response): Pr
 });
 
 export default router;
+

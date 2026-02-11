@@ -4,134 +4,102 @@ Ultima atualizacao: 2026-02-10
 
 ## Objetivo
 
-Centralizar operacoes de imagem que antes estavam dispersas no fluxo de criacao de anuncio:
-- gerar imagem de variacao por vinculo
-- salvar essa imagem no Firebase
-- subir foto de modelo por vinculo
-- montar mosaicos para capa de anuncio Shopee
+Centralizar operacoes de imagem por vinculo (`cor_tecido`) para Shopee:
+- gerar imagem de variacao (`imagemGerada`)
+- subir/trocar foto de modelo (`imagemModelo`)
+- gerar premium 1:1 e 3:4 (`imagemPremiumSquare`, `imagemPremiumPortrait`)
+- montar e salvar mosaicos por tecido
 
 Arquivo principal:
 - `frontend/src/pages/GestaoImagens.tsx`
 
-## Fonte de dados
+## Persistencia no Firebase
 
-Base principal:
-- `cor_tecido`
+Todos os fluxos de imagem salvam em Storage e depois atualizam Firestore:
 
-Campos utilizados:
-- `imagemTingida`
-- `imagemGerada`
-- `imagemGeradaFingerprint`
-- `imagemModelo`
+1. Imagem gerada:
+- Storage: `cor-tecido/{vinculoId}/gerada_*`
+- Firestore (`cor_tecido`): `imagemGerada`, `imagemGeradaFingerprint`, `imagemGeradaAt`
 
-## Tabela operacional
+2. Foto de modelo:
+- Storage: `cor-tecido/{vinculoId}/modelo_*`
+- Firestore (`cor_tecido`): `imagemModelo`, `imagemModeloAt`
 
-Estrutura atual:
-- uma tabela por tecido (`tecidoId`)
-- cabecalho por tecido com contagem de vinculos
-- botao `Regenerar todos deste tecido` por secao
+3. Premium:
+- Storage: `cor-tecido/{vinculoId}/premium_square_*` e `premium_portrait_*`
+- Firestore (`cor_tecido`): `imagemPremiumSquare`, `imagemPremiumPortrait`, `imagemPremiumAt`
 
-Colunas por tabela:
-1. Selecao para mosaico
-2. Cor (nome + SKU)
-3. Imagem Vinculo (`imagemTingida`)
-4. Imagem Gerada (`imagemGerada`)
-5. Foto Modelo (`imagemModelo`)
-6. Acoes (`Upload modelo`)
+4. Mosaico:
+- Storage principal: `mosaicos/{tecidoId}/{mosaicoId}/...`
+- Fallback de compatibilidade: `cor-tecido/{tecidoId}/mosaicos/{mosaicoId}/...`
+- Firestore (`gestao_imagens_mosaicos`): metadados do mosaico + URLs finais
 
-## Geracao de imagem de variacao
+## Tabela por tecido
 
-Pipeline:
-1. Ler `imagemTingida`.
-2. Aplicar overlay visual (`generateBrandOverlay`).
-3. Salvar em Storage via `uploadImagemGerada`.
-4. Atualizar vinculo no Firestore com:
-- `imagemGerada`
-- `imagemGeradaFingerprint`
-- `imagemGeradaAt`
+A tela agrupa vinculos por tecido e exibe acoes no cabecalho:
+- `Regenerar todos deste tecido`
+- `Gerar premium deste tecido`
+- `Ver ultimo mosaico`
 
-### Persistencia
+Regra de processamento:
+- lotes com concorrencia controlada para evitar pico de memoria.
 
-A imagem gerada fica salva no Firebase.
-Nao precisa gerar novamente enquanto fingerprint nao mudar.
+## Acoes por imagem (hover)
 
-Fingerprint atual:
-- `imagemTingida + corNome`
+### Foto de modelo
+- botao de visualizacao 1:1
+- botao de upload/troca da imagem de modelo
 
-Se mudar, a tela regenera automaticamente.
+### Premium
+- botao `1:1` para abrir `imagemPremiumSquare`
+- botao `3:4` para abrir `imagemPremiumPortrait`
 
-### Regeneracao manual
+## Regras de mosaico
 
-- Regeneracao individual por linha foi removida.
-- A regeneracao manual agora e em lote por tecido.
-- Processamento com concorrencia controlada para reduzir picos.
+1. Nao permite misturar tecidos no mesmo mosaico.
+2. O mosaico salvo no fluxo atual usa `sourcePolicy: 'original'`.
+3. Ao gerar mosaico para um tecido, ele ja e marcado como default do tecido:
+- `isDefaultForTecido: true`
+4. Apenas um mosaico pode ser default por tecido (controle via batch update).
 
-## Upload de foto de modelo
+Colecao:
+- `gestao_imagens_mosaicos`
 
-Acao por linha:
-- seleciona arquivo local
-- upload para `cor-tecido/{vinculoId}/modelo_*.*`
-- salva:
-- `imagemModelo`
-- `imagemModeloAt`
-
-## Mosaicos
-
-Builder em:
-- `frontend/src/lib/mosaicBuilder.ts`
-
-Templates:
-- `grid-2x2`
-- `hero-vertical`
-- `triptych`
-
-Saidas:
-- quadrada `1024x1024`
-- vertical `1062x1416`
-
-Formato atual de saida:
-- JPEG (`.jpg`)
-
-Persistencia:
-- Storage: `mosaicos/{tecidoId}/{mosaicoId}/...`
-- Firestore: `gestao_imagens_mosaicos`
-
-Documento de mosaico:
+Campos principais do documento:
 ```ts
 {
   tecidoId,
   tecidoNomeSnapshot,
   templateId,
-  sourcePolicy: 'gerada',
+  sourcePolicy: 'original' | 'gerada',
   selectedVinculoIds,
   selectedImageUrls,
   outputSquareUrl,
   outputPortraitUrl,
+  isDefaultForTecido,
   createdBy,
-  createdAt,
+  createdAt
 }
 ```
 
 ## Integracao com Criar Anuncio Shopee
 
-Na tela `CriarAnuncioShopee.tsx`:
-- mosaicos salvos do tecido aparecem para selecao
-- clique em mosaico define capa em `imagens_principais`
-- variacoes usam `imagemGerada` com prioridade
+- Mosaicos salvos por tecido podem ser usados como capa.
+- Variacoes de cor no Shopee usam prioridade de `imagemGerada` quando disponivel.
 
 ## Regras de seguranca
 
 Firestore (`firestore.rules`):
-- `gestao_imagens_mosaicos`: read/write autenticado
+- `gestao_imagens_mosaicos`: `read/write` autenticado
 
 Storage (`storage.rules`):
-- `mosaicos/{tecidoId}/**`: read publico, write autenticado
+- `mosaicos/{tecidoId}/**`: `read` publico, `write` autenticado
+- `cor-tecido/{vinculoId}/**`: `read` publico, `write` autenticado
 
 ## Arquivos relacionados
 
 - `frontend/src/pages/GestaoImagens.tsx`
-- `frontend/src/lib/brandOverlay.ts`
-- `frontend/src/lib/mosaicBuilder.ts`
 - `frontend/src/lib/firebase/cor-tecido.ts`
 - `frontend/src/lib/firebase/gestao-imagens.ts`
+- `frontend/src/lib/mosaicBuilder.ts`
 - `frontend/src/types/gestao-imagens.types.ts`

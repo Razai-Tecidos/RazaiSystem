@@ -54,19 +54,6 @@ export function useCatalogos(): UseCatalogosReturn {
         const catalogo = await createCatalogoFirebase({ tecidoIds });
         const url = getCatalogoUrl(catalogo.id);
 
-        toast({
-          title: 'Link criado!',
-          description: 'O link do catálogo foi copiado para a área de transferência',
-        });
-
-        // Copiar para clipboard
-        try {
-          await navigator.clipboard.writeText(url);
-        } catch {
-          // Se não conseguir copiar, apenas retorna a URL
-          console.warn('Não foi possível copiar para clipboard');
-        }
-
         return url;
       } catch (err: any) {
         toast({

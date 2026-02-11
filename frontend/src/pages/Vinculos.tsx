@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useCorTecido } from '@/hooks/useCorTecido';
 import { useCores } from '@/hooks/useCores';
 import { useTecidos } from '@/hooks/useTecidos';
+import { useEstampas } from '@/hooks/useEstampas';
 import { useReinhardML } from '@/hooks/useReinhardML';
 import { CorTecido } from '@/types/cor.types';
 import { Header } from '@/components/Layout/Header';
@@ -48,12 +49,14 @@ import { ImageLightbox } from '@/components/ui/image-lightbox';
 
 interface VinculosProps {
   onNavigateHome?: () => void;
+  onNavigateToEstampas?: () => void;
 }
 
-export function Vinculos({ onNavigateHome }: VinculosProps) {
+export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps) {
   const { vinculos, loading, deleteVinculo, updateVinculo } = useCorTecido();
   const { cores, updateCor } = useCores();
   const { tecidos } = useTecidos();
+  const { estampas, loading: loadingEstampas } = useEstampas();
   const { status: mlStatus, exampleCount, train, metadata } = useReinhardML();
   const { toast } = useToast();
   
@@ -89,6 +92,20 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
     title: string;
     subtitle?: string;
   } | null>(null);
+
+  useEffect(() => {
+    const handleSetTecidoFilter = (event: Event) => {
+      const customEvent = event as CustomEvent<{ tecidoId?: string }>;
+      if (customEvent.detail?.tecidoId) {
+        setFiltroTecido(customEvent.detail.tecidoId);
+      }
+    };
+
+    window.addEventListener('vinculos:set-tecido-filter', handleSetTecidoFilter as EventListener);
+    return () => {
+      window.removeEventListener('vinculos:set-tecido-filter', handleSetTecidoFilter as EventListener);
+    };
+  }, []);
 
   const showConfirm = useCallback((title: string, description: string, onConfirm: () => void) => {
     setConfirmDialog({ open: true, title, description, onConfirm });
@@ -279,6 +296,37 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
     });
   }, [vinculos, searchTerm, filtroTecido, filtroCor]);
 
+  const estampasFiltradas = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    const lista = estampas.filter((estampa) => {
+      if (filtroCor) {
+        return false;
+      }
+
+      if (filtroTecido && estampa.tecidoBaseId !== filtroTecido) {
+        return false;
+      }
+
+      if (!term) {
+        return true;
+      }
+
+      const matchNome = estampa.nome?.toLowerCase().includes(term);
+      const matchTecido = estampa.tecidoBaseNome?.toLowerCase().includes(term);
+      const matchSku = estampa.sku?.toLowerCase().includes(term);
+      return Boolean(matchNome || matchTecido || matchSku);
+    });
+
+    return lista.sort((a, b) => {
+      const tecidoA = a.tecidoBaseNome || '';
+      const tecidoB = b.tecidoBaseNome || '';
+      if (tecidoA !== tecidoB) {
+        return tecidoA.localeCompare(tecidoB);
+      }
+      return a.nome.localeCompare(b.nome);
+    });
+  }, [estampas, searchTerm, filtroTecido, filtroCor]);
+
   // Agrupar vínculos filtrados por tecido
   const vinculosAgrupados = useMemo(() => {
     const grupos = new Map<string, CorTecido[]>();
@@ -304,6 +352,55 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
     
     return gruposArray.sort((a, b) => a.tecidoNome.localeCompare(b.tecidoNome));
   }, [vinculosFiltrados]);
+
+  const gruposVisuais = useMemo(() => {
+    const gruposPorTecido = new Map<
+      string,
+      {
+        tecidoId: string;
+        tecidoNome: string;
+        tecidoSku?: string;
+        vinculos: CorTecido[];
+        estampas: typeof estampasFiltradas;
+      }
+    >();
+
+    vinculosAgrupados.forEach((grupo) => {
+      gruposPorTecido.set(grupo.tecidoId, {
+        tecidoId: grupo.tecidoId,
+        tecidoNome: grupo.tecidoNome,
+        tecidoSku: grupo.tecidoSku,
+        vinculos: grupo.vinculos,
+        estampas: [],
+      });
+    });
+
+    estampasFiltradas.forEach((estampa) => {
+      if (!estampa.tecidoBaseId) {
+        return;
+      }
+
+      const existente = gruposPorTecido.get(estampa.tecidoBaseId);
+      if (existente) {
+        existente.estampas.push(estampa);
+        return;
+      }
+
+      gruposPorTecido.set(estampa.tecidoBaseId, {
+        tecidoId: estampa.tecidoBaseId,
+        tecidoNome: estampa.tecidoBaseNome || 'Sem tecido',
+        tecidoSku: undefined,
+        vinculos: [],
+        estampas: [estampa],
+      });
+    });
+
+    return Array.from(gruposPorTecido.values()).sort((a, b) => a.tecidoNome.localeCompare(b.tecidoNome));
+  }, [estampasFiltradas, vinculosAgrupados]);
+
+  const totalLinhasVinculo = useMemo(() => {
+    return gruposVisuais.reduce((acc, grupo) => acc + grupo.vinculos.length + grupo.estampas.length, 0);
+  }, [gruposVisuais]);
 
   // Lista ordenada de todos os vínculos visíveis para navegação com Enter
   const vinculosOrdenados = useMemo(() => {
@@ -1164,11 +1261,11 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
 
           {/* Contagem */}
           <div className="mb-4 text-sm text-gray-500">
-            {vinculosFiltrados.length} vínculo(s) encontrado(s)
+            {totalLinhasVinculo} vinculo(s) encontrado(s)
           </div>
 
           {/* Loading */}
-          {loading ? (
+          {loading || loadingEstampas ? (
             <div className="space-y-3">
               {[1, 2, 3, 4].map(i => (
                 <div key={i} className="bg-gray-100 rounded-lg p-4 animate-pulse">
@@ -1180,7 +1277,7 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                 </div>
               ))}
             </div>
-          ) : vinculosFiltrados.length === 0 ? (
+          ) : gruposVisuais.length === 0 ? (
             <EmptyState
               icon={<LinkIcon className="h-8 w-8" />}
               title="Nenhum vínculo encontrado"
@@ -1207,7 +1304,7 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {vinculosAgrupados.map((grupo) => {
+                  {gruposVisuais.map((grupo) => {
                     const isExpanded = expandedTecidos.has(grupo.tecidoId);
                     
                     return (
@@ -1243,50 +1340,57 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                                   )}
                                   <span className="text-sm text-gray-500">
                                     - {grupo.vinculos.length} {grupo.vinculos.length === 1 ? 'cor' : 'cores'}
+                                    {grupo.estampas.length > 0
+                                      ? ` + ${grupo.estampas.length} ${grupo.estampas.length === 1 ? 'estampa' : 'estampas'}`
+                                      : ''}
                                   </span>
                                 </div>
                               </div>
                               <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2"
-                                  onClick={() => handleCopiarSkus(grupo.vinculos)}
-                                  title="Copiar SKUs"
-                                >
-                                  <Copy className="h-3 w-3 mr-1" />
-                                  <span className="text-xs">SKUs</span>
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2"
-                                  onClick={() => handleCopiarHex(grupo.vinculos)}
-                                  title="Copiar HEX"
-                                >
-                                  <span className="text-xs font-bold">#</span>
-                                  <span className="text-xs ml-1">HEX</span>
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2"
-                                  onClick={() => handleCopiarNomes(grupo.vinculos)}
-                                  title="Copiar Nomes"
-                                >
-                                  <Copy className="h-3 w-3 mr-1" />
-                                  <span className="text-xs">Nomes</span>
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2"
-                                  onClick={() => handleDownloadPreview(grupo)}
-                                  title="Download Preview"
-                                >
-                                  <Download className="h-3 w-3 mr-1" />
-                                  <span className="text-xs">Preview</span>
-                                </Button>
+                                {grupo.vinculos.length > 0 && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => handleCopiarSkus(grupo.vinculos)}
+                                      title="Copiar SKUs"
+                                    >
+                                      <Copy className="h-3 w-3 mr-1" />
+                                      <span className="text-xs">SKUs</span>
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => handleCopiarHex(grupo.vinculos)}
+                                      title="Copiar HEX"
+                                    >
+                                      <span className="text-xs font-bold">#</span>
+                                      <span className="text-xs ml-1">HEX</span>
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => handleCopiarNomes(grupo.vinculos)}
+                                      title="Copiar Nomes"
+                                    >
+                                      <Copy className="h-3 w-3 mr-1" />
+                                      <span className="text-xs">Nomes</span>
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => handleDownloadPreview(grupo)}
+                                      title="Download Preview"
+                                    >
+                                      <Download className="h-3 w-3 mr-1" />
+                                      <span className="text-xs">Preview</span>
+                                    </Button>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </TableCell>
@@ -1509,6 +1613,73 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
                             </TableCell>
                           </TableRow>
                         ))}
+
+                        {isExpanded && grupo.estampas.map((estampa) => (
+                          <TableRow key={estampa.id} className="hover:bg-blue-50/40 bg-white">
+                            <TableCell>
+                              <span className="font-mono text-sm text-gray-700">
+                                {estampa.sku || '-'}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-md border-2 border-blue-100 bg-blue-50 flex items-center justify-center">
+                                  <ImageIcon className="w-4 h-4 text-blue-600" />
+                                </div>
+                                <div>
+                                  <div className="font-medium">{estampa.nome}</div>
+                                  <div className="text-xs text-gray-500">Estampa</div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {estampa.imagem ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setLightboxImage({
+                                      url: estampa.imagem!,
+                                      title: estampa.nome,
+                                      subtitle: `SKU ${estampa.sku || 'sem SKU'}`,
+                                    })
+                                  }
+                                  className="rounded-md focus:outline-none focus:ring-2 focus:ring-primary/60"
+                                >
+                                  <img
+                                    src={estampa.imagem}
+                                    alt={estampa.nome}
+                                    className="w-14 h-14 rounded-md border border-gray-200 shadow-sm object-cover hover:scale-110 transition-transform"
+                                  />
+                                </button>
+                              ) : (
+                                <div className="w-14 h-14 rounded-md border border-dashed border-gray-300 flex items-center justify-center">
+                                  <ImageIcon className="w-5 h-5 text-gray-300" />
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{estampa.tecidoBaseNome || 'N/A'}</div>
+                                <div className="text-xs text-gray-500">{estampa.tecidoBaseId}</div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                {onNavigateToEstampas && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
+                                    onClick={() => onNavigateToEstampas()}
+                                    title="Abrir tela de estampas"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       </React.Fragment>
                     );
                   })}
@@ -1517,6 +1688,7 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
               </div>
             </div>
           )}
+
         </div>
       </main>
 
@@ -1546,3 +1718,4 @@ export function Vinculos({ onNavigateHome }: VinculosProps) {
     </div>
   );
 }
+

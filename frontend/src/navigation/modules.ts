@@ -140,9 +140,8 @@ export const MODULES: Record<PageId, ModuleDefinition> = {
     label: 'Tamanhos',
     group: 'operacao',
     icon: Ruler,
-    desktopVisible: true,
-    mobileVisible: true,
-    shortcut: 'Alt+7',
+    desktopVisible: false,
+    mobileVisible: false,
   },
   shopee: {
     id: 'shopee',

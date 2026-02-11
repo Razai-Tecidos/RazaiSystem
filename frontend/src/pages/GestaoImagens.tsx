@@ -34,6 +34,7 @@ import {
 } from '@/lib/firebase/cor-tecido';
 import {
   createGestaoImagemMosaico,
+  getLatestMosaicoByTecido,
   listMosaicosByTecido,
   uploadMosaicoImage,
 } from '@/lib/firebase/gestao-imagens';
@@ -42,6 +43,7 @@ import { GestaoImagemMosaico, MosaicTemplateId } from '@/types/gestao-imagens.ty
 import {
   ChevronDown,
   ChevronRight,
+  Eye,
   Image as ImageIcon,
   Loader2,
   Search,
@@ -94,6 +96,10 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   const [generatingMosaic, setGeneratingMosaic] = useState(false);
   const [processingModelUploadId, setProcessingModelUploadId] = useState<string | null>(null);
   const [generatingPremiumIds, setGeneratingPremiumIds] = useState<Set<string>>(new Set());
+  const [generatingPremiumTecidoIds, setGeneratingPremiumTecidoIds] = useState<Set<string>>(new Set());
+  const [premiumProgressByTecido, setPremiumProgressByTecido] = useState<Record<string, { done: number; total: number }>>(
+    {}
+  );
   const [lightboxImage, setLightboxImage] = useState<{
     url: string;
     title: string;
@@ -104,13 +110,18 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   const [regenerationProgressByTecido, setRegenerationProgressByTecido] = useState<
     Record<string, { done: number; total: number }>
   >({});
-  const [collapsedTecidoIds, setCollapsedTecidoIds] = useState<Set<string>>(new Set());
+  const [expandedTecidoIds, setExpandedTecidoIds] = useState<Set<string>>(new Set());
+  const [openingLatestMosaicoTecidoIds, setOpeningLatestMosaicoTecidoIds] = useState<Set<string>>(new Set());
 
   const generatingIdsRef = useRef<Set<string>>(new Set());
-  const seenTecidoIdsRef = useRef<Set<string>>(new Set());
+
+  const searchTermNormalized = useMemo(() => searchTerm.trim().toLowerCase(), [searchTerm]);
 
   const tecidosDisponiveis = useMemo(() => {
     const map = new Map<string, string>();
+    tecidos.forEach((tecido) => {
+      map.set(tecido.id, tecido.nome);
+    });
     vinculos.forEach((v) => {
       if (!map.has(v.tecidoId)) {
         map.set(v.tecidoId, v.tecidoNome);
@@ -119,23 +130,50 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     return Array.from(map.entries())
       .map(([id, nome]) => ({ id, nome }))
       .sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [vinculos]);
+  }, [tecidos, vinculos]);
 
   const filteredVinculos = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
     return vinculos.filter((v) => {
-      if (!term) return true;
+      if (selectedTecidoId !== 'all' && v.tecidoId !== selectedTecidoId) {
+        return false;
+      }
+      if (!searchTermNormalized) return true;
 
       return (
-        v.corNome.toLowerCase().includes(term) ||
-        v.tecidoNome.toLowerCase().includes(term) ||
-        (v.sku || '').toLowerCase().includes(term)
+        v.corNome.toLowerCase().includes(searchTermNormalized) ||
+        v.tecidoNome.toLowerCase().includes(searchTermNormalized) ||
+        (v.sku || '').toLowerCase().includes(searchTermNormalized)
       );
     });
-  }, [vinculos, searchTerm]);
+  }, [vinculos, selectedTecidoId, searchTermNormalized]);
+
+  const tecidoIdsWithMatchingVinculos = useMemo(
+    () => new Set(filteredVinculos.map((vinculo) => vinculo.tecidoId)),
+    [filteredVinculos]
+  );
 
   const groupedVinculos = useMemo<GroupedVinculos[]>(() => {
     const groupedMap = new Map<string, GroupedVinculos>();
+
+    tecidosDisponiveis.forEach((tecido) => {
+      if (selectedTecidoId !== 'all' && tecido.id !== selectedTecidoId) {
+        return;
+      }
+
+      if (searchTermNormalized) {
+        const tecidoMatchesSearch = tecido.nome.toLowerCase().includes(searchTermNormalized);
+        const hasMatchingVinculo = tecidoIdsWithMatchingVinculos.has(tecido.id);
+        if (!tecidoMatchesSearch && !hasMatchingVinculo) {
+          return;
+        }
+      }
+
+      groupedMap.set(tecido.id, {
+        tecidoId: tecido.id,
+        tecidoNome: tecido.nome,
+        vinculos: [],
+      });
+    });
 
     filteredVinculos.forEach((vinculo) => {
       const existing = groupedMap.get(vinculo.tecidoId);
@@ -152,24 +190,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     });
 
     return Array.from(groupedMap.values()).sort((a, b) => a.tecidoNome.localeCompare(b.tecidoNome));
-  }, [filteredVinculos]);
-
-  useEffect(() => {
-    setCollapsedTecidoIds((previous) => {
-      if (groupedVinculos.length === 0) return previous;
-      const next = new Set(previous);
-
-      groupedVinculos.forEach((group) => {
-        // Colapsa automaticamente apenas na primeira vez que o tecido aparece.
-        if (!seenTecidoIdsRef.current.has(group.tecidoId)) {
-          next.add(group.tecidoId);
-          seenTecidoIdsRef.current.add(group.tecidoId);
-        }
-      });
-
-      return next;
-    });
-  }, [groupedVinculos]);
+  }, [filteredVinculos, searchTermNormalized, selectedTecidoId, tecidoIdsWithMatchingVinculos, tecidosDisponiveis]);
 
   const loadMosaicos = useCallback(async (tecidoId: string) => {
     try {
@@ -421,6 +442,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         selectedImageUrls: selectedMosaicVinculos.map((v) => v.imagemTingida!).filter(Boolean),
         outputSquareUrl: squareUrl,
         outputPortraitUrl: portraitUrl,
+        isDefaultForTecido: true,
         createdBy: auth.currentUser?.uid || 'unknown',
       });
 
@@ -432,7 +454,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
 
       toast({
         title: 'Mosaico gerado',
-        description: 'A capa foi criada e salva no Firebase.',
+        description: 'A capa foi criada e salva no Firebase como padrao deste tecido.',
       });
     } catch (error) {
       console.error(error);
@@ -446,26 +468,36 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     }
   };
 
-  const handleGeneratePremium = async (vinculo: CorTecido) => {
+  const generatePremiumForVinculo = async (
+    vinculo: CorTecido,
+    options?: { showValidationToast?: boolean; showResultToast?: boolean }
+  ): Promise<boolean> => {
+    const showValidationToast = options?.showValidationToast ?? true;
+    const showResultToast = options?.showResultToast ?? true;
+
     if (!vinculo.imagemTingida) {
-      toast({
-        title: 'Imagem base ausente',
-        description: 'Esse vinculo nao possui imagem base para gerar o layout premium.',
-        variant: 'destructive',
-      });
-      return;
+      if (showValidationToast) {
+        toast({
+          title: 'Imagem base ausente',
+          description: 'Esse vinculo nao possui imagem base para gerar o layout premium.',
+          variant: 'destructive',
+        });
+      }
+      return false;
     }
 
     if (!vinculo.imagemModelo) {
-      toast({
-        title: 'Foto de modelo obrigatoria',
-        description: 'Envie uma foto de modelo para este vinculo antes de gerar o premium.',
-        variant: 'destructive',
-      });
-      return;
+      if (showValidationToast) {
+        toast({
+          title: 'Foto de modelo obrigatoria',
+          description: 'Envie uma foto de modelo para este vinculo antes de gerar o premium.',
+          variant: 'destructive',
+        });
+      }
+      return false;
     }
 
-    if (generatingPremiumIds.has(vinculo.id)) return;
+    if (generatingPremiumIds.has(vinculo.id)) return false;
 
     try {
       setGeneratingPremiumIds((previous) => {
@@ -496,22 +528,97 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         imagemPremiumAt: Timestamp.now(),
       });
 
-      toast({
-        title: 'Premium gerado',
-        description: `Layout premium salvo para ${vinculo.corNome}.`,
-      });
+      if (showResultToast) {
+        toast({
+          title: 'Premium gerado',
+          description: `Layout premium salvo para ${vinculo.corNome}.`,
+        });
+      }
+      return true;
     } catch (error) {
       console.error(error);
-      toast({
-        title: 'Erro no premium',
-        description: `Nao foi possivel gerar o premium de ${vinculo.corNome}.`,
-        variant: 'destructive',
-      });
+      if (showResultToast) {
+        toast({
+          title: 'Erro no premium',
+          description: `Nao foi possivel gerar o premium de ${vinculo.corNome}.`,
+          variant: 'destructive',
+        });
+      }
+      return false;
     } finally {
       setGeneratingPremiumIds((previous) => {
         const next = new Set(previous);
         next.delete(vinculo.id);
         return next;
+      });
+    }
+  };
+
+  const handleGeneratePremiumByTecido = async (tecidoId: string) => {
+    if (generatingPremiumTecidoIds.has(tecidoId)) return;
+
+    const group = groupedVinculos.find((item) => item.tecidoId === tecidoId);
+    if (!group) return;
+
+    const eligibleVinculos = group.vinculos.filter((vinculo) => vinculo.imagemTingida && vinculo.imagemModelo);
+
+    if (eligibleVinculos.length === 0) {
+      toast({
+        title: 'Sem itens elegiveis',
+        description: 'Este tecido precisa de imagem base e foto de modelo para gerar premium.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setGeneratingPremiumTecidoIds((previous) => new Set(previous).add(tecidoId));
+    setPremiumProgressByTecido((previous) => ({
+      ...previous,
+      [tecidoId]: { done: 0, total: eligibleVinculos.length },
+    }));
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (let index = 0; index < eligibleVinculos.length; index += 1) {
+      const vinculo = eligibleVinculos[index];
+      const success = await generatePremiumForVinculo(vinculo, {
+        showValidationToast: false,
+        showResultToast: false,
+      });
+
+      if (success) successCount += 1;
+      else failedCount += 1;
+
+      const done = index + 1;
+      setPremiumProgressByTecido((previous) => ({
+        ...previous,
+        [tecidoId]: { done, total: eligibleVinculos.length },
+      }));
+    }
+
+    setGeneratingPremiumTecidoIds((previous) => {
+      const next = new Set(previous);
+      next.delete(tecidoId);
+      return next;
+    });
+
+    setPremiumProgressByTecido((previous) => {
+      const next = { ...previous };
+      delete next[tecidoId];
+      return next;
+    });
+
+    if (failedCount === 0) {
+      toast({
+        title: 'Premium em lote concluido',
+        description: `${successCount} layout(s) premium gerado(s) para ${group.tecidoNome}.`,
+      });
+    } else {
+      toast({
+        title: 'Premium em lote finalizado com falhas',
+        description: `${successCount} gerado(s), ${failedCount} com erro em ${group.tecidoNome}.`,
+        variant: 'destructive',
       });
     }
   };
@@ -548,13 +655,47 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   };
 
   const toggleTecidoCollapsed = useCallback((tecidoId: string) => {
-    setCollapsedTecidoIds((previous) => {
+    setExpandedTecidoIds((previous) => {
       const next = new Set(previous);
       if (next.has(tecidoId)) next.delete(tecidoId);
       else next.add(tecidoId);
       return next;
     });
   }, []);
+
+  const handleOpenLatestMosaicoByTecido = useCallback(async (tecidoId: string) => {
+    setOpeningLatestMosaicoTecidoIds((previous) => {
+      const next = new Set(previous);
+      next.add(tecidoId);
+      return next;
+    });
+
+    try {
+      const latest = await getLatestMosaicoByTecido(tecidoId);
+      if (!latest) {
+        toast({
+          title: 'Sem mosaico salvo',
+          description: 'Ainda nao existe mosaico para este tecido.',
+        });
+        return;
+      }
+
+      window.open(latest.outputSquareUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: 'Erro',
+        description: 'Nao foi possivel abrir o ultimo mosaico deste tecido.',
+        variant: 'destructive',
+      });
+    } finally {
+      setOpeningLatestMosaicoTecidoIds((previous) => {
+        const next = new Set(previous);
+        next.delete(tecidoId);
+        return next;
+      });
+    }
+  }, [toast]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -609,11 +750,11 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
           <div className="py-24 flex justify-center">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
-        ) : filteredVinculos.length === 0 ? (
+        ) : groupedVinculos.length === 0 ? (
           <EmptyState
             icon={<ImageIcon className="w-8 h-8" />}
-            title="Nenhum vinculo encontrado"
-            description="Ajuste os filtros ou cadastre imagens nos vinculos para iniciar a gestao."
+            title="Nenhum tecido encontrado"
+            description="Ajuste os filtros para visualizar os tecidos e vinculos na gestao de imagens."
           />
         ) : (
           <>
@@ -636,9 +777,15 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
             <div className="space-y-5 mb-6">
               {groupedVinculos.map((group) => {
                 const eligibleForTecido = group.vinculos.filter((vinculo) => vinculo.imagemTingida).length;
+                const eligiblePremiumForTecido = group.vinculos.filter(
+                  (vinculo) => vinculo.imagemTingida && vinculo.imagemModelo
+                ).length;
                 const isBatchRegenerating = regeneratingTecidoIds.has(group.tecidoId);
+                const isBatchPremiumGenerating = generatingPremiumTecidoIds.has(group.tecidoId);
                 const progress = regenerationProgressByTecido[group.tecidoId];
-                const isCollapsed = collapsedTecidoIds.has(group.tecidoId);
+                const premiumProgress = premiumProgressByTecido[group.tecidoId];
+                const isCollapsed = !expandedTecidoIds.has(group.tecidoId);
+                const isOpeningLatest = openingLatestMosaicoTecidoIds.has(group.tecidoId);
 
                 return (
                   <section
@@ -663,6 +810,24 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                         <Button
                           size="sm"
                           variant="outline"
+                          onClick={() => void handleOpenLatestMosaicoByTecido(group.tecidoId)}
+                          disabled={isOpeningLatest}
+                        >
+                          {isOpeningLatest ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Abrindo ultimo mosaico
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="w-4 h-4 mr-2" />
+                              Ver ultimo mosaico
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
                           onClick={() => void handleRegenerateByTecido(group.tecidoId)}
                           disabled={isBatchRegenerating || eligibleForTecido === 0}
                         >
@@ -673,6 +838,23 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                             </>
                           ) : (
                             'Regenerar todos deste tecido'
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => void handleGeneratePremiumByTecido(group.tecidoId)}
+                          disabled={isBatchPremiumGenerating || eligiblePremiumForTecido === 0}
+                        >
+                          {isBatchPremiumGenerating ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Gerando premium {premiumProgress?.done ?? 0}/{premiumProgress?.total ?? eligiblePremiumForTecido}
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              Gerar premium deste tecido
+                            </>
                           )}
                         </Button>
                       </div>
@@ -689,222 +871,230 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                               <TableHead>Imagem Gerada</TableHead>
                               <TableHead>Foto Modelo</TableHead>
                               <TableHead>Premium</TableHead>
-                              <TableHead className="w-48">Acoes</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {group.vinculos.map((vinculo) => {
-                              const isGenerating = generatingIds.has(vinculo.id);
-                              const fingerprintOutdated =
-                                vinculo.imagemTingida &&
-                                vinculo.imagemGeradaFingerprint !== buildGenerationFingerprint(vinculo);
+                            {group.vinculos.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={6}>
+                                  <p className="text-sm text-gray-500 py-6 text-center">
+                                    Nenhum vinculo cadastrado para este tecido.
+                                  </p>
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              group.vinculos.map((vinculo) => {
+                                const isGenerating = generatingIds.has(vinculo.id);
+                                const fingerprintOutdated =
+                                  vinculo.imagemTingida &&
+                                  vinculo.imagemGeradaFingerprint !== buildGenerationFingerprint(vinculo);
 
-                              return (
-                                <TableRow key={vinculo.id}>
-                                  <TableCell>
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedForMosaic.has(vinculo.id)}
-                                      disabled={!vinculo.imagemTingida}
-                                      onChange={() => handleToggleSelectForMosaic(vinculo.id)}
-                                      className="h-4 w-4 rounded border-gray-300"
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="font-medium text-gray-900">{vinculo.corNome}</div>
-                                    <div className="text-xs text-gray-500">SKU {vinculo.sku || 'sem SKU'}</div>
-                                  </TableCell>
-                                  <TableCell>
-                                    {vinculo.imagemTingida ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          openImagePreview(
-                                            vinculo.imagemTingida!,
-                                            `${vinculo.corNome} em ${vinculo.tecidoNome}`
-                                          )
-                                        }
-                                        className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
-                                      >
-                                        <img
-                                          src={vinculo.imagemTingida}
-                                          alt={vinculo.corNome}
-                                          className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
-                                        />
-                                      </button>
-                                    ) : (
-                                      <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
-                                        <ImageIcon className="w-5 h-5" />
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    {vinculo.imagemGerada ? (
-                                      <div>
+                                return (
+                                  <TableRow key={vinculo.id}>
+                                    <TableCell>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedForMosaic.has(vinculo.id)}
+                                        disabled={!vinculo.imagemTingida}
+                                        onChange={() => handleToggleSelectForMosaic(vinculo.id)}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="font-medium text-gray-900">{vinculo.corNome}</div>
+                                      <div className="text-xs text-gray-500">SKU {vinculo.sku || 'sem SKU'}</div>
+                                    </TableCell>
+                                    <TableCell>
+                                      {vinculo.imagemTingida ? (
                                         <button
                                           type="button"
                                           onClick={() =>
                                             openImagePreview(
-                                              vinculo.imagemGerada!,
-                                              `Imagem gerada - ${vinculo.corNome}`,
-                                              fingerprintOutdated
-                                                ? 'Versao desatualizada, sera regenerada automaticamente.'
-                                                : undefined
+                                              vinculo.imagemTingida!,
+                                              `${vinculo.corNome} em ${vinculo.tecidoNome}`
                                             )
                                           }
                                           className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
                                         >
                                           <img
-                                            src={vinculo.imagemGerada}
-                                            alt={`Gerada ${vinculo.corNome}`}
-                                            className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
+                                            src={vinculo.imagemTingida}
+                                            alt={vinculo.corNome}
+                                            className="w-16 h-16 rounded-md border object-cover hover:scale-105 transition-transform"
                                           />
                                         </button>
-                                        {isGenerating ? (
-                                          <div className="text-[11px] text-gray-500 mt-1 inline-flex items-center gap-1">
-                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                            Atualizando
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    ) : (
-                                      <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
-                                        {isGenerating ? (
-                                          <Loader2 className="w-5 h-5 animate-spin" />
-                                        ) : (
-                                          <Sparkles className="w-5 h-5" />
-                                        )}
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    {vinculo.imagemModelo ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          openImagePreview(
-                                            vinculo.imagemModelo!,
-                                            `Modelo - ${vinculo.corNome}`,
-                                            `Tecido ${vinculo.tecidoNome}`
-                                          )
-                                        }
-                                        className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
-                                      >
-                                        <img
-                                          src={vinculo.imagemModelo}
-                                          alt={`Modelo ${vinculo.corNome}`}
-                                          className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
-                                        />
-                                      </button>
-                                    ) : (
-                                      <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
-                                        <Upload className="w-5 h-5" />
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    {vinculo.imagemPremiumSquare ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          openImagePreview(
-                                            vinculo.imagemPremiumSquare!,
-                                            `Premium 1:1 - ${vinculo.corNome}`,
-                                            'Layout premium salvo no Firebase.'
-                                          )
-                                        }
-                                        className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
-                                      >
-                                        <img
-                                          src={vinculo.imagemPremiumSquare}
-                                          alt={`Premium ${vinculo.corNome}`}
-                                          className="w-14 h-14 rounded-md border object-cover hover:scale-105 transition-transform"
-                                        />
-                                      </button>
-                                    ) : (
-                                      <div className="w-14 h-14 rounded-md border border-dashed flex items-center justify-center text-gray-300">
-                                        <Sparkles className="w-5 h-5" />
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="flex flex-col items-start gap-2">
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => void handleGeneratePremium(vinculo)}
-                                        disabled={generatingPremiumIds.has(vinculo.id) || !vinculo.imagemTingida || !vinculo.imagemModelo}
-                                      >
-                                        {generatingPremiumIds.has(vinculo.id) ? (
-                                          <>
-                                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                                            Gerando premium...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Sparkles className="w-4 h-4 mr-1" />
-                                            Gerar premium
-                                          </>
-                                        )}
-                                      </Button>
-
-                                      {vinculo.imagemPremiumSquare || vinculo.imagemPremiumPortrait ? (
-                                        <div className="flex gap-2">
-                                          {vinculo.imagemPremiumSquare ? (
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="h-7 px-2 text-[11px]"
-                                              onClick={() => window.open(vinculo.imagemPremiumSquare, '_blank', 'noopener,noreferrer')}
-                                            >
-                                              Abrir 1:1
-                                            </Button>
-                                          ) : null}
-                                          {vinculo.imagemPremiumPortrait ? (
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="h-7 px-2 text-[11px]"
-                                              onClick={() => window.open(vinculo.imagemPremiumPortrait, '_blank', 'noopener,noreferrer')}
-                                            >
-                                              Abrir 3:4
-                                            </Button>
+                                      ) : (
+                                        <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                          <ImageIcon className="w-5 h-5" />
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {vinculo.imagemGerada ? (
+                                        <div>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openImagePreview(
+                                                vinculo.imagemGerada!,
+                                                `Imagem gerada - ${vinculo.corNome}`,
+                                                fingerprintOutdated
+                                                  ? 'Versao desatualizada, sera regenerada automaticamente.'
+                                                  : undefined
+                                              )
+                                            }
+                                            className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
+                                          >
+                                            <img
+                                              src={vinculo.imagemGerada}
+                                              alt={`Gerada ${vinculo.corNome}`}
+                                              className="w-16 h-16 rounded-md border object-cover hover:scale-105 transition-transform"
+                                            />
+                                          </button>
+                                          {isGenerating ? (
+                                            <div className="text-[11px] text-gray-500 mt-1 inline-flex items-center gap-1">
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                              Atualizando
+                                            </div>
                                           ) : null}
                                         </div>
-                                      ) : null}
-
-                                      <label className="inline-flex">
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          className="sr-only"
-                                          onChange={(event) => {
-                                            const file = event.target.files?.[0];
-                                            if (file) {
-                                              void handleModeloUpload(vinculo, file);
-                                            }
-                                            event.currentTarget.value = '';
-                                          }}
-                                        />
-                                        <span className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-8 text-xs font-medium cursor-pointer hover:bg-accent hover:text-accent-foreground">
-                                          {processingModelUploadId === vinculo.id ? (
-                                            <>
-                                              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                                              Enviando...
-                                            </>
+                                      ) : (
+                                        <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                          {isGenerating ? (
+                                            <Loader2 className="w-5 h-5 animate-spin" />
                                           ) : (
-                                            <>
-                                              <Upload className="w-4 h-4 mr-1" />
-                                              {vinculo.imagemModelo ? 'Trocar modelo' : 'Upload modelo'}
-                                            </>
+                                            <Sparkles className="w-5 h-5" />
                                           )}
-                                        </span>
-                                      </label>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="group relative w-16 h-16">
+                                        {vinculo.imagemModelo ? (
+                                          <img
+                                            src={vinculo.imagemModelo}
+                                            alt={`Modelo ${vinculo.corNome}`}
+                                            className="w-16 h-16 rounded-md border object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-gray-300 bg-gray-50">
+                                            <Upload className="w-5 h-5" />
+                                          </div>
+                                        )}
+
+                                        <div className="absolute inset-0 rounded-md bg-black/60 flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                                          <button
+                                            type="button"
+                                            title="Visualizar imagem 1:1"
+                                            disabled={!vinculo.imagemModelo || processingModelUploadId === vinculo.id}
+                                            onClick={() =>
+                                              vinculo.imagemModelo
+                                                ? openImagePreview(
+                                                    vinculo.imagemModelo,
+                                                    `Modelo - ${vinculo.corNome}`,
+                                                    `Tecido ${vinculo.tecidoNome}`
+                                                  )
+                                                : undefined
+                                            }
+                                            className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/90 text-gray-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                                          >
+                                            <Eye className="w-5 h-5" />
+                                            <span className="sr-only">Visualizar imagem 1:1</span>
+                                          </button>
+
+                                          <label
+                                            title={vinculo.imagemModelo ? 'Trocar modelo/imagem' : 'Enviar modelo/imagem'}
+                                            className={`inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/90 text-gray-900 hover:bg-white cursor-pointer ${
+                                              processingModelUploadId === vinculo.id ? 'pointer-events-none opacity-60' : ''
+                                            }`}
+                                          >
+                                            <input
+                                              type="file"
+                                              accept="image/*"
+                                              className="sr-only"
+                                              disabled={processingModelUploadId === vinculo.id}
+                                              onChange={(event) => {
+                                                const file = event.target.files?.[0];
+                                                if (file) {
+                                                  void handleModeloUpload(vinculo, file);
+                                                }
+                                                event.currentTarget.value = '';
+                                              }}
+                                            />
+                                            {processingModelUploadId === vinculo.id ? (
+                                              <Loader2 className="w-5 h-5 animate-spin" />
+                                            ) : (
+                                              <Upload className="w-5 h-5" />
+                                            )}
+                                            <span className="sr-only">
+                                              {vinculo.imagemModelo ? 'Trocar modelo/imagem' : 'Enviar modelo/imagem'}
+                                            </span>
+                                          </label>
+                                        </div>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      {generatingPremiumIds.has(vinculo.id) ? (
+                                        <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-gray-400 bg-gray-50">
+                                          <Loader2 className="w-5 h-5 animate-spin" />
+                                        </div>
+                                      ) : vinculo.imagemPremiumSquare || vinculo.imagemPremiumPortrait ? (
+                                        <div className="group relative w-16 h-16">
+                                          <img
+                                            src={vinculo.imagemPremiumSquare || vinculo.imagemPremiumPortrait || ''}
+                                            alt={`Premium ${vinculo.corNome}`}
+                                            className="w-16 h-16 rounded-md border object-cover"
+                                          />
+
+                                          <div className="absolute inset-0 rounded-md bg-black/60 flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                                            <button
+                                              type="button"
+                                              title="Visualizar imagem 1:1"
+                                              disabled={!vinculo.imagemPremiumSquare}
+                                              onClick={() =>
+                                                vinculo.imagemPremiumSquare
+                                                  ? openImagePreview(
+                                                      vinculo.imagemPremiumSquare,
+                                                      `Premium 1:1 - ${vinculo.corNome}`,
+                                                      'Layout premium salvo no Firebase.'
+                                                    )
+                                                  : undefined
+                                              }
+                                              className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/90 text-[10px] font-semibold leading-none text-gray-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                                            >
+                                              1:1
+                                              <span className="sr-only">Visualizar imagem 1:1</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              title="Visualizar imagem 3:4"
+                                              disabled={!vinculo.imagemPremiumPortrait}
+                                              onClick={() =>
+                                                vinculo.imagemPremiumPortrait
+                                                  ? openImagePreview(
+                                                      vinculo.imagemPremiumPortrait,
+                                                      `Premium 3:4 - ${vinculo.corNome}`,
+                                                      'Layout premium salvo no Firebase.'
+                                                    )
+                                                  : undefined
+                                              }
+                                              className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/90 text-[10px] font-semibold leading-none text-gray-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                                            >
+                                              3:4
+                                              <span className="sr-only">Visualizar imagem 3:4</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                          <Sparkles className="w-5 h-5" />
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })
+                            )}
                           </TableBody>
                         </Table>
                       </div>
@@ -994,6 +1184,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                           <p className="font-medium text-gray-900">{mosaico.tecidoNomeSnapshot}</p>
                           <p className="text-xs text-gray-500">
                             Template {mosaico.templateId} {'\u2022'} {mosaico.selectedVinculoIds.length} imagem(ns)
+                            {mosaico.isDefaultForTecido ? ' \u2022 Padrao do tecido' : ''}
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
