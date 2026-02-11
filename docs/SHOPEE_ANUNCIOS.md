@@ -7,6 +7,36 @@ Ultima atualizacao: 2026-02-11
 Para acompanhar execucao por fase (Onda 1, 2 e 3), usar:
 - `docs/SHOPEE_ANUNCIOS_ROADMAP.md`
 
+## Navegacao rapida (para agentes)
+
+### Entrypoints de codigo
+- UI principal do fluxo: `frontend/src/pages/CriarAnuncioShopee.tsx`
+- Logica de precificacao: `frontend/src/lib/shopeePricing.ts`
+- Publicacao/backend Shopee: `functions/src/services/shopee-product.service.ts`
+- Rotas Shopee: `functions/src/routes/shopee-products.routes.ts`
+- Tipos compartilhados:
+  - `frontend/src/types/shopee-product.types.ts`
+  - `functions/src/types/shopee-product.types.ts`
+
+### Task -> arquivo
+- `mudar ordem/validacao de steps`: `frontend/src/pages/CriarAnuncioShopee.tsx`
+- `mudar formula de preco/lucro`: `frontend/src/lib/shopeePricing.ts`
+- `mudar defaults de precificacao`: `frontend/src/hooks/useShopeePreferences.ts` + `functions/src/services/shopee-preferences.service.ts`
+- `mudar payload de publicacao`: `functions/src/services/shopee-product.service.ts`
+- `mudar validacao de categoria/marca/size chart`: `frontend/src/components/Shopee/*.tsx` + `functions/src/services/shopee-category.service.ts` + `functions/src/services/shopee-item-limit.service.ts`
+
+### Comandos de verificacao
+```powershell
+# testes de precificacao
+cd frontend; npm run test -- src/lib/shopeePricing.test.ts
+
+# build frontend
+cd frontend; npm run build
+
+# validacao cross (quando houver mudanca backend/functions)
+powershell -ExecutionPolicy Bypass -File scripts/validate-change.ps1 -RepoRoot c:/Users/razailoja/Desktop/RazaiSystem -Scope cross
+```
+
 ## Visao geral
 
 O fluxo de criacao em `frontend/src/pages/CriarAnuncioShopee.tsx` esta organizado em:
@@ -34,10 +64,19 @@ Parametros persistidos:
 - `aplicar_teto`
 - `aplicar_baixo_valor`
 
+### Semantica de margem (importante)
+
+- `modo_margem_lucro = percentual`:
+  - `margem_liquida_percentual` representa o percentual de lucro liquido sobre o preco final.
+- `modo_margem_lucro = valor_fixo`:
+  - `margem_lucro_fixa` representa lucro liquido alvo por metro (`R$/m`).
+  - lucro liquido alvo total por variacao = `margem_lucro_fixa * comprimento_m`.
+
 ### Formula base (V1)
 
-- sem teto: `preco = (C + F + B) / (1 - r - m)`
-- com teto: `preco = (C + F + B + T) / (1 - m)` (quando teto efetivamente aplicado)
+- taxa adicional fixa de antecipacao: `a = 3%` sobre o valor liquido da venda
+- sem teto: `preco = (C + (1-a)*(F+B)) / ((1-a)*(1-r) - m)`
+- com teto: `preco = (C + (1-a)*(F+B+T)) / ((1-a) - m)` (quando teto efetivamente aplicado)
 - baixo valor: calcula com `B=0`; se ficar abaixo do minimo, recalcula com adicional
 
 Onde:
@@ -46,6 +85,28 @@ Onde:
 - `r`: comissao percentual
 - `m`: margem percentual (quando modo percentual)
 - `T`: teto de comissao
+- `a`: taxa de antecipacao (fixa em 3%)
+
+Complemento para `modo_margem_lucro = valor_fixo`:
+
+- `MfixTotal = margem_lucro_fixa * comprimento_m`
+- sem teto: `preco = (C + (1-a)*(F+B) + MfixTotal) / ((1-a)*(1-r))`
+- com teto efetivamente aplicado: `preco = (C + MfixTotal + (1-a)*(F+B+T)) / (1-a)`
+
+### Validacao inversa de lucro
+
+Para validar se o calculo bate:
+
+- `lucro_liquido_total = preco - comissao(preco) - F - B - C`
+- `taxa_antecipacao = 3% * (preco - comissao(preco) - F - B)`
+- `lucro_liquido_total = preco - comissao(preco) - F - B - taxa_antecipacao - C`
+- `lucro_liquido_por_metro = lucro_liquido_total / comprimento_m`
+
+Exemplos esperados no modo fixo por metro:
+
+- 1m x 1,60m com `margem_lucro_fixa = 5` -> lucro liquido total esperado `R$ 5,00`
+- 2m x 1,60m com `margem_lucro_fixa = 4` -> lucro liquido total esperado `R$ 8,00`
+- 3m x 1,60m com `margem_lucro_fixa = 3` -> lucro liquido total esperado `R$ 9,00`
 
 ## Ajustes de UX na tela de precificacao
 
@@ -54,6 +115,7 @@ Exibidos no step:
 - `modo da margem` (percentual ou valor fixo)
 - valor da margem global
 - margem por comprimento (opcional)
+- quando `valor_fixo`, a UI trata o campo como `R$/m`
 
 Ocultos na UI (mas ainda usados no calculo):
 - `comissao_percentual`
@@ -61,6 +123,7 @@ Ocultos na UI (mas ainda usados no calculo):
 - `valor_minimo_baixo_valor`
 - `adicional_baixo_valor`
 - `teto_comissao`
+- taxa de antecipacao fixa de `3%` sobre o valor liquido da venda
 
 Flags de regra no payload:
 - `aplicar_teto = true`
@@ -72,6 +135,9 @@ Flags de regra no payload:
 2. O valor sugerido e arredondado para cima usando centavos preferenciais:
 - termina em `,50` ou `,90` (o mais proximo acima do valor bruto).
 3. A tela exibe `Lucro liquido` em reais por comprimento e no preco unico.
+4. No bloco por comprimento, a tela exibe:
+- `Lucro liquido total` da variacao
+- valor entre parenteses `(.../m)` com o lucro por metro
 
 ## Contratos e persistencia
 
@@ -137,3 +203,18 @@ Arquivos centrais da onda:
 - `frontend/src/pages/CriarAnuncioShopee.tsx`
 - `frontend/src/types/shopee-product.types.ts`
 - `functions/src/types/shopee-product.types.ts`
+
+## Onda 2 concluida (Robustez de Publicacao)
+
+Status: concluida em 2026-02-11 (validacao cross aprovada).
+
+Principais ajustes aplicados:
+- lock transacional com TTL para publish por draft (`publish_lock`), evitando concorrencia.
+- comportamento idempotente quando item ja foi criado na Shopee.
+- rollback automatico (`delete_item`) quando `add_item` passa e `init_tier_variation` falha.
+- validacao pre-publish reforcada no backend:
+  - atributos obrigatorios da categoria
+  - marca obrigatoria da categoria
+  - consistencia de logistica habilitada
+  - compatibilidade de size chart com categoria
+- bloqueios equivalentes no frontend para impedir avancar/publicar com obrigatorios pendentes.

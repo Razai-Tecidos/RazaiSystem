@@ -1,30 +1,51 @@
 # Documentacao do RazaiSystem
 
-Ultima atualizacao: 2026-02-10
+Ultima atualizacao: 2026-02-11
 
-## Mapa rapido
+## Leitura em 60s (para agentes)
+1. Entenda o escopo global: [ARCHITECTURE.md](ARCHITECTURE.md)
+2. Se for Shopee (mais comum): [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md)
+3. Para status de execucao por ondas/tasks: [SHOPEE_ANUNCIOS_ROADMAP.md](SHOPEE_ANUNCIOS_ROADMAP.md)
+4. Para deploy: [DEPLOY.md](DEPLOY.md) e [DEPLOY_FIREBASE.md](DEPLOY_FIREBASE.md)
+
+## Mapa por intencao (task -> onde abrir primeiro)
+- `Criar/editar fluxo de anuncio Shopee`:
+  - Doc: [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md)
+  - Codigo: `frontend/src/pages/CriarAnuncioShopee.tsx`
+  - Backend: `functions/src/services/shopee-product.service.ts`
+- `Corrigir endpoint/contrato Shopee`:
+  - Doc: [SHOPEE_API_REFERENCIA.md](SHOPEE_API_REFERENCIA.md)
+  - Codigo: `functions/src/services/shopee*.service.ts` e `functions/src/routes/shopee*.routes.ts`
+- `Acompanhar progresso de implementacao`:
+  - Doc: [SHOPEE_ANUNCIOS_ROADMAP.md](SHOPEE_ANUNCIOS_ROADMAP.md)
+- `UI base, layout e componentes compartilhados`:
+  - Docs: [COMPONENTS.md](COMPONENTS.md), [UX_RESPONSIVIDADE.md](UX_RESPONSIVIDADE.md)
+- `Navegacao e hooks`:
+  - Doc: [HOOKS.md](HOOKS.md)
+- `Modulos de negocio (tecidos, cores, vinculos, imagens, catalogo)`:
+  - Docs em `frontend/src/docs/*.md`
+
+## Mapa rapido de documentacao
 
 ### Base do projeto
-1. [README.md](../README.md) - Visao geral, setup e deploy.
-2. [ARCHITECTURE.md](ARCHITECTURE.md) - Arquitetura atual, fluxos e modelos de dados.
-3. [COMPONENTS.md](COMPONENTS.md) - Componentes de layout e UI relevantes.
-4. [HOOKS.md](HOOKS.md) - Hooks principais e utilitarios de navegacao.
-
-### UX e navegacao
-1. [UX_RESPONSIVIDADE.md](UX_RESPONSIVIDADE.md) - UX desktop/mobile e padroes de navegacao.
+1. [README.md](../README.md) - visao geral, setup e comandos.
+2. [ARCHITECTURE.md](ARCHITECTURE.md) - arquitetura, fluxos e dados.
+3. [COMPONENTS.md](COMPONENTS.md) - componentes de layout e UI.
+4. [HOOKS.md](HOOKS.md) - hooks principais.
 
 ### Shopee
-1. [SHOPEE.md](SHOPEE.md) - Visao geral da integracao.
-2. [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md) - Fluxo completo de criacao/publicacao de anuncios.
-3. [SHOPEE_API_REFERENCIA.md](SHOPEE_API_REFERENCIA.md) - Referencia de endpoints.
-4. [SHOPEE_WEBHOOK_SETUP.md](SHOPEE_WEBHOOK_SETUP.md) - Setup de webhook.
-5. [SHOPEE_STOCK_REVIEW.md](SHOPEE_STOCK_REVIEW.md) - Revisao de estoque.
+1. [SHOPEE.md](SHOPEE.md) - visao geral da integracao.
+2. [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md) - fluxo de criacao/publicacao.
+3. [SHOPEE_ANUNCIOS_ROADMAP.md](SHOPEE_ANUNCIOS_ROADMAP.md) - ondas/tasks/status.
+4. [SHOPEE_API_REFERENCIA.md](SHOPEE_API_REFERENCIA.md) - endpoints.
+5. [SHOPEE_WEBHOOK_SETUP.md](SHOPEE_WEBHOOK_SETUP.md) - setup webhook.
+6. [SHOPEE_STOCK_REVIEW.md](SHOPEE_STOCK_REVIEW.md) - revisao de estoque.
 
 ### Deploy
 1. [DEPLOY.md](DEPLOY.md)
 2. [DEPLOY_FIREBASE.md](DEPLOY_FIREBASE.md)
 
-### Documentacao de modulos (frontend)
+### Modulos frontend
 1. [TECIDOS.md](../frontend/src/docs/TECIDOS.md)
 2. [ESTAMPAS.md](../frontend/src/docs/ESTAMPAS.md)
 3. [CAPTURA_COR.md](../frontend/src/docs/CAPTURA_COR.md)
@@ -33,21 +54,25 @@ Ultima atualizacao: 2026-02-10
 6. [CATALOGO.md](../frontend/src/docs/CATALOGO.md)
 7. [REINHARD.md](../frontend/src/docs/REINHARD.md)
 
-## O que mudou nesta atualizacao
-- Navegacao desktop persistente com `DesktopSidebar`, atalhos e historico recente.
-- Sincronizacao de modulo ativo com URL hash (`#/modulo`) sem React Router.
-- Novo modulo `Gestao de Imagens` com geracao de imagem, upload de modelo e mosaicos.
-- `Gestao de Imagens` agora agrupa por tecido e permite regeneracao em lote por tecido.
-- `Gestao de Imagens` ganhou controle de mosaico default por tecido, botao de ultimo mosaico e acoes de preview no hover (modelo e premium).
-- `Shopee` passou a ser modulo pai para `Criar Anuncio` e `Tamanhos`.
-- Integracao do fluxo Shopee com `titulo_anuncio` e selecao de capa por mosaico.
-- Fluxo Shopee ganhou step dedicado `tamanhos_precificacao`, margem em `%` ou `R$`, margem por comprimento e exibicao de lucro liquido.
-- Ajustes no modulo Vinculos com ampliacao de imagem na tela.
-- Estampas e Vinculos foram alinhados no padrao de colunas `SKU`, `Nome`, `Preview`, `Vinculo` e `Acoes`.
-- Atualizacao das regras de Firebase para `gestao_imagens_mosaicos` e `mosaicos/**`.
-- Catalogo passou a usar lista unificada de tecidos (liso + estampado), share nativo no celular e PDF priorizando `imagemGerada`.
+## Atalhos de busca (para localizar rapido)
+- Localizar entrypoint de criacao Shopee:
+```powershell
+rg -n "CriarAnuncioShopee|STEP_ORDER|tamanhos_precificacao" frontend/src
+```
+- Localizar payload e publish Shopee:
+```powershell
+rg -n "publishProduct|add_item|init_tier_variation|size_chart_info" functions/src
+```
+- Localizar validacoes de UI Shopee:
+```powershell
+rg -n "canProceedFrom|validationErrors|CategoryAttributes|BrandSelector|SizeChartSelector" frontend/src/pages/CriarAnuncioShopee.tsx
+```
 
-## Convencoes
-- Sempre atualizar os docs quando houver mudanca de interface, fluxo ou modelo de dados.
+## Regra de manutencao de docs
+- Sempre atualizar docs quando houver mudanca de interface, fluxo ou modelo de dados.
 - Preferir nomes de campos exatamente como no codigo (`imagemGerada`, `titulo_anuncio`, etc.).
-- Quando houver regra de precedencia (ex.: inicializacao de pagina), documentar ordem explicitamente.
+- Quando houver regra de precedencia, documentar a ordem explicitamente.
+- Em docs de modulo, manter no topo:
+  - `entrypoints`
+  - `task -> arquivo`
+  - `comandos de validacao`

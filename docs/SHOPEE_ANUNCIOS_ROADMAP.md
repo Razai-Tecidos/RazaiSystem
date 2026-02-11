@@ -17,6 +17,22 @@ Regra de atualizacao:
 2. Registre data e observacao curta no bloco da tarefa.
 3. Quando fechar uma onda, preencha a secao "Validacao da onda".
 
+## Uso rapido (para agentes)
+
+1. Identifique a onda alvo pelo objetivo:
+- Onda 1: conformidade de contrato Shopee + bugs criticos.
+- Onda 2: robustez de publicacao (lock, rollback, validacao reforcada).
+- Onda 3: performance, observabilidade e testes de regressao.
+2. Dentro da onda, procure a task pelo ID (`O1.2`, `O2.3`, etc.).
+3. Use o bloco `Arquivos alvo` como primeira lista de arquivos para abrir.
+4. Atualize status + `Data` + `Observacao` na mesma task.
+5. Ao finalizar a onda, preencha `Validacao da onda` e `Resultado`.
+
+Atalho de busca:
+```powershell
+rg -n "O1\\.|O2\\.|O3\\.|Validacao da onda|Resultado" docs/SHOPEE_ANUNCIOS_ROADMAP.md
+```
+
 ## Onda 1 (P0) - Conformidade API + Bugs Criticos
 Objetivo: remover falhas de contrato com Shopee e erros funcionais no publish.
 
@@ -85,37 +101,37 @@ Resultado:
 Objetivo: evitar estado inconsistente e melhorar confiabilidade em falhas parciais.
 
 ### Tasks
-- [ ] O2.1 Idempotencia/lock de publish por draft
+- [x] O2.1 Idempotencia/lock de publish por draft
   Arquivos alvo:
   - `functions/src/services/shopee-product.service.ts`
   - `functions/src/routes/shopee-products.routes.ts`
   Atualizacao:
-  - Data:
-  - Observacao:
+  - Data: 2026-02-11
+  - Observacao: publish agora usa lock transacional com TTL (`publish_lock`), evita concorrencia por draft e retorna idempotente quando o item ja foi criado.
 
-- [ ] O2.2 Rollback quando `add_item` passa e `init_tier_variation` falha
+- [x] O2.2 Rollback quando `add_item` passa e `init_tier_variation` falha
   Arquivos alvo:
   - `functions/src/services/shopee-product.service.ts`
   Atualizacao:
-  - Data:
-  - Observacao:
+  - Data: 2026-02-11
+  - Observacao: rollback automatico com `delete_item` quando `add_item` cria item e `init_tier_variation` falha, incluindo persistencia de erro final.
 
-- [ ] O2.3 Validacao pre-publish reforcada (atributos/marca/logistica/size chart)
+- [x] O2.3 Validacao pre-publish reforcada (atributos/marca/logistica/size chart)
   Arquivos alvo:
   - `frontend/src/pages/CriarAnuncioShopee.tsx`
   - `functions/src/services/shopee-product.service.ts`
   Atualizacao:
-  - Data:
-  - Observacao:
+  - Data: 2026-02-11
+  - Observacao: backend valida obrigatorios de categoria/marca/logistica/size chart antes do publish; frontend bloqueia avanco/publicacao quando obrigatorios estiverem pendentes.
 
 ### Validacao da onda
-- [ ] `scripts/validate-change.ps1 -RepoRoot c:/Users/razailoja/Desktop/RazaiSystem -Scope cross`
-- [ ] Testes de falha parcial no publish (manual + automatizado)
+- [x] `scripts/validate-change.ps1 -RepoRoot c:/Users/razailoja/Desktop/RazaiSystem -Scope cross`
+- [~] Testes de falha parcial no publish (manual + automatizado)
 
 Resultado:
-- Data:
-- Status final:
-- Riscos residuais:
+- Data: 2026-02-11
+- Status final: Onda 2 implementada e validada em escopo cross (frontend/backend/functions).
+- Riscos residuais: lock depende de TTL (10 min) para recuperacao automatica de publish interrompido; falta um teste dedicado de falha parcial (`add_item` OK + `init_tier_variation` erro) para fechar cobertura especifica.
 
 ---
 

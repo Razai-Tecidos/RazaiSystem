@@ -1,258 +1,118 @@
-# Referência da API Shopee — add_item
+# Referencia API Shopee (agent-first)
 
-Payload validado em produção (2026-02-09). Produto criado com sucesso: item_id 46356035385.
+Ultima atualizacao: 2026-02-11
 
----
+## Leitura rapida
+- Source of truth externa: Shopee Open API docs.
+- Source of truth interna (implementacao):
+  - `functions/src/services/shopee.service.ts`
+  - `functions/src/services/shopee-product.service.ts`
+  - `functions/src/routes/shopee-*.routes.ts`
 
-## 1. PAYLOAD CORRETO (VALIDADO)
+## Task -> endpoint -> codigo
+- Buscar categorias:
+  - Endpoint: `GET /api/v2/product/get_category`
+  - Codigo: `functions/src/services/shopee-category.service.ts`
+- Buscar atributos da categoria:
+  - Endpoint: `GET /api/v2/product/get_attribute_tree`
+  - Codigo: `functions/src/services/shopee-category.service.ts`
+- Buscar marcas:
+  - Endpoint: `GET /api/v2/product/get_brand_list`
+  - Codigo: `functions/src/services/shopee-category.service.ts`
+- Buscar canais logisticos:
+  - Endpoint: `GET /api/v2/logistics/get_channel_list`
+  - Codigo: `functions/src/services/shopee-logistics.service.ts`
+- Publicar anuncio:
+  - Endpoint: `POST /api/v2/product/add_item`
+  - Endpoint: `POST /api/v2/product/init_tier_variation`
+  - Codigo: `functions/src/services/shopee-product.service.ts`
+- Upload de imagem:
+  - Endpoint: `POST /api/v2/mediaspace/upload_image` (multipart)
+  - Codigo: `functions/src/services/shopee.service.ts`
+- Excluir item (rollback/manual):
+  - Endpoint: `POST /api/v2/product/delete_item`
+  - Codigo: `functions/src/services/shopee-product.service.ts`
 
-```json
-{
-  "item_name": "Anarruga 96% Poliéster - 4% Elastano",
-  "description": "Descrição com mínimo 100 caracteres...",
-  "item_sku": "T001",
-  "original_price": 10,
-  "seller_stock": [{ "stock": 100 }],
-  "category_id": 100416,
-  "weight": 0.3,
-  "dimension": {
-    "package_length": 30,
-    "package_width": 30,
-    "package_height": 10
-  },
-  "image": {
-    "image_id_list": ["sg-11134201-xxxx-xxxxx"]
-  },
-  "tier_variation": [
-    {
-      "name": "Cor",
-      "option_list": [
-        { "option": "Azul", "image": { "image_id": "sg-xxx" } }
-      ]
-    },
-    {
-      "name": "Tamanho",
-      "option_list": [
-        { "option": "1m x 1,60m" }
-      ]
-    }
-  ],
-  "model": [
-    {
-      "model_sku": "T001-AZ001-TAM006",
-      "tier_index": [0, 0],
-      "original_price": 10,
-      "seller_stock": [{ "stock": 100 }]
-    }
-  ],
-  "logistic_info": [
-    { "logistic_id": 90033, "enabled": true }
-  ],
-  "condition": "NEW",
-  "item_status": "NORMAL",
-  "pre_order": { "is_pre_order": false },
-  "days_to_ship": 2,
-  "brand": {
-    "brand_id": 0,
-    "original_brand_name": "No Brand"
-  }
-}
+## Contrato critico de publicacao
+
+### Regra estrutural
+- `add_item` NAO deve levar tier/model completos.
+- Variacoes entram em `init_tier_variation`.
+
+### add_item (campos essenciais)
+- `item_name`
+- `description`
+- `original_price`
+- `seller_stock` (top-level)
+- `category_id`
+- `weight`
+- `dimension`
+- `image.image_id_list`
+- `logistic_info`
+- `condition`
+- `item_status`
+- `brand` (`brand_id` + `original_brand_name`)
+- `size_chart_info` (quando aplicavel)
+
+### init_tier_variation (campos essenciais)
+- `item_id`
+- `standardise_tier_variation`
+- `model` (com `tier_index`, `model_sku`, `original_price`, `seller_stock`)
+
+## Regras de request que mais quebram
+- `seller_stock` precisa existir no nivel correto (top-level e model, conforme endpoint).
+- Imagem em Shopee usa `image_id`, nao URL crua.
+- `brand` deve ser consistente com obrigatoriedade da categoria.
+- Size chart precisa ser valido para a categoria.
+- Logistica precisa estar habilitada e compativel com peso/dimensoes.
+
+## Endpoints validados (resumo)
+
+### Produto
+- `POST /api/v2/product/add_item`
+- `POST /api/v2/product/init_tier_variation`
+- `POST /api/v2/product/add_model`
+- `POST /api/v2/product/delete_item`
+- `GET /api/v2/product/get_item_list`
+- `GET /api/v2/product/get_item_base_info`
+- `GET /api/v2/product/get_model_list`
+- `POST /api/v2/product/update_model`
+- `POST /api/v2/product/update_price`
+- `POST /api/v2/product/update_stock`
+
+### Catalogo
+- `GET /api/v2/product/get_category`
+- `GET /api/v2/product/get_attribute_tree`
+- `GET /api/v2/product/get_brand_list`
+- `GET /api/v2/product/get_item_limit`
+
+### Midia e logistica
+- `POST /api/v2/mediaspace/upload_image`
+- `GET /api/v2/logistics/get_channel_list`
+- `GET /api/v2/shop/get_warehouse_detail`
+
+## Endpoints bloqueados por politica interna
+Nao implementar em projetos:
+- `v2.order.get_order_detail`
+- `v2.returns.get_return_list`
+- `v2.returns.get_return_detail`
+- `v2.order.get_buyer_invoice_info`
+
+## Idioma/regionalizacao
+- Quando suportado no endpoint, preferir parametros de linguagem/regiao em portugues (`pt-BR`/`BR`).
+- Em caso de conflito de contrato, prevalece o campo exigido pela documentacao oficial do endpoint.
+
+## Checklist pre-publish (agente)
+1. Categoria escolhida e valida.
+2. Atributos obrigatorios preenchidos.
+3. Marca valida para categoria.
+4. Logistica habilitada e compativel.
+5. Imagens convertidas para `image_id`.
+6. Payload `add_item` sem campos de variacao fora de lugar.
+7. `init_tier_variation` com `standardise_tier_variation` e `model` validos.
+
+## Comandos rapidos de localizacao
+```powershell
+rg -n "add_item|init_tier_variation|upload_image|get_attribute_tree|get_brand_list|get_channel_list" functions/src
+rg -n "callShopeeApi|ensureValidToken|uploadImageToShopeeMultipart" functions/src/services
 ```
-
----
-
-## 2. REGRAS CRÍTICAS (APRENDIDAS NA PRÁTICA)
-
-### 2.1 seller_stock — OBRIGATÓRIO EM DOIS NÍVEIS
-```
-✅ Top-level:  "seller_stock": [{ "stock": 100 }]
-✅ Cada model: "seller_stock": [{ "stock": 100 }]
-❌ NÃO usar stock_info_v2 (campo de update_stock, não de add_item)
-❌ NÃO omitir seller_stock (erro: "invalid field seller_stock, value must Not Null")
-```
-
-### 2.2 brand — AMBOS CAMPOS OBRIGATÓRIOS
-```
-✅ { "brand_id": 0, "original_brand_name": "No Brand" }
-❌ { "brand_id": 0 }  (falta original_brand_name → erro)
-❌ Omitir brand  (API aceita mas pode falhar em algumas categorias)
-```
-
-### 2.3 image — USAR image_id, NÃO URL
-```
-✅ "image": { "image_id_list": ["sg-11134201-xxxx"] }
-✅ Variação: "image": { "image_id": "sg-11134201-xxxx" }
-❌ "image": { "image_url_list": [...] }  (campo errado para add_item)
-```
-Upload retorna `image_id` via `POST /api/v2/mediaspace/upload_image` (multipart/form-data).
-
-### 2.4 Imagens — Compressão obrigatória
-- Máximo 2MB por imagem
-- Formato: JPG/PNG
-- Sistema comprime automaticamente via Sharp antes do upload
-- Proporção 1:1 recomendada (500x500 mínimo)
-
----
-
-## 3. CAMPOS DO PAYLOAD
-
-### Obrigatórios
-| Campo | Tipo | Limites |
-|-------|------|---------|
-| `item_name` | string | 20-120 caracteres |
-| `description` | string | 100-3000 caracteres |
-| `original_price` | float | 0.01 - 999999999 |
-| `seller_stock` | object[] | `[{ stock: N }]` |
-| `category_id` | int | ID válido Shopee |
-| `weight` | float | 0.001 - 300 kg |
-| `dimension` | object | package_length/width/height (cm) |
-| `image.image_id_list` | string[] | 1-9 image_ids |
-| `logistic_info` | object[] | Pelo menos 1 canal habilitado |
-| `condition` | string | "NEW" ou "USED" |
-| `item_status` | string | "NORMAL" ou "UNLIST" |
-
-### Condicionais (quando há variações)
-| Campo | Tipo | Notas |
-|-------|------|-------|
-| `tier_variation` | object[] | Máx 2 tiers, máx 50 opções cada |
-| `model` | object[] | Máx 50 modelos. Cada um: model_sku, tier_index, original_price, seller_stock |
-
-### Opcionais
-| Campo | Tipo | Notas |
-|-------|------|-------|
-| `brand` | object | `{brand_id, original_brand_name}` — recomendado sempre enviar |
-| `item_sku` | string | Máx 100 caracteres |
-| `pre_order` | object | `{is_pre_order: bool, days_to_ship?: int}` |
-| `days_to_ship` | int | 1-3 se não pre-order |
-| `attribute_list` | object[] | Atributos obrigatórios da categoria |
-| `video` | object | `{video_url: string}` |
-| `size_chart` | int | ID do size chart |
-| `wholesale` | object[] | Tiers de preço atacado |
-| `description_type` | string | "normal" ou "extended" |
-| `extended_description` | object | Para vendedores whitelisted |
-| `tax_info` | object | NCM, GTIN (dentro de cada model) |
-
----
-
-## 4. ERROS COMUNS E SOLUÇÕES
-
-| Erro | Causa | Solução |
-|------|-------|---------|
-| `seller_stock, value must Not Null` | seller_stock faltando no top-level ou model | Incluir em AMBOS níveis |
-| `api_suspended` | Endpoint path errado | Verificar path correto na doc |
-| Brand rejeitado | Falta `original_brand_name` | Enviar ambos: `brand_id` + `original_brand_name` |
-| Image validation | Imagem > 2MB ou formato errado | Comprimir com Sharp antes do upload |
-| Logistic info | Peso/dimensões incompatíveis | Verificar limites do canal logístico |
-| Category attribute | Atributo obrigatório faltando | Buscar via `get_attribute_tree` |
-
----
-
-## 5. ENDPOINTS VALIDADOS
-
-| Endpoint | Path | Método |
-|----------|------|--------|
-| Criar item | `/api/v2/product/add_item` | POST |
-| Init variações | `/api/v2/product/init_tier_variation` | POST |
-| Add modelos | `/api/v2/product/add_model` | POST |
-| Deletar item | `/api/v2/product/delete_item` | POST |
-| Upload imagem | `/api/v2/mediaspace/upload_image` | POST (multipart) |
-| Categorias | `/api/v2/product/get_category` | GET |
-| Atributos | `/api/v2/product/get_attribute_tree` | GET |
-| Marcas | `/api/v2/product/get_brand_list` | GET |
-| Limites | `/api/v2/product/get_item_limit` | GET |
-| Lista itens | `/api/v2/product/get_item_list` | GET |
-| Info item | `/api/v2/product/get_item_base_info` | GET |
-| Modelos | `/api/v2/product/get_model_list` | GET |
-| Update modelo | `/api/v2/product/update_model` | POST |
-| Update preço | `/api/v2/product/update_price` | POST |
-| Update estoque | `/api/v2/product/update_stock` | POST |
-| Logística | `/api/v2/logistics/get_channel_list` | GET |
-| Warehouse | `/api/v2/shop/get_warehouse_detail` | GET |
-
-**Endpoints que NÃO existem:**
-- `get_attributes` → usar `get_attribute_tree`
-- `support_size_chart` (só em `globalproductcb_seller_only`)
-- `media_space/upload_image` → usar `mediaspace/upload_image`
-
----
-
-## 6. FLUXO DE PUBLICAÇÃO (publishProduct) — 2 chamadas
-
-**CRÍTICO: `add_item` NÃO aceita `tier_variation` nem `model` — Shopee ignora silenciosamente!**
-
-```
-1. Lê rascunho do Firestore
-2. Verifica permissão (created_by === userId)
-3. Busca dados do tecido (formatação nome/descrição)
-4. Valida payload (shopee-validation.ts)
-5. Atualiza status → "publishing"
-6. Busca access_token (ensureValidToken)
-7. Busca canais logísticos (buildLogisticInfoForProduct)
-8. Upload imagens principais (comprime → upload → retorna image_id)
-9. Upload imagens de variação (cores com overlay)
-10. POST /api/v2/product/add_item (SEM variações)
-11. Aguarda 5 segundos
-12. POST /api/v2/product/init_tier_variation (tiers + models)
-13. Atualiza Firestore: item_id, status="created", published_at
-```
-
-**Dry-run:** `POST /:id/publish?dry_run=true` — retorna `{ add_item, init_tier_variation }`.
-
----
-
-## 6.1 init_tier_variation — Formato Correto
-
-**Usa `standardise_tier_variation` (NÃO `tier_variation`)**
-
-```json
-{
-  "item_id": 12345,
-  "standardise_tier_variation": [
-    {
-      "variation_id": 0,
-      "variation_group_id": 0,
-      "variation_name": "Cor",
-      "variation_option_list": [
-        { "variation_option_id": 0, "variation_option_name": "Azul", "image_id": "sg-xxx" }
-      ]
-    },
-    {
-      "variation_id": 0,
-      "variation_group_id": 0,
-      "variation_name": "Tamanho",
-      "variation_option_list": [
-        { "variation_option_id": 0, "variation_option_name": "1m x 1,50m" }
-      ]
-    }
-  ],
-  "model": [
-    {
-      "tier_index": [0, 0],
-      "model_sku": "T001-AZ001-TAM006",
-      "original_price": 10,
-      "seller_stock": [{ "stock": 100 }]
-    }
-  ]
-}
-```
-
-**Diferenças do formato antigo:**
-| add_item (antigo, errado) | init_tier_variation (correto) |
-|---------------------------|-------------------------------|
-| `tier_variation` | `standardise_tier_variation` |
-| `name` | `variation_name` |
-| `option_list` | `variation_option_list` |
-| `option` | `variation_option_name` |
-| `image: { image_id }` | `image_id` (direto) |
-| — | `variation_id: 0` |
-| — | `variation_option_id: 0` |
-| — | `variation_group_id: 0` |
-
----
-
-## 7. CONFIGURAÇÃO DA LOJA (803215808)
-
-- **Multi-warehouse:** NÃO (whitelist error)
-- **Logísticas:** SPX Entrega Rápida (90033), Shopee Xpress (91003), Retirada (90024)
-- **Ambiente:** Produção (partner.shopeemobile.com)
-- **Credenciais:** .env em `functions/.env` (SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY)

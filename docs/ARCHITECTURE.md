@@ -1,125 +1,104 @@
 # Arquitetura do Projeto
 
-Ultima atualizacao: 2026-02-10
+Ultima atualizacao: 2026-02-11
 
-## Visao geral
+## Leitura rapida (para agentes)
+1. Runtime e fronteiras: secoes "Topologia" e "Camadas".
+2. Fluxos com maior impacto: secao "Fluxos criticos".
+3. Pontos de entrada por tarefa: secao "Task -> entrypoint".
+4. Para Shopee detalhado: `docs/SHOPEE_ANUNCIOS.md`.
 
-O RazaiSystem roda com frontend React + Firebase (Firestore, Storage, Auth) e backend em Cloud Functions (Express + TypeScript).
-
-- Frontend: `frontend/src`
-- Backend: `functions/src`
+## Topologia do repositorio
+- Frontend (React): `frontend/src`
+- Backend operacional Shopee (Cloud Functions): `functions/src`
 - Dados: Firestore (`tecidos`, `cores`, `cor_tecido`, `shopee_products`, etc.)
 - Arquivos: Firebase Storage
 
-## Camadas
+## Camadas e responsabilidades
 
-1. `Frontend`:
+### Frontend
 - UI, navegacao, validacoes de formulario, upload de arquivos.
-- Acesso direto ao Firebase Client SDK para CRUD interno.
-- Consumo de API backend para fluxo Shopee.
+- Leitura/escrita de dados internos via Firebase Client SDK.
+- Consumo de endpoints backend para Shopee.
 
-2. `Cloud Functions`:
+### Cloud Functions
 - Regras de negocio para Shopee.
 - Assinatura e chamadas da Shopee Open API.
 - Publicacao, sincronizacao e manutencao de anuncios.
 
-3. `Firebase`:
+### Firebase
 - Firestore para entidades e estados.
-- Storage para imagens (tecidos, vinculos, mosaicos, etc.).
+- Storage para imagens (tecidos, vinculos, mosaicos).
 - Auth para controle de acesso.
 
-## Navegacao (frontend)
+## Navegacao frontend
 
-### Modelo unico
+### Modelo canonico
 - Tipo canonico: `PageId` em `frontend/src/navigation/modules.ts`.
-- Registry de modulos com metadados de menu desktop/mobile, grupos e atalhos.
-- Pagina canonica ativa:
-- `tamanhos` destaca `shopee`.
-- `anuncios-shopee` destaca `shopee`.
-- `criar-anuncio-shopee` destaca `shopee`.
+- Modulos com destaque canonico:
+  - `tamanhos` destaca `shopee`
+  - `anuncios-shopee` destaca `shopee`
+  - `criar-anuncio-shopee` destaca `shopee`
 
-### Shell de navegacao
-- `Home.tsx` atua como orquestrador de navegacao.
-- Desktop: `DesktopSidebar` persistente.
-- Mobile: `MobileBottomNav`.
-- Conteudo de pagina carregado dentro do mesmo shell.
+### Shell
+- Orquestrador: `frontend/src/pages/Home.tsx`
+- Desktop: `DesktopSidebar`
+- Mobile: `MobileBottomNav`
 
-### Sincronizacao com URL hash
-Implementado em `frontend/src/navigation/url-state.ts`.
+### URL/hash state
+- Implementacao: `frontend/src/navigation/url-state.ts`
+- Formato: `#/tecidos`, `#/cores`, `#/gestao-imagens`
+- Precedencia em `frontend/src/App.tsx`:
+  1. catalogo publico (`?catalogo=...`)
+  2. callback Shopee (`code` + `shop_id`) ou `/shopee`
+  3. hash valido
+  4. fallback `home`
 
-Formato:
-- `#/tecidos`
-- `#/cores`
-- `#/gestao-imagens`
-- `home` sem hash
+## Task -> entrypoint
+- Mudar navegacao/hash:
+  - `frontend/src/navigation/url-state.ts`
+  - `frontend/src/App.tsx`
+  - `frontend/src/pages/Home.tsx`
+- Mudar fluxo de criacao Shopee:
+  - `frontend/src/pages/CriarAnuncioShopee.tsx`
+  - `functions/src/services/shopee-product.service.ts`
+- Mudar comportamento de imagens/mosaicos:
+  - `frontend/src/pages/GestaoImagens.tsx`
+  - `frontend/src/lib/mosaicBuilder.ts`
+  - `frontend/src/lib/firebase/gestao-imagens.ts`
+- Mudar regras de permissao de dados:
+  - `firestore.rules`
+  - `storage.rules`
 
-Precedencia de abertura em `frontend/src/App.tsx`:
-1. `catalogo` publico (`?catalogo=...`)
-2. callback Shopee (`code` + `shop_id`) ou path `/shopee`
-3. hash valido
-4. fallback `home`
+## Fluxos criticos
 
-Comportamento:
-- Navegar modulo faz `pushState` por hash.
-- Inicializacao usa `replaceState` para nao poluir historico.
-- `hashchange` e `popstate` sincronizam a tela.
-- Hash invalido cai para `home`.
+### Shopee publish
+1. Carrega draft + ownership.
+2. Valida pre-publish.
+3. Upload de imagens para `image_id`.
+4. `add_item`.
+5. `init_tier_variation`.
+6. Persistencia de `item_id` e status.
+7. Rollback em falha parcial.
 
-### Persistencia local de UX
-- `desktop_sidebar_collapsed` em `localStorage`.
-- `desktop_recent_pages` com ultimos 5 modulos (exceto Home).
-- Atalhos desktop:
-- `Alt+H` -> Home
-- `Alt+1..7` -> modulos principais do registry
+### Gestao de imagens e mosaicos
+1. Fonte principal: `cor_tecido`.
+2. Geracao/reuso de imagens com fingerprint.
+3. Geracao de mosaicos por tecido/template.
+4. Persistencia em Firestore + Storage.
 
-## Modulos e fluxos relevantes
-
-### Vinculos
-- Pagina: `frontend/src/pages/Vinculos.tsx`
-- Clique na miniatura abre `ImageLightbox` (sem scroll interno da imagem).
-- A imagem respeita o container com `object-contain`.
-
-### Gestao de Imagens (novo)
-- Pagina: `frontend/src/pages/GestaoImagens.tsx`
-- Fonte de dados base: `cor_tecido`.
-- Funcionalidades:
-- tabela separada por tecido (agrupamento por `tecidoId`)
-- regeneracao em lote por tecido (`Regenerar todos deste tecido`)
-- gerar imagem de variacao (com logo + nome da cor)
-- upload de foto de modelo
-- selecao de imagens para mosaico
-- gerar e salvar mosaicos por template
-
-Regras de geracao:
-- campo de cache: `imagemGeradaFingerprint`
-- se fingerprint mudar (`imagemTingida` ou `corNome`), a imagem e regenerada
-- geracao salva resultado no Firebase para reuso
-- acao individual de regeneracao por linha foi removida nesta fase
-
-### Shopee como modulo pai
-- Pagina: `frontend/src/pages/Shopee.tsx`
-- Cards de menu atuais:
-  - `Estoque`
-  - `Criar Anuncio` (abre `anuncios-shopee`)
-  - `Tamanhos` (abre `tamanhos`)
-- Card `Pedidos` removido.
-- `anuncios-shopee` e `tamanhos` continuam validos por hash legado (`#/anuncios-shopee`, `#/tamanhos`), com highlight canonico em `Shopee`.
-
-## Modelos de dados principais
+## Modelos de dados (hotspots)
 
 ### `cor_tecido`
-Campos relevantes (alem dos ja existentes):
-- `imagemGerada?: string`
-- `imagemGeradaFingerprint?: string`
-- `imagemGeradaAt?: Timestamp`
-- `imagemModelo?: string`
-- `imagemModeloAt?: Timestamp`
+- `imagemGerada?`
+- `imagemGeradaFingerprint?`
+- `imagemGeradaAt?`
+- `imagemModelo?`
+- `imagemModeloAt?`
 
-### `gestao_imagens_mosaicos` (novo)
+### `gestao_imagens_mosaicos`
 - `tecidoId`
-- `tecidoNomeSnapshot`
-- `templateId` (`grid-2x2` | `hero-vertical` | `triptych`)
-- `sourcePolicy` (`gerada`)
+- `templateId`
 - `selectedVinculoIds`
 - `selectedImageUrls`
 - `outputSquareUrl`
@@ -128,49 +107,41 @@ Campos relevantes (alem dos ja existentes):
 - `createdAt`
 
 ### `shopee_products`
-Campos relevantes nesta fase:
-- `titulo_anuncio?: string`
+- `titulo_anuncio?`
+- `precificacao?`
 - `tier_variations[].options[].imagem_url`
-- `tier_variations[].options[].imagem_gerada?: boolean`
+- `tier_variations[].options[].imagem_gerada?`
+- `publish_lock?`
 
-## Storage
-
-Paths usados neste fluxo:
+## Storage (paths principais)
 - `cor-tecido/{vinculoId}/tingida_*.jpg`
 - `cor-tecido/{vinculoId}/gerada_*.png`
 - `cor-tecido/{vinculoId}/modelo_*.*`
 - `mosaicos/{tecidoId}/{mosaicoId}/square_1024.jpg`
 - `mosaicos/{tecidoId}/{mosaicoId}/portrait_1062x1416.jpg`
 
-## Fluxo Shopee com imagens geradas
+## Seguranca
 
-No backend (`functions/src/services/shopee-product.service.ts`):
+### Firestore
+- `gestao_imagens_mosaicos`: leitura/escrita autenticada.
 
-1. Cria/atualiza rascunho salvando `titulo_anuncio`.
-2. Para variacoes de cor, prioriza `imagemGerada`; fallback para `imagemTingida`.
-3. Publicacao:
-- se `imagem_gerada = true`, faz upload direto da imagem
-- se `imagem_gerada = false`, aplica overlay no backend antes do upload
-4. `item_name` final usa `titulo_anuncio` quando preenchido.
-
-## Regras de seguranca
-
-### Firestore (`firestore.rules`)
-- `gestao_imagens_mosaicos`: read/write autenticado.
-
-### Storage (`storage.rules`)
+### Storage
 - `mosaicos/{tecidoId}/**`: leitura publica, escrita autenticada.
 
-## Testes adicionados
+## Comandos de localizacao rapida
+```powershell
+# localizar fluxos Shopee
+rg -n "CriarAnuncioShopee|publishProduct|add_item|init_tier_variation" frontend/src functions/src
 
-- `frontend/src/navigation/url-state.test.ts`
-- `frontend/src/pages/Home.navigation.test.tsx`
-- `frontend/src/pages/Cores.navigation.test.tsx`
-- `frontend/src/pages/Shopee.navigation.test.tsx`
-- `frontend/src/pages/GestaoImagens.regeneration.test.tsx`
+# localizar modelos de navegacao
+rg -n "PageId|modules|url-state|hash" frontend/src/navigation frontend/src/App.tsx
 
-Cobertura principal:
-- parse/serialize hash
-- navegacao + hashchange/popstate
-- destaque canonico de menu
-- callback `Cores -> Vinculos`
+# localizar dados de mosaicos
+rg -n "gestao_imagens_mosaicos|mosaicos/|mosaic" frontend/src functions/src firestore.rules storage.rules
+```
+
+## Documentos relacionados
+- `docs/README.md`
+- `docs/SHOPEE.md`
+- `docs/SHOPEE_ANUNCIOS.md`
+- `docs/SHOPEE_ANUNCIOS_ROADMAP.md`

@@ -1,32 +1,53 @@
 # Integracao Shopee
 
-Ultima atualizacao: 2026-02-10
+Ultima atualizacao: 2026-02-11
 
-## Visao geral
-
-A integracao Shopee do RazaiSystem combina:
-- frontend para operacao e UX
-- Cloud Functions para assinatura de requests, validacao e regras de negocio
-
-Arquivos centrais:
-- `functions/src/routes/shopee*.routes.ts`
-- `functions/src/services/shopee.service.ts`
+## Leitura rapida (para agentes)
+1. Fluxo de anuncio end-to-end: `docs/SHOPEE_ANUNCIOS.md`
+2. Status por ondas/tasks: `docs/SHOPEE_ANUNCIOS_ROADMAP.md`
+3. Endpoints e contratos: `docs/SHOPEE_API_REFERENCIA.md`
+4. Entrypoints de codigo:
+- `frontend/src/pages/CriarAnuncioShopee.tsx`
 - `functions/src/services/shopee-product.service.ts`
+- `functions/src/routes/shopee-products.routes.ts`
 
-## Atualizacoes recentes
+## Entrypoints de codigo (onde comecar)
+- Assinatura e chamadas Shopee Open API:
+  - `functions/src/services/shopee.service.ts`
+- Publicacao/sync de anuncios:
+  - `functions/src/services/shopee-product.service.ts`
+  - `functions/src/routes/shopee-products.routes.ts`
+- Categorias, atributos, marcas:
+  - `functions/src/services/shopee-category.service.ts`
+  - `functions/src/routes/shopee-categories.routes.ts`
+- Logistica:
+  - `functions/src/services/shopee-logistics.service.ts`
+  - `functions/src/routes/shopee-logistics.routes.ts`
+- Item limit / size chart:
+  - `functions/src/services/shopee-item-limit.service.ts`
+  - `functions/src/routes/shopee-item-limit.routes.ts`
+- UI de criacao Shopee:
+  - `frontend/src/pages/CriarAnuncioShopee.tsx`
+  - `frontend/src/components/Shopee/*.tsx`
 
-1. Criacao de anuncio com `titulo_anuncio` customizavel.
-2. Uso de mosaicos salvos como imagem de capa no fluxo de anuncio.
-3. Variacoes com prioridade para `imagemGerada`.
-4. Publicacao com estrategia hibrida:
-- imagem gerada -> upload direto
-- imagem nao gerada -> overlay no backend antes do upload
-5. Shopee consolidado como modulo pai na navegacao:
-- cards internos `Estoque`, `Criar Anuncio` e `Tamanhos`
-- remocao do card `Pedidos`
-- `#/anuncios-shopee` e `#/tamanhos` preservados por compatibilidade
+## Task -> arquivo
+- Mudar ordem dos steps de criacao:
+  - `frontend/src/pages/CriarAnuncioShopee.tsx`
+- Mudar formula de preco/lucro:
+  - `frontend/src/lib/shopeePricing.ts`
+- Mudar payload de publish (`add_item` / `init_tier_variation`):
+  - `functions/src/services/shopee-product.service.ts`
+- Mudar validacoes pre-publish (atributos/marca/logistica/size chart):
+  - `functions/src/services/shopee-product.service.ts`
+  - `frontend/src/components/Shopee/CategoryAttributes.tsx`
+  - `frontend/src/components/Shopee/BrandSelector.tsx`
+  - `frontend/src/components/Shopee/SizeChartSelector.tsx`
+- Mudar defaults/preferencias Shopee:
+  - `functions/src/services/shopee-preferences.service.ts`
+  - `functions/src/routes/shopee-preferences.routes.ts`
+  - `frontend/src/hooks/useShopeePreferences.ts`
 
-## Endpoints de operacao (resumo)
+## Rotas de operacao (resumo)
 
 ### Inventario e disponibilidade
 - `POST /api/shopee/inventory`
@@ -53,26 +74,37 @@ Arquivos centrais:
 ### Webhook
 - `POST /api/shopee/webhook`
 
-## Controle de disponibilidade por estoque
+## Fluxos criticos
 
-O sistema considera disponibilidade de cor pelo estoque (`total_available_stock`), nao por `model_status`.
+### Publish (2 etapas)
+1. Validar draft + ownership + pre-publish.
+2. Upload de imagens para `image_id`.
+3. `add_item` (sem tier/model).
+4. Esperar 5s.
+5. `init_tier_variation` (tiers + models).
+6. Persistir `item_id`, status e sincronizacao.
+7. Em falha parcial, executar rollback (`delete_item`).
 
-- Desativar cor: estoque vai para `0`.
-- Ativar cor: estoque volta para valor configurado.
-- Persistencia de monitoramento: `disabled_colors`.
+### Estoque por disponibilidade
+- Regra principal: disponibilidade de cor por estoque (`total_available_stock`), nao por `model_status`.
+- Cor desativada: estoque `0`.
+- Cor ativada: estoque volta para valor configurado.
 
-## Monitoramento de estoque desativado
+## Comandos rapidos
+```powershell
+# localizar rotas Shopee
+rg -n "router\.(get|post|put|delete)\('/api/shopee|/:id/publish|sync-all" functions/src/routes
 
-Camadas:
-1. webhook `reserved_stock_change_push`
-2. funcao agendada `maintainDisabledColors`
+# localizar payload de publish
+rg -n "add_item|init_tier_variation|size_chart_info|publish_lock" functions/src/services/shopee-product.service.ts
 
-Objetivo:
-- evitar reativacao indevida de estoque apos eventos da Shopee.
+# localizar validacao de steps no frontend
+rg -n "canProceedFrom|validationErrors|STEP_ORDER" frontend/src/pages/CriarAnuncioShopee.tsx
+```
 
-## Relacao com docs especificos
-
+## Documentos relacionados
 - Fluxo de anuncio: `docs/SHOPEE_ANUNCIOS.md`
-- API detalhada: `docs/SHOPEE_API_REFERENCIA.md`
+- Roadmap de implementacao: `docs/SHOPEE_ANUNCIOS_ROADMAP.md`
+- Referencia de endpoints: `docs/SHOPEE_API_REFERENCIA.md`
 - Setup de webhook: `docs/SHOPEE_WEBHOOK_SETUP.md`
 - Revisao de estoque: `docs/SHOPEE_STOCK_REVIEW.md`
