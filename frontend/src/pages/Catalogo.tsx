@@ -16,7 +16,12 @@ import { Loader2, FileDown, Link2, Copy, Check, Palette, Image as ImageIcon } fr
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { agruparVinculosPorTecido } from '@/lib/firebase/catalogos';
+import {
+  agruparVinculosPorTecido,
+  CatalogoTecidoSnapshot,
+  getCatalogoUrl,
+  TecidoComVinculos,
+} from '@/lib/firebase/catalogos';
 
 interface CatalogoProps {
   onNavigateHome?: () => void;
@@ -34,11 +39,161 @@ interface CatalogoListItem {
   totalEstampas: number;
 }
 
+const CATALOGO_PDF_MAX_DIMENSION = 640;
+const CATALOGO_PDF_JPEG_QUALITY = 0.9;
+const CATALOGO_PDF_COMPRESS_CONCURRENCY = 4;
+
+function normalizeFileNameToken(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const safeConcurrency = Math.max(1, Math.min(concurrency, items.length));
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  const workers = Array.from({ length: safeConcurrency }, async () => {
+    while (true) {
+      const currentIndex = cursor;
+      cursor += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
+function loadImageForPdf(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Falha ao carregar imagem: ${src}`));
+    img.src = src;
+  });
+}
+
+function compressImageForCatalogPdf(
+  image: HTMLImageElement,
+  maxDimension: number = CATALOGO_PDF_MAX_DIMENSION,
+  quality: number = CATALOGO_PDF_JPEG_QUALITY
+): string {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const maxSourceDimension = Math.max(sourceWidth, sourceHeight, 1);
+  const scale = Math.min(1, maxDimension / maxSourceDimension);
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Nao foi possivel iniciar o canvas para o PDF');
+  }
+
+  // Alta qualidade de remapeamento no downscale para preservar nitidez.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+async function buildCatalogCompressedImageMap(
+  tecidosComVinculos: TecidoComVinculos[],
+  tecidosComEstampas: TecidoComEstampas[]
+): Promise<Map<string, string>> {
+  const uniqueUrls = Array.from(
+    new Set(
+      [
+        ...tecidosComVinculos.flatMap(({ vinculos }) =>
+          vinculos.map((vinculo) => vinculo.imagemGerada || vinculo.imagemTingida).filter(Boolean)
+        ),
+        ...tecidosComEstampas.flatMap(({ estampas }) => estampas.map((estampa) => estampa.imagem).filter(Boolean)),
+      ].filter((url): url is string => Boolean(url))
+    )
+  );
+
+  const compressedEntries = await mapWithConcurrency(
+    uniqueUrls,
+    CATALOGO_PDF_COMPRESS_CONCURRENCY,
+    async (url): Promise<[string, string]> => {
+      if (url.startsWith('data:image/')) {
+        return [url, url];
+      }
+      try {
+        const image = await loadImageForPdf(url);
+        const compressed = compressImageForCatalogPdf(image);
+        return [url, compressed];
+      } catch (error) {
+        console.warn('[catalogo-pdf] Falha ao otimizar imagem, mantendo original:', url, error);
+        return [url, url];
+      }
+    }
+  );
+
+  return new Map(compressedEntries);
+}
+
+function applyCatalogImageMapToVinculos(
+  tecidosComVinculos: TecidoComVinculos[],
+  imageMap: Map<string, string>
+): TecidoComVinculos[] {
+  return tecidosComVinculos.map((item) => ({
+    ...item,
+    vinculos: item.vinculos.map((vinculo) => ({
+      ...vinculo,
+      imagemGerada: vinculo.imagemGerada ? imageMap.get(vinculo.imagemGerada) || vinculo.imagemGerada : vinculo.imagemGerada,
+      imagemTingida: vinculo.imagemTingida ? imageMap.get(vinculo.imagemTingida) || vinculo.imagemTingida : vinculo.imagemTingida,
+    })),
+  }));
+}
+
+function applyCatalogImageMapToEstampas(
+  tecidosComEstampas: TecidoComEstampas[],
+  imageMap: Map<string, string>
+): TecidoComEstampas[] {
+  return tecidosComEstampas.map((item) => ({
+    ...item,
+    estampas: item.estampas.map((estampa) => ({
+      ...estampa,
+      imagem: estampa.imagem ? imageMap.get(estampa.imagem) || estampa.imagem : estampa.imagem,
+    })),
+  }));
+}
+
 export function Catalogo({ onNavigateHome }: CatalogoProps) {
   const { vinculos, loading: loadingVinculos } = useCorTecido();
   const { tecidos, loading: loadingTecidos } = useTecidos();
   const { estampas, loading: loadingEstampas } = useEstampas();
-  const { createCatalogoLink, generating } = useCatalogos();
+  const {
+    createCatalogoLink,
+    generating,
+    historyLoading,
+    catalogosHistorico,
+    loadCatalogosHistorico,
+  } = useCatalogos();
   const { toast } = useToast();
 
   const [selectedTecidoIds, setSelectedTecidoIds] = useState<Set<string>>(new Set());
@@ -48,6 +203,10 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
   const pdfBlobUrlRef = useRef<string | null>(null);
 
   const loading = loadingVinculos || loadingTecidos || loadingEstampas;
+
+  useEffect(() => {
+    void loadCatalogosHistorico();
+  }, [loadCatalogosHistorico]);
 
   // Agrupa vínculos por tecido usando função extraída
   const tecidosComVinculos = useMemo(
@@ -175,10 +334,12 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
     setSelectedTecidoIds(new Set());
   }, []);
 
-  const selectedCatalogoItemsCount = useMemo(
-    () => catalogoListItems.filter((item) => selectedTecidoIds.has(item.tecido.id)).length,
+  const selectedCatalogoItems = useMemo(
+    () => catalogoListItems.filter((item) => selectedTecidoIds.has(item.tecido.id)),
     [catalogoListItems, selectedTecidoIds]
   );
+
+  const selectedCatalogoItemsCount = selectedCatalogoItems.length;
 
   const allSelected = catalogoListItems.length > 0 && selectedCatalogoItemsCount === catalogoListItems.length;
   const someSelected = selectedCatalogoItemsCount > 0 && !allSelected;
@@ -194,73 +355,115 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
     };
   }, []);
 
-  // Gerar PDF
-  const handleGeneratePdf = useCallback(async () => {
-    if (!hasSelection) {
-      toast({
-        title: 'Atenção',
-        description: 'Selecione pelo menos um tecido com cores ou estampas',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setGeneratingPdf(true);
-
-    try {
-      // Revogar blob URL anterior se existir
-      if (pdfBlobUrlRef.current) {
-        URL.revokeObjectURL(pdfBlobUrlRef.current);
-        pdfBlobUrlRef.current = null;
+  const generatePdfForTecidoIds = useCallback(
+    async (tecidoIds: string[]) => {
+      const uniqueIds = Array.from(new Set(tecidoIds));
+      if (uniqueIds.length === 0) {
+        toast({
+          title: 'Atenção',
+          description: 'Selecione pelo menos um tecido com cores ou estampas',
+          variant: 'destructive',
+        });
+        return;
       }
 
-      const blob = await pdf(
-        <CatalogoPdfDocument
-          tecidosComVinculos={selectedTecidosComVinculos}
-          tecidosComEstampas={selectedTecidosComEstampas}
-        />
-      ).toBlob();
+      const selectedIdSet = new Set(uniqueIds);
+      const tecidosVinculosSelecionados = tecidosComVinculos.filter((item) => selectedIdSet.has(item.tecido.id));
+      const tecidosEstampasSelecionados = tecidosComEstampas.filter((item) => selectedIdSet.has(item.tecido.id));
 
-      const url = URL.createObjectURL(blob);
-      pdfBlobUrlRef.current = url;
+      const totalCores = tecidosVinculosSelecionados.reduce((acc, item) => acc + item.vinculos.length, 0);
+      const totalEstampas = tecidosEstampasSelecionados.reduce((acc, item) => acc + item.estampas.length, 0);
+      if (totalCores === 0 && totalEstampas === 0) {
+        toast({
+          title: 'Atenção',
+          description: 'Os tecidos selecionados não possuem itens para PDF',
+          variant: 'destructive',
+        });
+        return;
+      }
 
-      const link = document.createElement('a');
-      link.href = url;
+      setGeneratingPdf(true);
 
-      const date = new Date().toISOString().split('T')[0];
-      link.download = `catalogo_${date}.pdf`;
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      // Revogar URL após pequeno delay para garantir que o download iniciou
-      setTimeout(() => {
+      try {
+        // Revogar blob URL anterior se existir
         if (pdfBlobUrlRef.current) {
           URL.revokeObjectURL(pdfBlobUrlRef.current);
           pdfBlobUrlRef.current = null;
         }
-      }, 100);
 
-      const partes = [];
-      if (totalCoresSelecionadas > 0) partes.push(`${totalCoresSelecionadas} cores`);
-      if (totalEstampasSelecionadas > 0) partes.push(`${totalEstampasSelecionadas} estampas`);
+        const imageMap = await buildCatalogCompressedImageMap(
+          tecidosVinculosSelecionados,
+          tecidosEstampasSelecionados
+        );
 
-      toast({
-        title: 'PDF gerado!',
-        description: `Catálogo com ${partes.join(' e ')} baixado`,
-      });
-    } catch (error: any) {
-      console.error('Erro ao gerar PDF:', error);
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível gerar o PDF. Tente novamente.',
-        variant: 'destructive',
-      });
-    } finally {
-      setGeneratingPdf(false);
-    }
-  }, [hasSelection, selectedTecidosComVinculos, selectedTecidosComEstampas, totalCoresSelecionadas, totalEstampasSelecionadas, toast]);
+        const tecidosComVinculosOtimizado = applyCatalogImageMapToVinculos(
+          tecidosVinculosSelecionados,
+          imageMap
+        );
+        const tecidosComEstampasOtimizado = applyCatalogImageMapToEstampas(
+          tecidosEstampasSelecionados,
+          imageMap
+        );
+
+        const blob = await pdf(
+          <CatalogoPdfDocument
+            tecidosComVinculos={tecidosComVinculosOtimizado}
+            tecidosComEstampas={tecidosComEstampasOtimizado}
+          />
+        ).toBlob();
+
+        const url = URL.createObjectURL(blob);
+        pdfBlobUrlRef.current = url;
+
+        const link = document.createElement('a');
+        link.href = url;
+
+        const date = new Date().toISOString().split('T')[0];
+        if (uniqueIds.length === 1) {
+          const tecidoNome = catalogoListItems.find((item) => item.tecido.id === uniqueIds[0])?.tecido.nome || 'Tecido';
+          link.download = `Cat\u00E1logo_Razai_${normalizeFileNameToken(tecidoNome)}_${date}.pdf`;
+        } else {
+          link.download = `Catalogo_Razai_Multi_${date}.pdf`;
+        }
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Revogar URL após pequeno delay para garantir que o download iniciou
+        setTimeout(() => {
+          if (pdfBlobUrlRef.current) {
+            URL.revokeObjectURL(pdfBlobUrlRef.current);
+            pdfBlobUrlRef.current = null;
+          }
+        }, 100);
+
+        const partes = [];
+        if (totalCores > 0) partes.push(`${totalCores} cores`);
+        if (totalEstampas > 0) partes.push(`${totalEstampas} estampas`);
+
+        toast({
+          title: 'PDF gerado!',
+          description: `Catálogo com ${partes.join(' e ')} baixado`,
+        });
+      } catch (error: any) {
+        console.error('Erro ao gerar PDF:', error);
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível gerar o PDF. Tente novamente.',
+          variant: 'destructive',
+        });
+      } finally {
+        setGeneratingPdf(false);
+      }
+    },
+    [catalogoListItems, tecidosComEstampas, tecidosComVinculos, toast]
+  );
+
+  // Gerar PDF com a seleção atual
+  const handleGeneratePdf = useCallback(async () => {
+    await generatePdfForTecidoIds(Array.from(selectedTecidoIds));
+  }, [generatePdfForTecidoIds, selectedTecidoIds]);
 
   // Criar link compartilhável
   const handleCreateLink = useCallback(async () => {
@@ -273,10 +476,23 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
       return;
     }
 
-    const url = await createCatalogoLink(Array.from(selectedTecidoIds));
+    const tecidosSnapshot: CatalogoTecidoSnapshot[] = selectedCatalogoItems.map((item) => ({
+      tecidoId: item.tecido.id,
+      tecidoNome: item.tecido.nome,
+      tecidoSku: item.tecido.sku,
+      totalCores: item.totalCores,
+      totalEstampas: item.totalEstampas,
+    }));
+
+    const url = await createCatalogoLink(Array.from(selectedTecidoIds), {
+      tecidosSnapshot,
+      totalCoresSnapshot: tecidosSnapshot.reduce((acc, item) => acc + item.totalCores, 0),
+      totalEstampasSnapshot: tecidosSnapshot.reduce((acc, item) => acc + item.totalEstampas, 0),
+    });
     if (!url) return;
 
     setGeneratedLink(url);
+    void loadCatalogosHistorico();
 
     const shareData = {
       title: 'Catalogo Razai',
@@ -312,7 +528,7 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
         description: 'Copie o link no campo abaixo.',
       });
     }
-  }, [createCatalogoLink, selectedTecidoIds, toast]);
+  }, [createCatalogoLink, loadCatalogosHistorico, selectedCatalogoItems, selectedTecidoIds, toast]);
 
   // Copiar link
   const handleCopyLink = useCallback(async () => {
@@ -334,6 +550,94 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
       });
     }
   }, [generatedLink, toast]);
+
+  const historicoCatalogosView = useMemo(() => {
+    return catalogosHistorico.map((catalogo) => {
+      const snapshot = catalogo.tecidosSnapshot || [];
+      const tecidoNomes =
+        snapshot.length > 0
+          ? snapshot.map((item) => item.tecidoNome)
+          : catalogo.tecidoIds
+              .map((tecidoId) => catalogoListItems.find((item) => item.tecido.id === tecidoId)?.tecido.nome)
+              .filter((value): value is string => Boolean(value));
+
+      const totalCores =
+        typeof catalogo.totalCoresSnapshot === 'number'
+          ? catalogo.totalCoresSnapshot
+          : snapshot.reduce((acc, item) => acc + item.totalCores, 0);
+
+      const totalEstampas =
+        typeof catalogo.totalEstampasSnapshot === 'number'
+          ? catalogo.totalEstampasSnapshot
+          : snapshot.reduce((acc, item) => acc + item.totalEstampas, 0);
+
+      const createdAt = catalogo.createdAt?.toDate?.();
+      const expiresAt = catalogo.expiresAt?.toDate?.();
+      const isExpired = Boolean(expiresAt && expiresAt.getTime() < Date.now());
+
+      return {
+        id: catalogo.id,
+        tecidoIds: catalogo.tecidoIds,
+        tecidoNomes,
+        totalCores,
+        totalEstampas,
+        createdAtLabel: createdAt
+          ? createdAt.toLocaleString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : 'Data indisponivel',
+        isExpired,
+        url: getCatalogoUrl(catalogo.id),
+      };
+    });
+  }, [catalogoListItems, catalogosHistorico]);
+
+  const handleUseHistoricoSelection = useCallback((tecidoIds: string[]) => {
+    setSelectedTecidoIds(new Set(tecidoIds));
+    toast({
+      title: 'Selecao carregada',
+      description: 'Os tecidos do catalogo foram aplicados na selecao atual.',
+    });
+  }, [toast]);
+
+  const handleCopyHistoricoLink = useCallback(
+    async (url: string, isExpired: boolean) => {
+      if (isExpired) {
+        toast({
+          title: 'Link expirado',
+          description: 'Esse catalogo expirou. Gere um novo link para compartilhar.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(url);
+        toast({
+          title: 'Link copiado!',
+          description: 'O link do historico foi copiado.',
+        });
+      } catch {
+        toast({
+          title: 'Erro',
+          description: 'Nao foi possivel copiar o link do historico.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast]
+  );
+
+  const handleDownloadHistoricoPdf = useCallback(
+    async (tecidoIds: string[]) => {
+      await generatePdfForTecidoIds(tecidoIds);
+    },
+    [generatePdfForTecidoIds]
+  );
 
   const hasContent = tecidosComVinculos.length > 0 || tecidosComEstampas.length > 0;
 
@@ -554,6 +858,84 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
                     </div>
                   </div>
                 )}
+
+                {/* Historico de catalogos */}
+                <div className="pt-4 border-t space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-gray-700">Historico de catalogos</h4>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void loadCatalogosHistorico()}
+                      disabled={historyLoading}
+                    >
+                      {historyLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Atualizar
+                    </Button>
+                  </div>
+
+                  {historyLoading && historicoCatalogosView.length === 0 ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-16 w-full" />
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  ) : historicoCatalogosView.length === 0 ? (
+                    <div className="text-sm text-gray-500 bg-gray-50 border rounded-lg p-3">
+                      Nenhum catalogo criado ainda.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+                      {historicoCatalogosView.map((item) => (
+                        <div key={item.id} className="border rounded-lg p-3 bg-white">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900">
+                                {item.tecidoNomes.length > 0
+                                  ? item.tecidoNomes.join(', ')
+                                  : `${item.tecidoIds.length} tecido(s)`}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {item.createdAtLabel}
+                                {item.isExpired ? ' . expirado' : ' . ativo'}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {item.totalCores} cores . {item.totalEstampas} estampas
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleUseHistoricoSelection(item.tecidoIds)}
+                                title="Reusar selecao"
+                              >
+                                Usar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void handleDownloadHistoricoPdf(item.tecidoIds)}
+                                title="Baixar PDF desse catalogo"
+                              >
+                                <FileDown className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void handleCopyHistoricoLink(item.url, item.isExpired)}
+                                title={item.isExpired ? 'Link expirado' : 'Copiar link'}
+                                disabled={item.isExpired}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -562,3 +944,4 @@ export function Catalogo({ onNavigateHome }: CatalogoProps) {
     </div>
   );
 }
+

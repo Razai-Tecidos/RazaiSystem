@@ -385,3 +385,35 @@ frontend/src/
 - [ ] Implementar categorias de tecidos
 
 
+
+---
+
+## Atualizacao 2026-02-11 (metricas de tecido)
+
+Novos campos adicionados ao cadastro de tecido:
+- `rendimentoPorKg` (m/kg)
+- `gramaturaValor`
+- `gramaturaUnidade` (`g_m2` ou `g_m_linear`)
+
+Regra de calculo adotada:
+- Com `rendimentoPorKg` e `largura` preenchidos:
+  - `gramatura g/m2 = 1000 / (rendimentoPorKg * largura)`
+  - `peso linear g/m = 1000 / rendimentoPorKg`
+- Com gramatura cadastrada em `g/m2`:
+  - `peso linear g/m = gramatura * largura`
+  - `rendimentoPorKg = 1000 / peso linear`
+- Com gramatura cadastrada em `g/m linear`:
+  - `rendimentoPorKg = 1000 / gramaturaLinear`
+  - `gramatura g/m2 = gramaturaLinear / largura`
+
+Regra de arredondamento de gramatura:
+- As duas saidas de gramatura (`g/m2` e `g/m`) sao arredondadas para a dezena mais proxima.
+- Exemplos:
+  - `132 -> 130`
+  - `116 -> 120`
+  - `125 -> 130`
+
+Implementacao no frontend:
+- Formulario de tecido com entradas opcionais de rendimento e gramatura base.
+- Preview em tempo real com os dois resultados (`g/m2` e `g/m`).
+- Tabela de tecidos exibindo rendimento e gramatura calculada.

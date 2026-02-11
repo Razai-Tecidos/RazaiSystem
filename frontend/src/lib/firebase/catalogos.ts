@@ -2,7 +2,11 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   addDoc,
+  query,
+  orderBy,
+  limit,
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
@@ -21,10 +25,24 @@ export interface Catalogo {
   createdAt: Timestamp;
   expiresAt: Timestamp;
   createdBy: string;
+  tecidosSnapshot?: CatalogoTecidoSnapshot[];
+  totalCoresSnapshot?: number;
+  totalEstampasSnapshot?: number;
+}
+
+export interface CatalogoTecidoSnapshot {
+  tecidoId: string;
+  tecidoNome: string;
+  tecidoSku?: string;
+  totalCores: number;
+  totalEstampas: number;
 }
 
 export interface CreateCatalogoData {
   tecidoIds: string[];
+  tecidosSnapshot?: CatalogoTecidoSnapshot[];
+  totalCoresSnapshot?: number;
+  totalEstampasSnapshot?: number;
 }
 
 /**
@@ -43,6 +61,9 @@ export async function createCatalogo(data: CreateCatalogoData): Promise<Catalogo
 
   const catalogoData = {
     tecidoIds: data.tecidoIds,
+    tecidosSnapshot: data.tecidosSnapshot || [],
+    totalCoresSnapshot: data.totalCoresSnapshot || 0,
+    totalEstampasSnapshot: data.totalEstampasSnapshot || 0,
     createdAt: serverTimestamp(),
     expiresAt: Timestamp.fromDate(expiresAt),
     createdBy: auth.currentUser.uid,
@@ -89,6 +110,32 @@ export async function getCatalogoById(id: string): Promise<Catalogo | null> {
     console.error('Erro ao buscar catálogo:', error);
     return null;
   }
+}
+
+/**
+ * Lista o historico de catalogos criados pelo usuario autenticado
+ * Retorna ordenado por data de criacao (mais recente primeiro)
+ */
+export async function listCatalogosByCurrentUser(maxItems: number = 30): Promise<Catalogo[]> {
+  if (!auth.currentUser) {
+    throw new Error('Usuario nao autenticado');
+  }
+
+  const q = query(
+    collection(db, CATALOGOS_COLLECTION),
+    orderBy('createdAt', 'desc'),
+    limit(Math.max(1, maxItems))
+  );
+
+  const querySnapshot = await getDocs(q);
+  const items: Catalogo[] = querySnapshot.docs
+    .map((docSnap) => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    } as Catalogo))
+    .filter((catalogo) => catalogo.createdBy === auth.currentUser?.uid);
+
+  return items;
 }
 
 /**

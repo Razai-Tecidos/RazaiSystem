@@ -1,6 +1,7 @@
 import { Timestamp } from 'firebase/firestore';
 
 export type TipoTecido = 'liso' | 'estampado';
+export type GramaturaUnidade = 'g_m2' | 'g_m_linear';
 
 export interface ComposicaoItem {
   id: string; // ID único do item
@@ -14,6 +15,9 @@ export interface Tecido {
   tipo: TipoTecido; // 'liso' ou 'estampado'
   largura: number; // em metros
   composicao: string; // Campo de texto livre
+  rendimentoPorKg?: number; // em metros por kg (m/kg)
+  gramaturaValor?: number; // valor base cadastrado
+  gramaturaUnidade?: GramaturaUnidade; // unidade da gramatura base
   imagemPadrao?: string; // URL do Firebase Storage (opcional para estampados)
   descricao?: string;
   sku: string; // T001, T002, etc
@@ -32,6 +36,9 @@ export interface CreateTecidoData {
   tipo: TipoTecido; // 'liso' ou 'estampado'
   largura: number;
   composicao: string; // Campo de texto livre
+  rendimentoPorKg?: number;
+  gramaturaValor?: number;
+  gramaturaUnidade?: GramaturaUnidade;
   imagemPadrao?: File | string; // File para upload, string para URL existente (opcional para estampados)
   descricao?: string;
 }

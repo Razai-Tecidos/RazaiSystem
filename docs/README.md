@@ -25,6 +25,9 @@ Ultima atualizacao: 2026-02-11
   - Doc: [HOOKS.md](HOOKS.md)
 - `Modulos de negocio (tecidos, cores, vinculos, imagens, catalogo)`:
   - Docs em `frontend/src/docs/*.md`
+- `Checklist PDF de vinculos (quebra de pagina, thumbs, performance)`:
+  - Doc: `frontend/src/docs/VINCULOS.md`
+  - Codigo: `frontend/src/pages/Vinculos.tsx` e `frontend/src/components/Vinculos/VinculosChecklistPdfDocument.tsx`
 
 ## Mapa rapido de documentacao
 

@@ -6,11 +6,31 @@ import { CreateTecidoRequest, UpdateTecidoRequest } from '../types/tecido.types'
 const router = Router();
 const db = admin.firestore();
 
+function isGramaturaUnidadeValida(value: unknown): boolean {
+  return value === 'g_m2' || value === 'g_m_linear';
+}
+
+function validarMetricas(data: Partial<CreateTecidoRequest>): string | null {
+  if (data.rendimentoPorKg !== undefined && (typeof data.rendimentoPorKg !== 'number' || data.rendimentoPorKg <= 0)) {
+    return 'Rendimento por kg deve ser um numero positivo';
+  }
+
+  if (data.gramaturaValor !== undefined && (typeof data.gramaturaValor !== 'number' || data.gramaturaValor <= 0)) {
+    return 'Gramatura deve ser um numero positivo';
+  }
+
+  if (data.gramaturaUnidade !== undefined && !isGramaturaUnidadeValida(data.gramaturaUnidade)) {
+    return 'Unidade de gramatura invalida';
+  }
+
+  return null;
+}
+
 /**
  * GET /api/tecidos
- * Lista todos os tecidos não excluídos
+ * Lista todos os tecidos nao excluidos
  */
-router.get('/', authMiddleware, async (req: Request, res: Response) => {
+router.get('/', authMiddleware, async (_req: Request, res: Response) => {
   try {
     const snapshot = await db
       .collection('tecidos')
@@ -38,7 +58,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
 /**
  * GET /api/tecidos/:id
- * Busca um tecido específico (ignora soft-deleted)
+ * Busca um tecido especifico (ignora soft-deleted)
  */
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -48,16 +68,15 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (!doc.exists) {
       return res.status(404).json({
         success: false,
-        error: 'Tecido não encontrado',
+        error: 'Tecido nao encontrado',
       });
     }
 
-    // Verificar soft-delete
     const data = doc.data();
     if (data?.deletedAt) {
       return res.status(404).json({
         success: false,
-        error: 'Tecido não encontrado',
+        error: 'Tecido nao encontrado',
       });
     }
 
@@ -85,11 +104,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const data: CreateTecidoRequest = req.body;
 
-    // Validações básicas
     if (!data.nome?.trim()) {
       return res.status(400).json({
         success: false,
-        error: 'Nome é obrigatório',
+        error: 'Nome e obrigatorio',
       });
     }
 
@@ -103,24 +121,31 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     if (!data.largura || typeof data.largura !== 'number' || data.largura <= 0) {
       return res.status(400).json({
         success: false,
-        error: 'Largura deve ser um número positivo',
+        error: 'Largura deve ser um numero positivo',
       });
     }
 
     if (!data.composicao?.trim()) {
       return res.status(400).json({
         success: false,
-        error: 'Composição é obrigatória',
+        error: 'Composicao e obrigatoria',
+      });
+    }
+
+    const erroMetricas = validarMetricas(data);
+    if (erroMetricas) {
+      return res.status(400).json({
+        success: false,
+        error: erroMetricas,
       });
     }
 
     const tipo = data.tipo || 'liso';
 
-    // Imagem obrigatória apenas para tecidos lisos
     if (tipo === 'liso' && !data.imagemPadrao) {
       return res.status(400).json({
         success: false,
-        error: 'Imagem é obrigatória para tecidos lisos',
+        error: 'Imagem e obrigatoria para tecidos lisos',
       });
     }
 
@@ -129,6 +154,9 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       tipo,
       largura: data.largura,
       composicao: data.composicao.trim(),
+      rendimentoPorKg: data.rendimentoPorKg ?? null,
+      gramaturaValor: data.gramaturaValor ?? null,
+      gramaturaUnidade: data.gramaturaUnidade ?? null,
       imagemPadrao: data.imagemPadrao || '',
       descricao: data.descricao?.trim() || '',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -167,22 +195,13 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
     const docRef = db.collection('tecidos').doc(id);
     const doc = await docRef.get();
 
-    if (!doc.exists) {
+    if (!doc.exists || doc.data()?.deletedAt) {
       return res.status(404).json({
         success: false,
-        error: 'Tecido não encontrado',
+        error: 'Tecido nao encontrado',
       });
     }
 
-    // Verificar soft-delete
-    if (doc.data()?.deletedAt) {
-      return res.status(404).json({
-        success: false,
-        error: 'Tecido não encontrado',
-      });
-    }
-
-    // Validações condicionais
     if (data.nome !== undefined && (!data.nome.trim() || data.nome.trim().length < 3)) {
       return res.status(400).json({
         success: false,
@@ -193,14 +212,22 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.largura !== undefined && (typeof data.largura !== 'number' || data.largura <= 0)) {
       return res.status(400).json({
         success: false,
-        error: 'Largura deve ser um número positivo',
+        error: 'Largura deve ser um numero positivo',
       });
     }
 
     if (data.composicao !== undefined && !data.composicao.trim()) {
       return res.status(400).json({
         success: false,
-        error: 'Composição não pode ser vazia',
+        error: 'Composicao nao pode ser vazia',
+      });
+    }
+
+    const erroMetricas = validarMetricas(data);
+    if (erroMetricas) {
+      return res.status(400).json({
+        success: false,
+        error: erroMetricas,
       });
     }
 
@@ -212,6 +239,9 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.tipo !== undefined) updateData.tipo = data.tipo;
     if (data.largura !== undefined) updateData.largura = data.largura;
     if (data.composicao !== undefined) updateData.composicao = data.composicao.trim();
+    if (data.rendimentoPorKg !== undefined) updateData.rendimentoPorKg = data.rendimentoPorKg ?? null;
+    if (data.gramaturaValor !== undefined) updateData.gramaturaValor = data.gramaturaValor ?? null;
+    if (data.gramaturaUnidade !== undefined) updateData.gramaturaUnidade = data.gramaturaUnidade ?? null;
     if (data.imagemPadrao !== undefined) updateData.imagemPadrao = data.imagemPadrao;
     if (data.descricao !== undefined) updateData.descricao = data.descricao.trim();
 
@@ -241,33 +271,23 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
 router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-
     const docRef = db.collection('tecidos').doc(id);
     const doc = await docRef.get();
 
-    if (!doc.exists) {
+    if (!doc.exists || doc.data()?.deletedAt) {
       return res.status(404).json({
         success: false,
-        error: 'Tecido não encontrado',
+        error: 'Tecido nao encontrado',
       });
     }
 
-    // Verificar se já foi excluído
-    if (doc.data()?.deletedAt) {
-      return res.status(404).json({
-        success: false,
-        error: 'Tecido já foi excluído',
-      });
-    }
-
-    // Soft delete
     await docRef.update({
       deletedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     return res.json({
       success: true,
-      message: 'Tecido excluído com sucesso',
+      message: 'Tecido excluido com sucesso',
     });
   } catch (error: any) {
     console.error('Erro ao excluir tecido:', error);
@@ -279,3 +299,4 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
 });
 
 export default router;
+

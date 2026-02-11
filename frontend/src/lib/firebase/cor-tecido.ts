@@ -16,8 +16,81 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, auth } from '@/config/firebase';
 import { CorTecido, CreateCorTecidoData, UpdateCorTecidoData } from '@/types/cor.types';
+import { createThumbnailBlobFromUrl } from '@/lib/imageThumb';
 
 const COLLECTION_NAME = 'cor_tecido';
+const THUMB_MAX_DIMENSION = 160;
+const THUMB_QUALITY = 0.62;
+
+type CorTecidoImageField =
+  | 'imagemTingida'
+  | 'imagemGerada'
+  | 'imagemModelo'
+  | 'imagemPremiumSquare'
+  | 'imagemPremiumPortrait';
+
+type CorTecidoThumbField =
+  | 'imagemTingidaThumb'
+  | 'imagemGeradaThumb'
+  | 'imagemModeloThumb'
+  | 'imagemPremiumSquareThumb'
+  | 'imagemPremiumPortraitThumb';
+
+const THUMB_FIELD_MAP: Array<{
+  imageField: CorTecidoImageField;
+  thumbField: CorTecidoThumbField;
+  filenamePrefix: string;
+}> = [
+  { imageField: 'imagemTingida', thumbField: 'imagemTingidaThumb', filenamePrefix: 'tingida' },
+  { imageField: 'imagemGerada', thumbField: 'imagemGeradaThumb', filenamePrefix: 'gerada' },
+  { imageField: 'imagemModelo', thumbField: 'imagemModeloThumb', filenamePrefix: 'modelo' },
+  { imageField: 'imagemPremiumSquare', thumbField: 'imagemPremiumSquareThumb', filenamePrefix: 'premium_square' },
+  { imageField: 'imagemPremiumPortrait', thumbField: 'imagemPremiumPortraitThumb', filenamePrefix: 'premium_portrait' },
+];
+
+function hasUrl(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+async function generateAndUploadThumb(
+  vinculoId: string,
+  imageUrl: string,
+  filenamePrefix: string
+): Promise<string | undefined> {
+  try {
+    const blob = await createThumbnailBlobFromUrl(imageUrl, {
+      maxDimension: THUMB_MAX_DIMENSION,
+      quality: THUMB_QUALITY,
+    });
+    const timestamp = Date.now();
+    return await uploadCorTecidoImage(vinculoId, blob, `thumb_${filenamePrefix}_${timestamp}.jpg`);
+  } catch (error) {
+    console.warn('[cor-tecido] Nao foi possivel gerar thumb:', filenamePrefix, error);
+    return undefined;
+  }
+}
+
+async function buildThumbPatch(
+  vinculoId: string,
+  payload: Partial<CreateCorTecidoData & UpdateCorTecidoData>
+): Promise<Partial<UpdateCorTecidoData>> {
+  const patch: Partial<UpdateCorTecidoData> = {};
+  const tasks = THUMB_FIELD_MAP.map(async (entry) => {
+    const imageValue = payload[entry.imageField];
+    const thumbValue = payload[entry.thumbField];
+    if (!hasUrl(imageValue) || hasUrl(thumbValue)) {
+      return;
+    }
+
+    const thumbUrl = await generateAndUploadThumb(vinculoId, imageValue, entry.filenamePrefix);
+    if (thumbUrl) {
+      patch[entry.thumbField] = thumbUrl;
+    }
+  });
+  await Promise.all(tasks);
+
+  return patch;
+}
 
 /**
  * Faz upload de uma imagem para o Storage no caminho cor-tecido/{vinculoId}/
@@ -113,6 +186,13 @@ export async function createCorTecido(data: CreateCorTecidoData): Promise<string
   };
 
   const docRef = await addDoc(collection(db, COLLECTION_NAME), corTecidoData);
+  const thumbPatch = await buildThumbPatch(docRef.id, data);
+  if (Object.keys(thumbPatch).length > 0) {
+    await updateDoc(docRef, {
+      ...thumbPatch,
+      updatedAt: Timestamp.now(),
+    });
+  }
   return docRef.id;
 }
 
@@ -122,9 +202,11 @@ export async function createCorTecido(data: CreateCorTecidoData): Promise<string
 export async function updateCorTecido(data: UpdateCorTecidoData): Promise<void> {
   const { id, ...updateData } = data;
   const docRef = doc(db, COLLECTION_NAME, id);
-  
+  const thumbPatch = await buildThumbPatch(id, updateData);
+
   await updateDoc(docRef, {
     ...updateData,
+    ...thumbPatch,
     updatedAt: Timestamp.now(),
   });
 }

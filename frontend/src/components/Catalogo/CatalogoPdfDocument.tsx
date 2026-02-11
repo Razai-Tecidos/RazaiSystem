@@ -11,9 +11,10 @@ import { TecidoComEstampas } from '@/pages/Catalogo';
 import { CorTecido } from '@/types/cor.types';
 import { Estampa } from '@/types/estampa.types';
 import { Tecido } from '@/types/tecido.types';
+import { calculateTecidoMetricas } from '@/lib/tecidoMetrics';
 
 // ============================================================================
-// CONFIGURAÇÕES DE LAYOUT - A4
+// CONFIGURACOES DE LAYOUT - A4
 // ============================================================================
 
 // Margens
@@ -24,23 +25,51 @@ const MARGIN = {
   right: 40,
 };
 
+// Dimensoes da pagina A4 em points
+const A4_WIDTH = 595.28;
+const A4_HEIGHT = 841.89;
+
 // Footer
 const FOOTER_HEIGHT = 25;
 
-// Grid de cores: 4 colunas x 4 linhas = 16 cores por página
-const COLS = 4;
-const ROWS = 4;
-const GAP = 10;
+// Grid de cores: 3 colunas x 3 linhas = 9 cores por pagina
+const COLS = 3;
+const ROWS = 3;
+const COL_GAP = 10;
+const MIN_ROW_GAP = 10;
 const CORES_POR_PAGINA = COLS * ROWS;
 
-// Grid de estampas: 4 colunas x 4 linhas = 16 estampas por página
-const ESTAMPAS_POR_PAGINA = 16;
+// Grid de estampas: 3 colunas x 3 linhas = 9 estampas por pagina
+const ESTAMPAS_POR_PAGINA = COLS * ROWS;
 
-// Tamanho do card de cor
-const CARD_SIZE = 115;
+const CONTENT_WIDTH = A4_WIDTH - MARGIN.left - MARGIN.right;
+const CONTENT_HEIGHT = A4_HEIGHT - MARGIN.top - MARGIN.bottom;
+const HEADER_MARGIN_BOTTOM = 12;
+const GRID_BOTTOM_SAFE_SPACE = 10;
+const CARD_INFO_HEIGHT = 24;
+
+// 3 colunas usando toda largura util da pagina
+const CARD_SIZE = Number(
+  ((CONTENT_WIDTH - COL_GAP * (COLS - 1)) / COLS).toFixed(2)
+);
 
 // Header do grupo de tecido
-const TECIDO_HEADER_HEIGHT = 55;
+const TECIDO_HEADER_HEIGHT = 70;
+
+// Preenche melhor a altura util quando houver pagina cheia (3x3)
+const FULL_GRID_AVAILABLE_HEIGHT =
+  CONTENT_HEIGHT -
+  TECIDO_HEADER_HEIGHT -
+  HEADER_MARGIN_BOTTOM -
+  FOOTER_HEIGHT -
+  GRID_BOTTOM_SAFE_SPACE;
+const FULL_GRID_ROW_GAP = Number(
+  Math.max(
+    MIN_ROW_GAP,
+    (FULL_GRID_AVAILABLE_HEIGHT - ROWS * (CARD_SIZE + CARD_INFO_HEIGHT)) /
+      (ROWS - 1)
+  ).toFixed(2)
+);
 
 // ============================================================================
 // ESTILOS
@@ -58,7 +87,7 @@ const styles = StyleSheet.create({
   // Header do tecido (maior e com mais informações)
   tecidoHeader: {
     height: TECIDO_HEADER_HEIGHT,
-    marginBottom: 12,
+    marginBottom: HEADER_MARGIN_BOTTOM,
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
@@ -85,10 +114,12 @@ const styles = StyleSheet.create({
   },
   tecidoDetalhes: {
     flexDirection: 'row',
-    gap: 20,
+    flexWrap: 'wrap',
   },
   tecidoDetalheItem: {
     flexDirection: 'row',
+    width: '50%',
+    marginBottom: 2,
   },
   tecidoDetalheLabel: {
     fontSize: 8,
@@ -109,8 +140,6 @@ const styles = StyleSheet.create({
   // Card de cor
   colorCard: {
     width: CARD_SIZE,
-    marginRight: GAP,
-    marginBottom: GAP,
   },
   colorImage: {
     width: CARD_SIZE,
@@ -129,6 +158,7 @@ const styles = StyleSheet.create({
   },
   colorInfo: {
     paddingHorizontal: 2,
+    minHeight: CARD_INFO_HEIGHT,
   },
   colorNome: {
     fontSize: 8,
@@ -143,8 +173,6 @@ const styles = StyleSheet.create({
   // Card de estampa (mesmo tamanho que cor)
   estampaCard: {
     width: CARD_SIZE,
-    marginRight: GAP,
-    marginBottom: GAP,
   },
   estampaImage: {
     width: CARD_SIZE,
@@ -164,6 +192,7 @@ const styles = StyleSheet.create({
   },
   estampaInfo: {
     paddingHorizontal: 2,
+    minHeight: CARD_INFO_HEIGHT,
   },
   estampaNome: {
     fontSize: 8,
@@ -249,6 +278,23 @@ function formatLargura(largura: number): string {
   return largura.toFixed(2).replace('.', ',') + 'm';
 }
 
+function formatDecimal(value: number): string {
+  return value.toFixed(2).replace('.', ',');
+}
+
+function cardSpacingStyle(index: number, totalItems: number) {
+  const totalRows = Math.ceil(totalItems / COLS);
+  const currentRow = Math.floor(index / COLS);
+  const isLastRow = currentRow === totalRows - 1;
+  const isLastCol = index % COLS === COLS - 1;
+  const rowGap = totalRows === ROWS ? FULL_GRID_ROW_GAP : MIN_ROW_GAP;
+
+  return {
+    marginRight: isLastCol ? 0 : COL_GAP,
+    marginBottom: isLastRow ? 0 : rowGap,
+  };
+}
+
 // ============================================================================
 // ESTRUTURA DE PÁGINAS
 // ============================================================================
@@ -325,11 +371,19 @@ interface CatalogoPdfDocumentProps {
 /**
  * Card individual de cor
  */
-function ColorCard({ vinculo }: { vinculo: CorTecido }) {
+function ColorCard({
+  vinculo,
+  index,
+  totalItems,
+}: {
+  vinculo: CorTecido;
+  index: number;
+  totalItems: number;
+}) {
   const imagemCatalogo = vinculo.imagemGerada || vinculo.imagemTingida;
 
   return (
-    <View style={styles.colorCard} wrap={false}>
+    <View style={[styles.colorCard, cardSpacingStyle(index, totalItems)]} wrap={false}>
       <View style={styles.colorImage}>
         {imagemCatalogo ? (
           <Image src={imagemCatalogo} style={styles.colorImageContent} />
@@ -354,9 +408,17 @@ function ColorCard({ vinculo }: { vinculo: CorTecido }) {
 /**
  * Card individual de estampa
  */
-function EstampaCard({ estampa }: { estampa: Estampa }) {
+function EstampaCard({
+  estampa,
+  index,
+  totalItems,
+}: {
+  estampa: Estampa;
+  index: number;
+  totalItems: number;
+}) {
   return (
-    <View style={styles.estampaCard} wrap={false}>
+    <View style={[styles.estampaCard, cardSpacingStyle(index, totalItems)]} wrap={false}>
       <View style={styles.estampaImage}>
         {estampa.imagem ? (
           <Image src={estampa.imagem} style={styles.estampaImageContent} />
@@ -376,15 +438,22 @@ function EstampaCard({ estampa }: { estampa: Estampa }) {
 /**
  * Header do grupo de tecido para cores
  */
-function TecidoHeaderCores({ 
-  tecido, 
-  count, 
-  continuacao 
-}: { 
+function TecidoHeaderCores({
+  tecido,
+  count,
+  continuacao,
+}: {
   tecido: Tecido;
   count: number;
   continuacao?: boolean;
 }) {
+  const metricas = calculateTecidoMetricas({
+    larguraMetros: tecido.largura,
+    rendimentoPorKg: tecido.rendimentoPorKg,
+    gramaturaValor: tecido.gramaturaValor,
+    gramaturaUnidade: tecido.gramaturaUnidade,
+  });
+
   return (
     <View style={styles.tecidoHeader}>
       <View style={styles.tecidoNomeRow}>
@@ -404,9 +473,27 @@ function TecidoHeaderCores({
           <Text style={styles.tecidoDetalheLabel}>Largura:</Text>
           <Text style={styles.tecidoDetalheValue}>{formatLargura(tecido.largura)}</Text>
         </View>
+        {typeof metricas.rendimentoPorKg === 'number' && (
+          <View style={styles.tecidoDetalheItem}>
+            <Text style={styles.tecidoDetalheLabel}>Rendimento:</Text>
+            <Text style={styles.tecidoDetalheValue}>{formatDecimal(metricas.rendimentoPorKg)}m/kg</Text>
+          </View>
+        )}
+        {typeof metricas.gramaturaGm2 === 'number' && (
+          <View style={styles.tecidoDetalheItem}>
+            <Text style={styles.tecidoDetalheLabel}>Gramatura:</Text>
+            <Text style={styles.tecidoDetalheValue}>{formatDecimal(metricas.gramaturaGm2)}g/m2</Text>
+          </View>
+        )}
+        {typeof metricas.gramaturaGmLinear === 'number' && (
+          <View style={styles.tecidoDetalheItem}>
+            <Text style={styles.tecidoDetalheLabel}>Peso linear:</Text>
+            <Text style={styles.tecidoDetalheValue}>{formatDecimal(metricas.gramaturaGmLinear)}g/m</Text>
+          </View>
+        )}
         {tecido.composicao && (
           <View style={styles.tecidoDetalheItem}>
-            <Text style={styles.tecidoDetalheLabel}>Composição:</Text>
+            <Text style={styles.tecidoDetalheLabel}>Composicao:</Text>
             <Text style={styles.tecidoDetalheValue}>{truncate(tecido.composicao, 50)}</Text>
           </View>
         )}
@@ -414,19 +501,25 @@ function TecidoHeaderCores({
     </View>
   );
 }
-
 /**
  * Header do grupo de tecido para estampas
  */
-function TecidoHeaderEstampas({ 
-  tecido, 
-  count, 
-  continuacao 
-}: { 
+function TecidoHeaderEstampas({
+  tecido,
+  count,
+  continuacao,
+}: {
   tecido: Tecido;
   count: number;
   continuacao?: boolean;
 }) {
+  const metricas = calculateTecidoMetricas({
+    larguraMetros: tecido.largura,
+    rendimentoPorKg: tecido.rendimentoPorKg,
+    gramaturaValor: tecido.gramaturaValor,
+    gramaturaUnidade: tecido.gramaturaUnidade,
+  });
+
   return (
     <View style={styles.tecidoHeader}>
       <View style={styles.tecidoNomeRow}>
@@ -446,9 +539,27 @@ function TecidoHeaderEstampas({
           <Text style={styles.tecidoDetalheLabel}>Largura:</Text>
           <Text style={styles.tecidoDetalheValue}>{formatLargura(tecido.largura)}</Text>
         </View>
+        {typeof metricas.rendimentoPorKg === 'number' && (
+          <View style={styles.tecidoDetalheItem}>
+            <Text style={styles.tecidoDetalheLabel}>Rendimento:</Text>
+            <Text style={styles.tecidoDetalheValue}>{formatDecimal(metricas.rendimentoPorKg)}m/kg</Text>
+          </View>
+        )}
+        {typeof metricas.gramaturaGm2 === 'number' && (
+          <View style={styles.tecidoDetalheItem}>
+            <Text style={styles.tecidoDetalheLabel}>Gramatura:</Text>
+            <Text style={styles.tecidoDetalheValue}>{formatDecimal(metricas.gramaturaGm2)}g/m2</Text>
+          </View>
+        )}
+        {typeof metricas.gramaturaGmLinear === 'number' && (
+          <View style={styles.tecidoDetalheItem}>
+            <Text style={styles.tecidoDetalheLabel}>Peso linear:</Text>
+            <Text style={styles.tecidoDetalheValue}>{formatDecimal(metricas.gramaturaGmLinear)}g/m</Text>
+          </View>
+        )}
         {tecido.composicao && (
           <View style={styles.tecidoDetalheItem}>
-            <Text style={styles.tecidoDetalheLabel}>Composição:</Text>
+            <Text style={styles.tecidoDetalheLabel}>Composicao:</Text>
             <Text style={styles.tecidoDetalheValue}>{truncate(tecido.composicao, 50)}</Text>
           </View>
         )}
@@ -456,7 +567,6 @@ function TecidoHeaderEstampas({
     </View>
   );
 }
-
 /**
  * Footer das páginas
  */
@@ -521,8 +631,13 @@ function CoresContentPage({ pagina }: { pagina: PaginaCores }) {
       />
 
       <View style={styles.gridContainer}>
-        {pagina.cores.map((vinculo) => (
-          <ColorCard key={vinculo.id} vinculo={vinculo} />
+        {pagina.cores.map((vinculo, index) => (
+          <ColorCard
+            key={vinculo.id}
+            vinculo={vinculo}
+            index={index}
+            totalItems={pagina.cores.length}
+          />
         ))}
       </View>
 
@@ -544,8 +659,13 @@ function EstampasContentPage({ pagina }: { pagina: PaginaEstampas }) {
       />
 
       <View style={styles.gridContainer}>
-        {pagina.estampas.map((estampa) => (
-          <EstampaCard key={estampa.id} estampa={estampa} />
+        {pagina.estampas.map((estampa, index) => (
+          <EstampaCard
+            key={estampa.id}
+            estampa={estampa}
+            index={index}
+            totalItems={pagina.estampas.length}
+          />
         ))}
       </View>
 

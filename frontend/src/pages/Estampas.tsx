@@ -157,6 +157,13 @@ export function Estampas({ onNavigateHome, onNavigateToVinculos }: EstampasProps
     setDeleteModalOpen(true);
   };
 
+  const handleModalOpenChange = (isOpen: boolean) => {
+    setModalOpen(isOpen);
+    if (!isOpen) {
+      setEditingEstampa(null);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!estampaToDelete) return;
 
@@ -501,7 +508,7 @@ export function Estampas({ onNavigateHome, onNavigateToVinculos }: EstampasProps
       {/* Modal de formulário */}
       <EstampaFormModal
         open={modalOpen}
-        onOpenChange={setModalOpen}
+        onOpenChange={handleModalOpenChange}
         onSubmit={handleSubmit}
         onSubmitBatch={createEstampasBatch}
         estampa={editingEstampa}

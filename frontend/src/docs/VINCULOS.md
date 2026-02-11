@@ -1,6 +1,28 @@
 # Modulo de Vinculos Cor-Tecido
 
-Ultima atualizacao: 2026-02-10
+Ultima atualizacao: 2026-02-11
+
+## entrypoints
+
+- `frontend/src/pages/Vinculos.tsx` (UI, filtros, exportacoes, checklist PDF)
+- `frontend/src/components/Vinculos/VinculosChecklistPdfDocument.tsx` (layout e paginacao do PDF)
+- `frontend/src/lib/firebase/cor-tecido.ts` (persistencia e geracao de thumbs)
+- `frontend/src/types/cor.types.ts` (contrato `CorTecido`)
+
+## task -> arquivo
+
+- `Ajustar quebra de pagina do checklist PDF`: `frontend/src/components/Vinculos/VinculosChecklistPdfDocument.tsx`
+- `Trocar preview original por thumb no PDF`: `frontend/src/pages/Vinculos.tsx`
+- `Adicionar/ajustar campos de thumbs no vinculo`: `frontend/src/types/cor.types.ts`
+- `Gerar thumbs automaticamente no create/update`: `frontend/src/lib/firebase/cor-tecido.ts`
+
+## comandos de validacao
+
+```powershell
+npm run build:frontend
+rg -n "handleExportarChecklistPdf|imagemTingidaThumb|Checklist Rapido" frontend/src/pages/Vinculos.tsx
+rg -n "paginateSections|estimateSectionHeight|MIN_ROWS_FOR_SPLIT_IN_CURRENT_PAGE" frontend/src/components/Vinculos/VinculosChecklistPdfDocument.tsx
+```
 
 ## Visao geral
 
@@ -28,10 +50,17 @@ interface CorTecido {
   tecidoNome: string;
   tecidoSku?: string;
   imagemTingida?: string;
+  imagemTingidaThumb?: string;
   imagemGerada?: string;
+  imagemGeradaThumb?: string;
   imagemGeradaFingerprint?: string;
   imagemGeradaAt?: Timestamp;
   imagemModelo?: string;
+  imagemModeloThumb?: string;
+  imagemPremiumSquare?: string;
+  imagemPremiumSquareThumb?: string;
+  imagemPremiumPortrait?: string;
+  imagemPremiumPortraitThumb?: string;
   imagemModeloAt?: Timestamp;
   ajustesReinhard?: ReinhardConfig;
   createdAt: Timestamp;
@@ -49,7 +78,26 @@ Arquivo: `frontend/src/pages/Vinculos.tsx`
 3. Edicao inline de nome e SKU de cor.
 4. Acoes em lote por grupo (copiar SKUs/HEX/nomes, download preview).
 5. Exportacao XLSX.
-6. Diagnostico de referencias invalidas.
+6. Exportacao de checklist PDF em 2 modos:
+   - `Checklist PDF` (com thumbs),
+   - `Checklist Rapido` (sem thumbs, geracao mais rapida e arquivo menor).
+7. Diagnostico de referencias invalidas.
+
+## Checklist PDF (regras atuais)
+
+Arquivos:
+- `frontend/src/pages/Vinculos.tsx`
+- `frontend/src/components/Vinculos/VinculosChecklistPdfDocument.tsx`
+
+Regras principais:
+- A tabela por tecido evita quebra ruim no fim de pagina:
+  - se a secao inteira do tecido cabe em uma pagina vazia, ela comeca na proxima pagina (nao quebra no fim da atual).
+- Quando ha thumbs:
+  - prioriza `imagemTingidaThumb`/`imagemThumb` e usa original apenas como fallback.
+  - pode comprimir previews em memoria para reduzir tamanho final do PDF.
+- Quando usar `Checklist Rapido`:
+  - nao renderiza coluna de thumb no PDF.
+  - foco em velocidade de geracao.
 
 ## Preview ampliado de imagem
 

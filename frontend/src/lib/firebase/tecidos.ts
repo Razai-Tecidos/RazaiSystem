@@ -137,6 +137,9 @@ export async function createTecido(
     tipo: data.tipo || 'liso', // Default: liso
     largura: data.largura,
     composicao: data.composicao,
+    rendimentoPorKg: data.rendimentoPorKg || null,
+    gramaturaValor: data.gramaturaValor || null,
+    gramaturaUnidade: data.gramaturaUnidade || null,
     imagemPadrao: imageUrl || '',
     descricao: data.descricao || '',
     sku,
@@ -171,6 +174,9 @@ export async function updateTecido(
   if (data.tipo !== undefined) updateData.tipo = data.tipo;
   if (data.largura !== undefined) updateData.largura = data.largura;
   if (data.composicao !== undefined) updateData.composicao = data.composicao;
+  if (data.rendimentoPorKg !== undefined) updateData.rendimentoPorKg = data.rendimentoPorKg || null;
+  if (data.gramaturaValor !== undefined) updateData.gramaturaValor = data.gramaturaValor || null;
+  if (data.gramaturaUnidade !== undefined) updateData.gramaturaUnidade = data.gramaturaUnidade || null;
   if (data.descricao !== undefined) updateData.descricao = data.descricao;
   if (imageUrl) updateData.imagemPadrao = imageUrl;
 

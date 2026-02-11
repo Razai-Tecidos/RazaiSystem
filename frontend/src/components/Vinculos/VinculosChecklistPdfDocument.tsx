@@ -18,6 +18,7 @@ export interface VinculosChecklistPdfSection {
 
 interface VinculosChecklistPdfDocumentProps {
   sections: VinculosChecklistPdfSection[];
+  showPreviews?: boolean;
 }
 
 interface SectionChunk {
@@ -37,7 +38,7 @@ const SECTION_TITLE_HEIGHT = 30;
 const TABLE_HEADER_HEIGHT = 26;
 const ROW_HEIGHT = 38;
 const SECTION_BOTTOM_SPACE = 12;
-const MAX_ROWS_PER_CHUNK = 12;
+const MIN_ROWS_FOR_SPLIT_IN_CURRENT_PAGE = 3;
 
 const CONTENT_HEIGHT = A4_HEIGHT - PAGE_MARGIN * 2;
 const PAGE_CONTENT_LIMIT = CONTENT_HEIGHT - PAGE_HEADER_HEIGHT;
@@ -160,76 +161,153 @@ const styles = StyleSheet.create({
   },
 });
 
-const columnWidths = {
-  tecido: '28%',
-  tipo: '14%',
-  item: '36%',
-  preview: '12%',
-  check: '10%',
-} as const;
+function getColumnWidths(showPreviews: boolean) {
+  if (showPreviews) {
+    return {
+      tecido: '28%',
+      tipo: '14%',
+      item: '36%',
+      preview: '12%',
+      check: '10%',
+    } as const;
+  }
+
+  return {
+    tecido: '32%',
+    tipo: '14%',
+    item: '44%',
+    preview: '0%',
+    check: '10%',
+  } as const;
+}
 
 function estimateSectionHeight(rowsCount: number): number {
   return SECTION_TITLE_HEIGHT + TABLE_HEADER_HEIGHT + rowsCount * ROW_HEIGHT + SECTION_BOTTOM_SPACE;
 }
 
-function chunkRows<T>(rows: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let index = 0; index < rows.length; index += size) {
-    chunks.push(rows.slice(index, index + size));
-  }
-  return chunks;
-}
-
-function createSectionChunks(sections: VinculosChecklistPdfSection[]): SectionChunk[] {
-  const chunks: SectionChunk[] = [];
-
-  sections.forEach((section) => {
-    const rowChunks = chunkRows(section.rows, MAX_ROWS_PER_CHUNK);
-    rowChunks.forEach((rows, chunkIndex) => {
-      chunks.push({
-        tecidoId: section.tecidoId,
-        tecidoNome: section.tecidoNome,
-        tecidoSku: section.tecidoSku,
-        rows,
-        chunkIndex: chunkIndex + 1,
-        totalChunks: rowChunks.length,
-        estimatedHeight: estimateSectionHeight(rows.length),
-      });
-    });
-  });
-
-  return chunks;
-}
-
-function paginateChunks(chunks: SectionChunk[]): SectionChunk[][] {
+function paginateSections(sections: VinculosChecklistPdfSection[]): SectionChunk[][] {
   const pages: SectionChunk[][] = [];
   let currentPage: SectionChunk[] = [];
   let currentHeight = 0;
+  const sectionBaseHeight = SECTION_TITLE_HEIGHT + TABLE_HEADER_HEIGHT + SECTION_BOTTOM_SPACE;
+  const minSectionHeightWithOneRow = sectionBaseHeight + ROW_HEIGHT;
 
-  chunks.forEach((chunk) => {
-    const exceedsCurrentPage = currentHeight + chunk.estimatedHeight > PAGE_CONTENT_LIMIT;
+  sections
+    .filter((section) => section.rows.length > 0)
+    .forEach((section) => {
+      // Sempre iniciar novo tecido em uma nova página.
+      if (currentPage.length > 0) {
+        pages.push(currentPage);
+        currentPage = [];
+        currentHeight = 0;
+      }
 
-    if (exceedsCurrentPage && currentPage.length > 0) {
-      pages.push(currentPage);
-      currentPage = [];
-      currentHeight = 0;
-    }
+      let rowCursor = 0;
 
-    currentPage.push(chunk);
-    currentHeight += chunk.estimatedHeight;
-  });
+      while (rowCursor < section.rows.length) {
+        const availableHeight = PAGE_CONTENT_LIMIT - currentHeight;
+        const remainingRows = section.rows.length - rowCursor;
+
+        if (availableHeight < minSectionHeightWithOneRow) {
+          if (currentPage.length > 0) {
+            pages.push(currentPage);
+            currentPage = [];
+            currentHeight = 0;
+            continue;
+          }
+        }
+
+        const maxRowsFit = Math.floor((availableHeight - sectionBaseHeight) / ROW_HEIGHT);
+        if (maxRowsFit <= 0) {
+          if (currentPage.length > 0) {
+            pages.push(currentPage);
+            currentPage = [];
+            currentHeight = 0;
+            continue;
+          }
+          // Fallback defensivo para nao entrar em loop.
+          const chunk: SectionChunk = {
+            tecidoId: section.tecidoId,
+            tecidoNome: section.tecidoNome,
+            tecidoSku: section.tecidoSku,
+            rows: section.rows.slice(rowCursor, rowCursor + 1),
+            chunkIndex: 1,
+            totalChunks: 1,
+            estimatedHeight: estimateSectionHeight(1),
+          };
+          currentPage.push(chunk);
+          currentHeight += chunk.estimatedHeight;
+          rowCursor += 1;
+          continue;
+        }
+
+        if (
+          currentPage.length > 0 &&
+          remainingRows > maxRowsFit &&
+          maxRowsFit < MIN_ROWS_FOR_SPLIT_IN_CURRENT_PAGE
+        ) {
+          pages.push(currentPage);
+          currentPage = [];
+          currentHeight = 0;
+          continue;
+        }
+
+        const rowsToTake = Math.min(remainingRows, maxRowsFit);
+        const rows = section.rows.slice(rowCursor, rowCursor + rowsToTake);
+        const chunk: SectionChunk = {
+          tecidoId: section.tecidoId,
+          tecidoNome: section.tecidoNome,
+          tecidoSku: section.tecidoSku,
+          rows,
+          chunkIndex: 1,
+          totalChunks: 1,
+          estimatedHeight: estimateSectionHeight(rows.length),
+        };
+
+        currentPage.push(chunk);
+        currentHeight += chunk.estimatedHeight;
+        rowCursor += rowsToTake;
+
+        if (rowCursor < section.rows.length) {
+          pages.push(currentPage);
+          currentPage = [];
+          currentHeight = 0;
+        }
+      }
+    });
 
   if (currentPage.length > 0) {
     pages.push(currentPage);
   }
 
+  const chunksBySection = new Map<string, SectionChunk[]>();
+  pages.forEach((page) => {
+    page.forEach((chunk) => {
+      const sectionKey = `${chunk.tecidoId}|${chunk.tecidoNome}|${chunk.tecidoSku || ''}`;
+      const list = chunksBySection.get(sectionKey) || [];
+      list.push(chunk);
+      chunksBySection.set(sectionKey, list);
+    });
+  });
+
+  chunksBySection.forEach((chunks) => {
+    const totalChunks = chunks.length;
+    chunks.forEach((chunk, index) => {
+      chunk.chunkIndex = index + 1;
+      chunk.totalChunks = totalChunks;
+    });
+  });
+
   return pages;
 }
 
-export function VinculosChecklistPdfDocument({ sections }: VinculosChecklistPdfDocumentProps) {
-  const chunks = createSectionChunks(sections.filter((section) => section.rows.length > 0));
-  const pages = paginateChunks(chunks);
+export function VinculosChecklistPdfDocument({
+  sections,
+  showPreviews = true,
+}: VinculosChecklistPdfDocumentProps) {
+  const pages = paginateSections(sections);
   const generationDate = new Date().toLocaleDateString('pt-BR');
+  const columnWidths = getColumnWidths(showPreviews);
 
   return (
     <Document>
@@ -272,9 +350,11 @@ export function VinculosChecklistPdfDocument({ sections }: VinculosChecklistPdfD
                 <View style={[styles.cell, { width: columnWidths.item }]}>
                   <Text style={styles.headerCell}>Cor / Estampa</Text>
                 </View>
-                <View style={[styles.cell, { width: columnWidths.preview }]}>
-                  <Text style={styles.headerCell}>Thumb</Text>
-                </View>
+                {showPreviews && (
+                  <View style={[styles.cell, { width: columnWidths.preview }]}>
+                    <Text style={styles.headerCell}>Thumb</Text>
+                  </View>
+                )}
                 <View style={[styles.cell, styles.checkboxCell, { width: columnWidths.check }]}>
                   <Text style={styles.headerCell}>Check</Text>
                 </View>
@@ -292,15 +372,17 @@ export function VinculosChecklistPdfDocument({ sections }: VinculosChecklistPdfD
                     <Text style={styles.cellText}>{row.nome}</Text>
                     <Text style={styles.cellMuted}>{row.sku || 'Sem SKU'}</Text>
                   </View>
-                  <View style={[styles.cell, { width: columnWidths.preview }]}>
-                    <View style={styles.thumbWrap}>
-                      {row.previewUrl ? (
-                        <Image src={row.previewUrl} style={styles.thumb} />
-                      ) : (
-                        <Text style={styles.thumbFallback}>-</Text>
-                      )}
+                  {showPreviews && (
+                    <View style={[styles.cell, { width: columnWidths.preview }]}>
+                      <View style={styles.thumbWrap}>
+                        {row.previewUrl ? (
+                          <Image src={row.previewUrl} style={styles.thumb} />
+                        ) : (
+                          <Text style={styles.thumbFallback}>-</Text>
+                        )}
+                      </View>
                     </View>
-                  </View>
+                  )}
                   <View style={[styles.cell, styles.checkboxCell, { width: columnWidths.check }]}>
                     <View style={styles.checkbox} />
                   </View>

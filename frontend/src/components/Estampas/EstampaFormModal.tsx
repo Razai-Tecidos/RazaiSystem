@@ -93,6 +93,7 @@ export function EstampaFormModal({
   const [isDragging, setIsDragging] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const previewUrlRef = useRef<string | null>(null);
+  const skipDiscardCheckRef = useRef(false);
 
   // Estados do modo lote
   const [nomesLote, setNomesLote] = useState('');
@@ -125,6 +126,16 @@ export function EstampaFormModal({
 
   // Interceptar fechamento do modal
   const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && skipDiscardCheckRef.current) {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+      resetForm();
+      onOpenChange(false);
+      return;
+    }
+
     if (!newOpen && hasUnsavedChanges() && !isSubmitting) {
       setShowDiscardConfirm(true);
       return;
@@ -179,6 +190,7 @@ export function EstampaFormModal({
   // Resetar formulário quando modal abrir/fechar ou estampa mudar
   useEffect(() => {
     if (open) {
+      skipDiscardCheckRef.current = false;
       if (estampa) {
         // Modo edição - sempre individual
         setMode('individual');
@@ -319,8 +331,8 @@ export function EstampaFormModal({
         imagem,
         descricao: descricao.trim() || undefined,
       });
+      skipDiscardCheckRef.current = true;
       handleOpenChange(false);
-      resetForm();
     } catch {
       // Erro tratado no hook
     } finally {
@@ -337,8 +349,8 @@ export function EstampaFormModal({
     try {
       const nomes = loteValidacao.validos.map(v => v.nome);
       await onSubmitBatch(nomes, tecidoBaseId);
+      skipDiscardCheckRef.current = true;
       handleOpenChange(false);
-      resetForm();
     } catch {
       // Erro tratado no hook
     } finally {

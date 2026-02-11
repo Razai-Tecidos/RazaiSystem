@@ -39,12 +39,14 @@ import {
   ChevronRight,
   Copy,
   FileSpreadsheet,
+  Zap,
   Check,
   X,
   Pencil,
 } from 'lucide-react';
 import { createZipFromImages } from '@/lib/zipUtils';
 import ExcelJS from 'exceljs';
+import { isThumbStorageUrl } from '@/lib/imageThumb';
 import { EditarVinculo } from './EditarVinculo';
 import { updateCorDataInVinculos } from '@/lib/firebase/cor-tecido';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
@@ -56,6 +58,107 @@ import {
 interface VinculosProps {
   onNavigateHome?: () => void;
   onNavigateToEstampas?: () => void;
+}
+
+const PDF_PREVIEW_MAX_DIMENSION = 96;
+const PDF_PREVIEW_JPEG_QUALITY = 0.52;
+const PDF_PREVIEW_CONCURRENCY = 4;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const safeConcurrency = Math.max(1, Math.min(concurrency, items.length));
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  const workers = Array.from({ length: safeConcurrency }, async () => {
+    while (true) {
+      const currentIndex = cursor;
+      cursor += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
+function loadImageForPdf(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Falha ao carregar imagem: ${src}`));
+    img.src = src;
+  });
+}
+
+function compressImageForPdfPreview(
+  image: HTMLImageElement,
+  maxDimension: number = PDF_PREVIEW_MAX_DIMENSION,
+  quality: number = PDF_PREVIEW_JPEG_QUALITY
+): string {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const maxSourceDimension = Math.max(sourceWidth, sourceHeight, 1);
+  const scale = Math.min(1, maxDimension / maxSourceDimension);
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Nao foi possivel iniciar o canvas de compressao');
+  }
+
+  ctx.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+async function buildCompressedPreviewMap(
+  sections: VinculosChecklistPdfSection[]
+): Promise<Map<string, string>> {
+  const uniqueUrls = Array.from(
+    new Set(
+      sections
+        .flatMap((section) => section.rows.map((row) => row.previewUrl))
+        .filter((url): url is string => Boolean(url))
+    )
+  );
+
+  const compressedEntries = await mapWithConcurrency(
+    uniqueUrls,
+    PDF_PREVIEW_CONCURRENCY,
+    async (url): Promise<[string, string]> => {
+      if (isThumbStorageUrl(url) || url.startsWith('data:image/')) {
+        return [url, url];
+      }
+      try {
+        const image = await loadImageForPdf(url);
+        const compressed = compressImageForPdfPreview(image);
+        return [url, compressed];
+      } catch (error) {
+        console.warn('[checklist-pdf] Falha ao comprimir preview, mantendo original:', url, error);
+        return [url, url];
+      }
+    }
+  );
+
+  return new Map(compressedEntries);
 }
 
 export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps) {
@@ -964,7 +1067,7 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
     }
   };
 
-  const handleExportarChecklistPdf = async () => {
+  const handleExportarChecklistPdf = async (showPreviews: boolean = true) => {
     if (totalLinhasVinculo === 0) {
       toast({
         title: 'Nenhum dado para exportar',
@@ -986,7 +1089,7 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
             tipo: 'Cor' as const,
             nome: vinculo.corNome,
             sku: vinculo.sku || vinculo.corSku,
-            previewUrl: vinculo.imagemTingida,
+            previewUrl: vinculo.imagemTingidaThumb || vinculo.imagemTingida,
           })),
           ...grupo.estampas.map((estampa) => ({
             id: `estampa-${estampa.id}`,
@@ -994,7 +1097,7 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
             tipo: 'Estampa' as const,
             nome: estampa.nome,
             sku: estampa.sku,
-            previewUrl: estampa.imagem,
+            previewUrl: estampa.imagemThumb || estampa.imagem,
           })),
         ],
       }))
@@ -1012,8 +1115,25 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
     setGeneratingChecklistPdf(true);
 
     try {
+      let sectionsForPdf = secoesChecklist;
+      if (showPreviews) {
+        const compressedPreviewMap = await buildCompressedPreviewMap(secoesChecklist);
+        sectionsForPdf = secoesChecklist.map((section) => ({
+          ...section,
+          rows: section.rows.map((row) => {
+            if (!row.previewUrl) {
+              return row;
+            }
+            return {
+              ...row,
+              previewUrl: compressedPreviewMap.get(row.previewUrl) || row.previewUrl,
+            };
+          }),
+        }));
+      }
+
       const blob = await pdf(
-        <VinculosChecklistPdfDocument sections={secoesChecklist} />
+        <VinculosChecklistPdfDocument sections={sectionsForPdf} showPreviews={showPreviews} />
       ).toBlob();
 
       const url = URL.createObjectURL(blob);
@@ -1027,7 +1147,7 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
 
       toast({
         title: 'Checklist gerado!',
-        description: `PDF com ${secoesChecklist.length} tecido(s) e ${totalLinhasVinculo} item(ns) foi baixado.`,
+        description: `PDF ${showPreviews ? 'com thumbs' : 'rapido'} com ${secoesChecklist.length} tecido(s) e ${totalLinhasVinculo} item(ns) foi baixado.`,
       });
     } catch (error) {
       console.error('Erro ao exportar checklist PDF:', error);
@@ -1287,7 +1407,7 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={handleExportarChecklistPdf}
+                onClick={() => handleExportarChecklistPdf(true)}
                 variant="outline"
                 disabled={generatingChecklistPdf}
               >
@@ -1297,6 +1417,18 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
                   <FileDown className="mr-2 h-4 w-4" />
                 )}
                 Checklist PDF
+              </Button>
+              <Button
+                onClick={() => handleExportarChecklistPdf(false)}
+                variant="outline"
+                disabled={generatingChecklistPdf}
+              >
+                {generatingChecklistPdf ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Zap className="mr-2 h-4 w-4" />
+                )}
+                Checklist Rapido
               </Button>
               <Button onClick={handleExportarTabela} variant="outline">
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
