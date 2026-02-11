@@ -26,6 +26,8 @@ export interface ShopeePricingLength {
   metros: number;
 }
 
+const ANTICIPATION_FEE_RATE = 0.03;
+
 function calculateCommissionForPrice(
   params: ShopeePricingParams,
   sellingPrice: number
@@ -47,6 +49,16 @@ function calculateLowValueExtraForPrice(
   return sellingPrice < params.valor_minimo_baixo_valor
     ? params.adicional_baixo_valor
     : 0;
+}
+
+function calculateAnticipationFeeForPrice(
+  sellingPrice: number,
+  commission: number,
+  fixedFee: number,
+  lowValueExtra: number
+): number {
+  const liquidValue = sellingPrice - commission - fixedFee - lowValueExtra;
+  return liquidValue * ANTICIPATION_FEE_RATE;
 }
 
 export const DEFAULT_CNPJ_PRICING_PARAMS: ShopeePricingParams = {
@@ -134,14 +146,15 @@ export function validatePricingParams(params: ShopeePricingParams): string[] {
 
   if (params.modo_margem_lucro === 'percentual') {
     const margin = params.margem_liquida_percentual / 100;
+    const authMultiplier = 1 - ANTICIPATION_FEE_RATE;
     if (params.aplicar_teto) {
-      if (1 - margin <= 0) {
+      if (authMultiplier - margin <= 0) {
         errors.push('Parametros invalidos: margem deixa denominador <= 0 com teto ativo.');
       }
-    } else if (1 - margin - commission <= 0) {
+    } else if (authMultiplier * (1 - commission) - margin <= 0) {
       errors.push('Parametros invalidos: margem + comissao deixam denominador <= 0.');
     }
-  } else if (!params.aplicar_teto && 1 - commission <= 0) {
+  } else if (!params.aplicar_teto && (1 - ANTICIPATION_FEE_RATE) * (1 - commission) <= 0) {
     errors.push('Parametros invalidos: comissao deixa denominador <= 0.');
   }
 
@@ -150,6 +163,7 @@ export function validatePricingParams(params: ShopeePricingParams): string[] {
 
 function solvePrice(
   params: ShopeePricingParams,
+  comprimentoMetros: number,
   materialCost: number,
   lowValueExtra: number,
   marginConfig: ShopeeMarginConfig
@@ -158,15 +172,18 @@ function solvePrice(
   const fixed = params.taxa_fixa_item;
   const isPercent = marginConfig.modo === 'percentual';
   const margin = isPercent ? marginConfig.valor / 100 : 0;
-  const marginFixed = isPercent ? 0 : marginConfig.valor;
-  const baseCost = materialCost + fixed + lowValueExtra;
+  const marginFixedTotal = isPercent ? 0 : marginConfig.valor * comprimentoMetros;
+  const authMultiplier = 1 - ANTICIPATION_FEE_RATE;
+  const authenticatedBaseCost = materialCost + authMultiplier * (fixed + lowValueExtra);
 
   const solveWithoutCeiling = (): number => {
-    const denominator = isPercent ? 1 - commission - margin : 1 - commission;
+    const denominator = isPercent
+      ? authMultiplier * (1 - commission) - margin
+      : authMultiplier * (1 - commission);
     if (denominator <= 0) {
       throw new Error('Denominador invalido para calculo sem teto.');
     }
-    return (baseCost + marginFixed) / denominator;
+    return (authenticatedBaseCost + marginFixedTotal) / denominator;
   };
 
   if (!params.aplicar_teto) {
@@ -179,14 +196,20 @@ function solvePrice(
   }
 
   if (isPercent) {
-    const denominator = 1 - margin;
+    const denominator = authMultiplier - margin;
     if (denominator <= 0) {
       throw new Error('Denominador invalido para calculo com teto.');
     }
-    return (baseCost + params.teto_comissao) / denominator;
+    const numerator = materialCost + authMultiplier * (fixed + lowValueExtra + params.teto_comissao);
+    return numerator / denominator;
   }
 
-  return baseCost + marginFixed + params.teto_comissao;
+  const denominator = authMultiplier;
+  if (denominator <= 0) {
+    throw new Error('Denominador invalido para calculo com teto.');
+  }
+  const numerator = materialCost + marginFixedTotal + authMultiplier * (fixed + lowValueExtra + params.teto_comissao);
+  return numerator / denominator;
 }
 
 function resolveMarginConfig(
@@ -245,10 +268,10 @@ export function calculateSuggestedPrice(
   }
 
   const materialCost = params.custo_metro * comprimentoMetros;
-  let result = solvePrice(params, materialCost, 0, marginConfig);
+  let result = solvePrice(params, comprimentoMetros, materialCost, 0, marginConfig);
 
   if (params.aplicar_baixo_valor && result < params.valor_minimo_baixo_valor) {
-    result = solvePrice(params, materialCost, params.adicional_baixo_valor, marginConfig);
+    result = solvePrice(params, comprimentoMetros, materialCost, params.adicional_baixo_valor, marginConfig);
   }
 
   return roundToCents(result);
@@ -286,7 +309,13 @@ export function calculateNetProfitReais(
   const materialCost = params.custo_metro * comprimentoMetros;
   const commission = calculateCommissionForPrice(params, sellingPrice);
   const lowValueExtra = calculateLowValueExtraForPrice(params, sellingPrice);
-  const netProfit = sellingPrice - commission - params.taxa_fixa_item - lowValueExtra - materialCost;
+  const anticipationFee = calculateAnticipationFeeForPrice(
+    sellingPrice,
+    commission,
+    params.taxa_fixa_item,
+    lowValueExtra
+  );
+  const netProfit = sellingPrice - commission - params.taxa_fixa_item - lowValueExtra - anticipationFee - materialCost;
 
   return roundToCents(netProfit);
 }

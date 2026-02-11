@@ -21,7 +21,7 @@ describe('shopeePricing', () => {
     };
 
     const price = calculateSuggestedPrice(params, 2);
-    expect(price).toBe(40);
+    expect(price).toBe(41.46);
   });
 
   it('calcula preco com teto', () => {
@@ -36,7 +36,7 @@ describe('shopeePricing', () => {
     };
 
     const price = calculateSuggestedPrice(params, 2);
-    expect(price).toBe(36.25);
+    expect(price).toBe(37.31);
   });
 
   it('nao infla preco quando teto e alto e comissao percentual fica abaixo dele', () => {
@@ -52,10 +52,10 @@ describe('shopeePricing', () => {
     };
 
     const price = calculateSuggestedPrice(params, 1);
-    expect(price).toBe(23.33);
+    expect(price).toBe(24.1);
   });
 
-  it('calcula preco com margem fixa em reais', () => {
+  it('calcula preco com margem fixa em reais por metro', () => {
     const params = {
       ...DEFAULT_CNPJ_PRICING_PARAMS,
       modo_margem_lucro: 'valor_fixo' as const,
@@ -68,7 +68,7 @@ describe('shopeePricing', () => {
     };
 
     const price = calculateSuggestedPrice(params, 2);
-    expect(price).toBe(48.75);
+    expect(price).toBe(69.43);
   });
 
   it('recalcula com adicional de baixo valor quando preco inicial fica abaixo do minimo', () => {
@@ -85,7 +85,7 @@ describe('shopeePricing', () => {
     };
 
     const price = calculateSuggestedPrice(params, 1);
-    expect(price).toBe(2.86);
+    expect(price).toBe(2.91);
   });
 
   it('falha com denominador invalido', () => {
@@ -115,8 +115,8 @@ describe('shopeePricing', () => {
       { id: '3', metros: 3 },
     ]);
 
-    expect(prices['1']).toBe(5.61);
-    expect(prices['3']).toBe(14.27);
+    expect(prices['1']).toBe(5.77);
+    expect(prices['3']).toBe(14.74);
   });
 
   it('permite margem por tamanho com override de modo e valor', () => {
@@ -141,8 +141,36 @@ describe('shopeePricing', () => {
       { id: '2', metros: 2 },
     ], marginOverrides);
 
-    expect(prices['1']).toBe(20);
-    expect(prices['2']).toBe(40);
+    expect(prices['1']).toBe(20.53);
+    expect(prices['2']).toBe(51.39);
+  });
+
+  it('atinge lucro liquido total esperado quando margem fixa e por metro', () => {
+    const params = {
+      ...DEFAULT_CNPJ_PRICING_PARAMS,
+      modo_margem_lucro: 'valor_fixo' as const,
+      aplicar_teto: false,
+      aplicar_baixo_valor: false,
+      custo_metro: 10,
+      comissao_percentual: 20,
+      taxa_fixa_item: 4,
+    };
+
+    const margins = [
+      { metros: 1, margemPorMetro: 5, lucroEsperadoTotal: 5 },
+      { metros: 2, margemPorMetro: 4, lucroEsperadoTotal: 8 },
+      { metros: 3, margemPorMetro: 3, lucroEsperadoTotal: 9 },
+    ];
+
+    margins.forEach(({ metros, margemPorMetro, lucroEsperadoTotal }) => {
+      const price = calculateSuggestedPrice({
+        ...params,
+        margem_lucro_fixa: margemPorMetro,
+      }, metros);
+
+      const netProfit = calculateNetProfitReais(params, metros, price);
+      expect(netProfit).toBeCloseTo(lucroEsperadoTotal, 2);
+    });
   });
 
   it('valida limites e campos invalidos', () => {
@@ -177,7 +205,7 @@ describe('shopeePricing', () => {
     };
 
     const netProfit = calculateNetProfitReais(params, 1, 23.33);
-    expect(netProfit).toBe(4.66);
+    expect(netProfit).toBe(4.22);
   });
 
   it('calcula lucro liquido em reais com teto de comissao acionado', () => {
@@ -192,7 +220,7 @@ describe('shopeePricing', () => {
     };
 
     const netProfit = calculateNetProfitReais(params, 2, 40);
-    expect(netProfit).toBe(13);
+    expect(netProfit).toBe(12.01);
   });
 
   it('calcula lucro liquido em reais com adicional de baixo valor', () => {
@@ -208,7 +236,7 @@ describe('shopeePricing', () => {
     };
 
     const netProfit = calculateNetProfitReais(params, 1, 7);
-    expect(netProfit).toBe(3.6);
+    expect(netProfit).toBe(3.46);
   });
 
   it('arredonda para cima preferindo centavos ,50 ou ,90', () => {

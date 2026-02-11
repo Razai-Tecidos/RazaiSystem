@@ -12,9 +12,14 @@ interface BrandSelectorProps {
   categoryId: number;
   value?: number;
   onChange: (brandId: number | undefined, brandName: string) => void;
+  onValidationChange?: (state: {
+    loading: boolean;
+    isMandatory: boolean;
+    isValid: boolean;
+  }) => void;
 }
 
-export function BrandSelector({ shopId, categoryId, value, onChange }: BrandSelectorProps) {
+export function BrandSelector({ shopId, categoryId, value, onChange, onValidationChange }: BrandSelectorProps) {
   const [brands, setBrands] = useState<ShopeeBrand[]>([]);
   const [loading, setLoading] = useState(false);
   const [isMandatory, setIsMandatory] = useState(false);
@@ -26,6 +31,22 @@ export function BrandSelector({ shopId, categoryId, value, onChange }: BrandSele
       loadBrands();
     }
   }, [shopId, categoryId]);
+
+  useEffect(() => {
+    if (!onValidationChange) return;
+    const isValid = !isMandatory || (value !== undefined && value !== null && value > 0);
+    onValidationChange({
+      loading,
+      isMandatory,
+      isValid,
+    });
+  }, [loading, isMandatory, value, onValidationChange]);
+
+  useEffect(() => {
+    if (isMandatory && value === 0) {
+      onChange(undefined, '');
+    }
+  }, [isMandatory, value, onChange]);
 
   const getAuthToken = async (): Promise<string | null> => {
     const user = auth.currentUser;
@@ -103,18 +124,20 @@ export function BrandSelector({ shopId, categoryId, value, onChange }: BrandSele
               />
             </div>
             <div className="max-h-48 overflow-y-auto">
-              <div
-                className={`px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm ${
-                  value === 0 ? 'bg-blue-50 text-blue-800' : 'text-gray-500'
-                }`}
-                onClick={() => {
-                  onChange(0, 'No Brand');
-                  setIsOpen(false);
-                  setSearchTerm('');
-                }}
-              >
-                Sem marca
-              </div>
+              {!isMandatory && (
+                <div
+                  className={`px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm ${
+                    value === 0 ? 'bg-blue-50 text-blue-800' : 'text-gray-500'
+                  }`}
+                  onClick={() => {
+                    onChange(0, 'No Brand');
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }}
+                >
+                  Sem marca
+                </div>
+              )}
               {filteredBrands.map(brand => (
                 <div
                   key={brand.brand_id}

@@ -13,9 +13,29 @@ interface CategoryAttributesProps {
   categoryId: number;
   values: ProductAttributeValue[];
   onChange: (values: ProductAttributeValue[]) => void;
+  onValidationChange?: (state: {
+    loading: boolean;
+    isValid: boolean;
+    mandatoryCount: number;
+    filledMandatoryCount: number;
+    missingAttributeIds: number[];
+  }) => void;
 }
 
-export function CategoryAttributes({ shopId, categoryId, values, onChange }: CategoryAttributesProps) {
+function hasAttributeValue(attribute?: ProductAttributeValue): boolean {
+  if (!attribute?.attribute_value_list || attribute.attribute_value_list.length === 0) {
+    return false;
+  }
+
+  return attribute.attribute_value_list.some((value) => {
+    if (value.value_id !== undefined && value.value_id !== null) {
+      return true;
+    }
+    return typeof value.original_value_name === 'string' && value.original_value_name.trim().length > 0;
+  });
+}
+
+export function CategoryAttributes({ shopId, categoryId, values, onChange, onValidationChange }: CategoryAttributesProps) {
   const [attributes, setAttributes] = useState<ShopeeCategoryAttribute[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +45,22 @@ export function CategoryAttributes({ shopId, categoryId, values, onChange }: Cat
       loadAttributes();
     }
   }, [shopId, categoryId]);
+
+  useEffect(() => {
+    if (!onValidationChange) return;
+    const mandatoryAttributes = attributes.filter((attr) => attr.is_mandatory);
+    const missingAttributeIds = mandatoryAttributes
+      .filter((attr) => !hasAttributeValue(values.find((value) => value.attribute_id === attr.attribute_id)))
+      .map((attr) => attr.attribute_id);
+
+    onValidationChange({
+      loading,
+      isValid: missingAttributeIds.length === 0,
+      mandatoryCount: mandatoryAttributes.length,
+      filledMandatoryCount: mandatoryAttributes.length - missingAttributeIds.length,
+      missingAttributeIds,
+    });
+  }, [attributes, values, loading, onValidationChange]);
 
   const getAuthToken = async (): Promise<string | null> => {
     const user = auth.currentUser;

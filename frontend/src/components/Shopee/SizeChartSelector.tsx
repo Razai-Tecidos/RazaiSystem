@@ -17,9 +17,15 @@ interface SizeChartSelectorProps {
   categoryId: number;
   value?: number;
   onChange: (sizeChartId: number | undefined) => void;
+  onValidationChange?: (state: {
+    loading: boolean;
+    supported: boolean;
+    hasSizeCharts: boolean;
+    isValid: boolean;
+  }) => void;
 }
 
-export function SizeChartSelector({ shopId, categoryId, value, onChange }: SizeChartSelectorProps) {
+export function SizeChartSelector({ shopId, categoryId, value, onChange, onValidationChange }: SizeChartSelectorProps) {
   const [supported, setSupported] = useState(false);
   const [sizeCharts, setSizeCharts] = useState<SizeChart[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,6 +35,25 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange }: SizeC
       checkSupport();
     }
   }, [shopId, categoryId]);
+
+  useEffect(() => {
+    if (!onValidationChange) return;
+    const hasSizeCharts = sizeCharts.length > 0;
+    const isValuePresent = value !== undefined && value !== null;
+    const isKnownValue = !isValuePresent || !hasSizeCharts || sizeCharts.some((chart) => chart.size_chart_id === value);
+    onValidationChange({
+      loading,
+      supported,
+      hasSizeCharts,
+      isValid: isKnownValue,
+    });
+  }, [loading, supported, sizeCharts, value, onValidationChange]);
+
+  useEffect(() => {
+    if (!supported && value !== undefined) {
+      onChange(undefined);
+    }
+  }, [supported, value, onChange]);
 
   const getAuthToken = async (): Promise<string | null> => {
     const user = auth.currentUser;

@@ -189,6 +189,24 @@ export function CriarAnuncioShopee({
   const [sizeChartId, setSizeChartId] = useState<number | undefined>(undefined);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [overlayImages, setOverlayImages] = useState<Record<string, string>>({});
+  const [attributesValidation, setAttributesValidation] = useState({
+    loading: false,
+    isValid: true,
+    mandatoryCount: 0,
+    filledMandatoryCount: 0,
+    missingAttributeIds: [] as number[],
+  });
+  const [brandValidation, setBrandValidation] = useState({
+    loading: false,
+    isMandatory: false,
+    isValid: true,
+  });
+  const [sizeChartValidation, setSizeChartValidation] = useState({
+    loading: false,
+    supported: false,
+    hasSizeCharts: false,
+    isValid: true,
+  });
 
   // Informações fiscais
   const [ncmPadrao, setNcmPadrao] = useState<string>('58013600');
@@ -204,6 +222,34 @@ export function CriarAnuncioShopee({
 
   // Shop selecionada
   const selectedShop = shops[0];
+
+  useEffect(() => {
+    if (!categoriaId) {
+      setAttributesValidation({
+        loading: false,
+        isValid: true,
+        mandatoryCount: 0,
+        filledMandatoryCount: 0,
+        missingAttributeIds: [],
+      });
+      setBrandValidation({
+        loading: false,
+        isMandatory: false,
+        isValid: true,
+      });
+      setSizeChartValidation({
+        loading: false,
+        supported: false,
+        hasSizeCharts: false,
+        isValid: true,
+      });
+      return;
+    }
+
+    setAttributesValidation((prev) => ({ ...prev, loading: true, isValid: false }));
+    setBrandValidation((prev) => ({ ...prev, loading: true, isValid: false }));
+    setSizeChartValidation((prev) => ({ ...prev, loading: true, isValid: true }));
+  }, [categoriaId]);
 
   const availableTamanhos = useMemo(
     () => tamanhos.filter((tamanho) => extractMetersFromTamanhoNome(tamanho.nome) !== 4),
@@ -472,13 +518,6 @@ export function CriarAnuncioShopee({
     ));
   };
 
-  // Atualiza estoque de uma cor
-  const updateCorEstoque = (corId: string, value: number) => {
-    setCoresConfig(prev => prev.map(c => 
-      c.cor_id === corId ? { ...c, estoque: value } : c
-    ));
-  };
-
   const applySuggestedPrices = useCallback((
     params: ShopeePricingParams = precificacaoParams,
     tamanhoIds: string[] = selectedTamanhos,
@@ -639,6 +678,20 @@ export function CriarAnuncioShopee({
     }, {});
   }, [selectedTamanhos, tamanhos, precosPorTamanho, precificacaoParams]);
 
+  const lucroLiquidoPorMetroPorTamanho = useMemo(() => {
+    return selectedTamanhos.reduce<Record<string, number | null>>((acc, id) => {
+      const tamanho = tamanhos.find((t) => t.id === id);
+      const metros = parseFloat(tamanho?.nome || '') || 1;
+      const lucroTotal = lucroLiquidoPorTamanho[id];
+      if (lucroTotal === null || lucroTotal === undefined || metros <= 0) {
+        acc[id] = null;
+        return acc;
+      }
+      acc[id] = lucroTotal / metros;
+      return acc;
+    }, {});
+  }, [selectedTamanhos, tamanhos, lucroLiquidoPorTamanho]);
+
   const lucroLiquidoPrecoUnico = useMemo(() => {
     if (precoUnico <= 0) {
       return null;
@@ -652,6 +705,9 @@ export function CriarAnuncioShopee({
 
   const tituloTrim = tituloAnuncio.trim();
   const tituloValido = tituloTrim.length === 0 || (tituloTrim.length >= 20 && tituloTrim.length <= 120);
+  const mandatoryAttributesReadyAndValid = !categoriaId || (!attributesValidation.loading && attributesValidation.isValid);
+  const mandatoryBrandReadyAndValid = !categoriaId || (!brandValidation.loading && brandValidation.isValid);
+  const sizeChartReadyAndValid = !categoriaId || (!sizeChartValidation.loading && sizeChartValidation.isValid);
 
   // Validação de etapas
   const canProceedFromTecido = selectedTecido !== null;
@@ -664,6 +720,9 @@ export function CriarAnuncioShopee({
     categoriaId !== null && 
     tituloValido &&
     hasEnabledLogistics &&
+    mandatoryAttributesReadyAndValid &&
+    mandatoryBrandReadyAndValid &&
+    sizeChartReadyAndValid &&
     peso > 0 && 
     dimensoes.comprimento > 0 && 
     dimensoes.largura > 0 && 
@@ -719,7 +778,7 @@ export function CriarAnuncioShopee({
       tecido_id: selectedTecido.id,
       cores: selectedCores.map(c => ({
         cor_id: c.cor_id,
-        estoque: c.estoque || estoquePadrao,
+        estoque: estoquePadrao,
       })),
       tamanhos: selectedTamanhos.length > 0 ? selectedTamanhos : undefined,
       precos_por_tamanho: selectedTamanhos.length > 0 ? precosPorTamanho : undefined,
@@ -824,12 +883,16 @@ export function CriarAnuncioShopee({
       errors.titulo = 'Titulo deve ter entre 20 e 120 caracteres';
     }
     if (!categoriaId) errors.categoria = 'Selecione uma categoria';
+    if (!mandatoryAttributesReadyAndValid) errors.atributos = 'Preencha todos os atributos obrigatorios da categoria';
+    if (!mandatoryBrandReadyAndValid) errors.marca = 'Selecione uma marca valida para a categoria';
+    if (!hasEnabledLogistics) errors.logistica = 'Habilite pelo menos um canal de logistica';
+    if (!sizeChartReadyAndValid) errors.sizeChart = 'Selecao de tabela de medidas invalida para esta categoria';
     if (peso <= 0) errors.peso = 'Peso deve ser maior que zero';
     if (dimensoes.comprimento <= 0) errors.comprimento = 'Comprimento deve ser maior que zero';
     if (dimensoes.largura <= 0) errors.largura = 'Largura deve ser maior que zero';
     if (dimensoes.altura <= 0) errors.altura = 'Altura deve ser maior que zero';
     return errors;
-  }, [temPrecoValido, selectedTamanhos, tituloValido, categoriaId, peso, dimensoes]);
+  }, [temPrecoValido, selectedTamanhos, tituloValido, categoriaId, mandatoryAttributesReadyAndValid, mandatoryBrandReadyAndValid, hasEnabledLogistics, sizeChartReadyAndValid, peso, dimensoes]);
 
   // Progresso da etapa atual
   const stepProgress = useMemo(() => {
@@ -844,19 +907,23 @@ export function CriarAnuncioShopee({
     }
     if (currentStep === 'imagens') return imagensPrincipais.length > 0 ? 100 : 0;
     if (currentStep === 'configuracoes') {
-      const totalFields = 7;
+      const totalFields = 10;
       let filled = 0;
       if (temPrecoValido) filled++;
       if (estoquePadrao > 0) filled++;
       if (tituloValido) filled++;
       if (categoriaId) filled++;
+      if (mandatoryAttributesReadyAndValid) filled++;
+      if (mandatoryBrandReadyAndValid) filled++;
+      if (hasEnabledLogistics) filled++;
+      if (sizeChartReadyAndValid) filled++;
       if (peso > 0) filled++;
       if (dimensoes.comprimento > 0 && dimensoes.largura > 0) filled++;
       if (dimensoes.altura > 0) filled++;
       return Math.round((filled / totalFields) * 100);
     }
     return 100;
-  }, [currentStep, selectedTecido, imagensPrincipais.length, selectedCores, selectedTamanhos.length, precoUnico, temPrecoValido, pricingParamErrors.length, estoquePadrao, tituloValido, categoriaId, peso, dimensoes]);
+  }, [currentStep, selectedTecido, imagensPrincipais.length, selectedCores, selectedTamanhos.length, precoUnico, temPrecoValido, pricingParamErrors.length, estoquePadrao, tituloValido, categoriaId, mandatoryAttributesReadyAndValid, mandatoryBrandReadyAndValid, hasEnabledLogistics, sizeChartReadyAndValid, peso, dimensoes]);
 
   // Gerar overlays de marca quando entrar no preview
   useEffect(() => {
@@ -1357,37 +1424,6 @@ export function CriarAnuncioShopee({
                 </div>
               </div>
 
-              {selectedCores.length > 0 && (
-                <div className="mt-6 border-t pt-6">
-                  <FieldHint
-                    label="Estoque por Cor"
-                    hint="Quantidade inicial de cada cor. Sera sincronizado com o modulo de estoque Shopee."
-                    className="mb-4"
-                  />
-                  <div className="space-y-3">
-                    {selectedCores.map(cor => (
-                      <div key={cor.cor_id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
-                        <div className="flex-1 flex items-center gap-2">
-                          {cor.cor_hex && (
-                            <div className="w-5 h-5 rounded-full border flex-shrink-0" style={{ backgroundColor: cor.cor_hex }} />
-                          )}
-                          <span className="font-medium text-sm">{cor.cor_nome}</span>
-                        </div>
-                        <div className="w-28">
-                          <Input
-                            type="number"
-                            min="0"
-                            value={cor.estoque}
-                            onChange={(e) => updateCorEstoque(cor.cor_id, parseInt(e.target.value) || 0)}
-                            placeholder="Qtd"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-800">
                   {selectedCores.length > 0
@@ -1443,7 +1479,7 @@ export function CriarAnuncioShopee({
               <div className="mt-6 border-t pt-6">
                 <FieldHint
                   label="Parametros de Precificacao"
-                  hint="Defina custo por metro e margem para gerar precos sugeridos automaticamente."
+                  hint="Defina custo por metro e margem para gerar precos sugeridos automaticamente (inclui 3% de taxa de antecipacao sobre o valor liquido da venda)."
                   className="mb-4"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1464,7 +1500,7 @@ export function CriarAnuncioShopee({
                   </div>
                   <div>
                     <span className="text-xs text-gray-500">
-                      {precificacaoParams.modo_margem_lucro === 'valor_fixo' ? 'Margem liquida fixa (R$)' : 'Margem liquida (%)'}
+                      {precificacaoParams.modo_margem_lucro === 'valor_fixo' ? 'Margem liquida fixa por metro (R$/m)' : 'Margem liquida (%)'}
                     </span>
                     <Input
                       type="number"
@@ -1501,7 +1537,7 @@ export function CriarAnuncioShopee({
                 <div className="mt-6 border-t pt-6">
                   <FieldHint
                     label="Margem por Comprimento"
-                    hint="Opcional: defina margem especifica por comprimento. Quando vazio, usa a margem global."
+                    hint="Opcional: defina margem especifica por comprimento. Em modo fixo, o valor e por metro (R$/m)."
                     className="mb-4"
                   />
                   <div className="space-y-3">
@@ -1530,7 +1566,7 @@ export function CriarAnuncioShopee({
                             min="0"
                             value={marginConfig.valor}
                             onChange={(e) => updateMargemPorTamanho(id, { valor: parseFloat(e.target.value) || 0 })}
-                            placeholder={marginConfig.modo === 'valor_fixo' ? 'R$ 0,00' : '0%'}
+                            placeholder={marginConfig.modo === 'valor_fixo' ? 'R$/m 0,00' : '0%'}
                           />
                         </div>
                       );
@@ -1568,7 +1604,10 @@ export function CriarAnuncioShopee({
                             </div>
                             {lucroLiquidoPorTamanho[id] !== null && lucroLiquidoPorTamanho[id] !== undefined && (
                               <p className="mt-2 text-xs text-emerald-700">
-                                Lucro liquido: R$ {lucroLiquidoPorTamanho[id]!.toFixed(2)}
+                                Lucro liquido total: R$ {lucroLiquidoPorTamanho[id]!.toFixed(2)}
+                                {lucroLiquidoPorMetroPorTamanho[id] !== null && lucroLiquidoPorMetroPorTamanho[id] !== undefined
+                                  ? ` (${lucroLiquidoPorMetroPorTamanho[id]!.toFixed(2)}/m)`
+                                  : ''}
                               </p>
                             )}
                           </div>
@@ -1706,8 +1745,8 @@ export function CriarAnuncioShopee({
                 {/* Estoque Padrão */}
                 <FieldHint
                   label="Estoque Padrão"
-                  hint="Quantidade inicial para cores sem estoque individual definido. Será o estoque de cada variação na Shopee."
-                  description="Aplicado a todas as variações que não tenham estoque individual."
+                  hint="Quantidade inicial geral. Este valor sera aplicado em todas as variacoes (cores e tamanhos)."
+                  description="Nao ha ajuste de estoque por cor nesta etapa."
                 >
                   <Input
                     type="number"
@@ -1883,6 +1922,7 @@ export function CriarAnuncioShopee({
                       categoryId={categoriaId}
                       values={atributos}
                       onChange={setAtributos}
+                      onValidationChange={setAttributesValidation}
                     />
                   </div>
                 )}
@@ -1894,6 +1934,7 @@ export function CriarAnuncioShopee({
                       shopId={selectedShop.shopId}
                       categoryId={categoriaId}
                       value={brandId}
+                      onValidationChange={setBrandValidation}
                       onChange={(id, nome) => {
                         setBrandId(id);
                         setBrandNome(nome);
@@ -1931,6 +1972,7 @@ export function CriarAnuncioShopee({
                       shopId={selectedShop.shopId}
                       categoryId={categoriaId}
                       value={sizeChartId}
+                      onValidationChange={setSizeChartValidation}
                       onChange={setSizeChartId}
                     />
                   </div>
@@ -2003,6 +2045,10 @@ export function CriarAnuncioShopee({
                     { ok: selectedCores.length > 0, label: 'Pelo menos 1 cor selecionada' },
                     { ok: temPrecoValido, label: selectedTamanhos.length > 0 ? 'Preço definido para todos os tamanhos' : 'Preço definido' },
                     { ok: !!categoriaId, label: 'Categoria selecionada' },
+                    { ok: mandatoryAttributesReadyAndValid, label: attributesValidation.mandatoryCount > 0 ? 'Atributos obrigatorios preenchidos' : 'Atributos obrigatorios nao exigidos' },
+                    { ok: mandatoryBrandReadyAndValid, label: brandValidation.isMandatory ? 'Marca obrigatoria selecionada' : 'Marca obrigatoria nao exigida' },
+                    { ok: hasEnabledLogistics, label: 'Pelo menos 1 canal logistico habilitado' },
+                    { ok: sizeChartReadyAndValid, label: 'Tabela de medidas valida para a categoria' },
                     { ok: peso > 0, label: 'Peso informado' },
                     { ok: dimensoes.comprimento > 0 && dimensoes.largura > 0 && dimensoes.altura > 0, label: 'Dimensões preenchidas' },
                     { ok: imagensPrincipais.length > 0, label: 'Imagens principais adicionadas' },

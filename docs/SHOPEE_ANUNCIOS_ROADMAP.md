@@ -126,12 +126,12 @@ Objetivo: evitar estado inconsistente e melhorar confiabilidade em falhas parcia
 
 ### Validacao da onda
 - [x] `scripts/validate-change.ps1 -RepoRoot c:/Users/razailoja/Desktop/RazaiSystem -Scope cross`
-- [~] Testes de falha parcial no publish (manual + automatizado)
+- [x] Testes de falha parcial no publish (manual + automatizado)
 
 Resultado:
 - Data: 2026-02-11
 - Status final: Onda 2 implementada e validada em escopo cross (frontend/backend/functions).
-- Riscos residuais: lock depende de TTL (10 min) para recuperacao automatica de publish interrompido; falta um teste dedicado de falha parcial (`add_item` OK + `init_tier_variation` erro) para fechar cobertura especifica.
+- Riscos residuais: lock depende de TTL (10 min) para recuperacao automatica de publish interrompido.
 
 ---
 

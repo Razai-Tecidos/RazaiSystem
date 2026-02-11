@@ -4,6 +4,7 @@ import {
   CreateShopeeProductData,
   TierVariation,
   ProductModel,
+  ProductAttributeValue,
   ShopeeAddItemResponse,
   ShopeeDeleteItemResponse,
   ShopeeInitTierResponse,
@@ -13,6 +14,8 @@ import { callShopeeApi, ensureValidToken, uploadImageToShopeeMultipart } from '.
 import * as preferencesService from './shopee-preferences.service';
 import * as imageCompressor from './image-compressor.service';
 import * as logisticsService from './shopee-logistics.service';
+import * as categoryService from './shopee-category.service';
+import * as itemLimitService from './shopee-item-limit.service';
 import { applyBrandOverlay } from './brand-overlay.service';
 import axios from 'axios';
 import { 
@@ -26,6 +29,7 @@ const PRODUCTS_COLLECTION = 'shopee_products';
 const TECIDOS_COLLECTION = 'tecidos';
 const COR_TECIDO_COLLECTION = 'cor_tecido';
 const COMPRIMENTOS_PADRAO_METROS: number[] = [1, 2, 3];
+const PUBLISH_LOCK_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Remove valores undefined recursivamente de um objeto
@@ -61,6 +65,91 @@ function getProductOwnerId(product: Partial<ShopeeProduct>): string | null {
   if (product.created_by) return product.created_by;
   if (product.user_id) return product.user_id;
   return null;
+}
+
+function hasAttributeValue(attribute?: ProductAttributeValue): boolean {
+  if (!attribute?.attribute_value_list || attribute.attribute_value_list.length === 0) {
+    return false;
+  }
+
+  return attribute.attribute_value_list.some((value) => {
+    if (value.value_id !== undefined && value.value_id !== null) {
+      return true;
+    }
+    return typeof value.original_value_name === 'string' && value.original_value_name.trim().length > 0;
+  });
+}
+
+function isPublishLockActive(lockData: any): boolean {
+  const expiresAt = lockData?.expires_at;
+  if (!expiresAt || typeof expiresAt.toMillis !== 'function') {
+    return false;
+  }
+  return expiresAt.toMillis() > Date.now();
+}
+
+function buildPublishLockToken(productId: string): string {
+  return `publish_${productId}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function validatePrePublishRequirements(product: ShopeeProduct): Promise<void> {
+  const errors: string[] = [];
+
+  try {
+    const mandatoryAttributes = await categoryService.getMandatoryAttributes(product.shop_id, product.categoria_id);
+    if (mandatoryAttributes.length > 0) {
+      const provided = new Set(
+        (product.atributos || [])
+          .filter((attribute) => hasAttributeValue(attribute))
+          .map((attribute) => attribute.attribute_id)
+      );
+      const missingIds = mandatoryAttributes
+        .map((attribute) => attribute.attribute_id)
+        .filter((attributeId) => !provided.has(attributeId));
+
+      if (missingIds.length > 0) {
+        errors.push(`Atributos obrigatorios ausentes: ${missingIds.join(', ')}`);
+      }
+    }
+  } catch (error: any) {
+    errors.push(`Falha ao validar atributos obrigatorios: ${error.message || 'erro desconhecido'}`);
+  }
+
+  try {
+    const mandatoryBrand = await categoryService.isBrandMandatory(product.shop_id, product.categoria_id);
+    if (mandatoryBrand && (!product.brand_id || product.brand_id === 0)) {
+      errors.push('Marca obrigatoria para a categoria selecionada');
+    }
+  } catch (error: any) {
+    errors.push(`Falha ao validar obrigatoriedade de marca: ${error.message || 'erro desconhecido'}`);
+  }
+
+  if (Array.isArray(product.logistic_info) && product.logistic_info.length > 0) {
+    const enabledCount = product.logistic_info.filter((channel) => channel.enabled).length;
+    if (enabledCount === 0) {
+      errors.push('Pelo menos um canal de logistica deve estar habilitado');
+    }
+  }
+
+  if (product.size_chart_id) {
+    try {
+      const support = await itemLimitService.checkSizeChartSupport(product.shop_id, product.categoria_id);
+      if (!support.supported) {
+        errors.push('A categoria selecionada nao suporta tabela de medidas');
+      } else {
+        const sizeCharts = await itemLimitService.getSizeCharts(product.shop_id, product.categoria_id, 50);
+        if (sizeCharts.length > 0 && !sizeCharts.some((sizeChart) => sizeChart.size_chart_id === product.size_chart_id)) {
+          errors.push(`Tabela de medidas invalida para a categoria: ${product.size_chart_id}`);
+        }
+      }
+    } catch (error: any) {
+      errors.push(`Falha ao validar tabela de medidas: ${error.message || 'erro desconhecido'}`);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Validacao pre-publish reforcada falhou: ${errors.join('; ')}`);
+  }
 }
 
 /**
@@ -104,7 +193,7 @@ async function uploadImageToShopee(
 
 /**
  * Faz upload de uma imagem de variação com overlay de marca (logo Razai + nome da cor)
- * Pipeline: download raw → applyBrandOverlay → comprimir → upload
+ * Pipeline: download raw -> applyBrandOverlay -> comprimir -> upload
  */
 async function uploadVariationImageToShopee(
   shopId: number,
@@ -757,80 +846,128 @@ export async function publishProduct(
   dryRun: boolean = false
 ): Promise<ShopeeProduct | Record<string, unknown>> {
   const docRef = db.collection(PRODUCTS_COLLECTION).doc(id);
-  const doc = await docRef.get();
-  
-  if (!doc.exists) {
-    throw new Error('Produto não encontrado');
-  }
-  
-  const product = { id: doc.id, ...doc.data() } as ShopeeProduct;
-  
-  // Verifica se o usuário é o dono
-  if (getProductOwnerId(product) !== userId) {
-    throw new Error('Sem permissão para publicar este produto');
-  }
-  
-  // Verifica se já está publicado
-  if (product.status === 'created' && product.item_id) {
-    throw new Error('Produto já está publicado');
-  }
-  
-  // Busca dados do tecido para formatação
-  const tecido = await getTecidoData(product.tecido_id);
-  
-  // Formata nome e descrição para atender requisitos mínimos
-  const preferredTitle = product.titulo_anuncio?.trim() || product.tecido_nome;
-  const formattedName = formatItemName(
-    preferredTitle,
-    tecido?.nome,
-    tecido?.composicao
-  );
-  const formattedDescription = formatDescription(
-    product.descricao,
-    tecido?.nome,
-    tecido?.composicao,
-    tecido?.largura
-  );
-  
-  // Valida produto antes de publicar
-  console.log('Validando produto...');
-  const validation = validateProductForPublish({
-    item_name: formattedName,
-    description: formattedDescription,
-    price: product.preco_base,
-    stock: product.estoque_padrao,
-    weight: product.peso,
-    dimensions: product.dimensoes,
-    images: product.imagens_principais,
-    tier_variations: product.tier_variations.map(t => ({
-      tier_name: t.tier_name,
-      options: t.options.map(o => ({ option_name: o.option_name })),
-    })),
-    item_sku: product.tecido_sku,
-    category_id: product.categoria_id,
-  });
-  
-  if (!validation.valid) {
-    throw new Error(`Validação falhou: ${validation.errors.join('; ')}`);
-  }
-  
-  if (validation.warnings.length > 0) {
-    console.warn('Avisos de validação:', validation.warnings);
-  }
-  
-  // Atualiza status para publishing (pula no dry-run)
-  if (!dryRun) {
-    await docRef.update({
-      status: 'publishing',
-      updated_at: admin.firestore.Timestamp.now(),
+  let publishLockToken: string | null = null;
+  let product: ShopeeProduct;
+
+  if (dryRun) {
+    const doc = await docRef.get();
+    if (!doc.exists) {
+      throw new Error('Produto nao encontrado');
+    }
+
+    product = { id: doc.id, ...doc.data() } as ShopeeProduct;
+    if (getProductOwnerId(product) !== userId) {
+      throw new Error('Sem permissao para publicar este produto');
+    }
+  } else {
+    const now = admin.firestore.Timestamp.now();
+    const lockToken = buildPublishLockToken(id);
+    const lockExpiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + PUBLISH_LOCK_TTL_MS);
+
+    const lockedState = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(docRef);
+      if (!snapshot.exists) {
+        throw new Error('Produto nao encontrado');
+      }
+
+      const currentProduct = { id: snapshot.id, ...snapshot.data() } as ShopeeProduct;
+      if (getProductOwnerId(currentProduct) !== userId) {
+        throw new Error('Sem permissao para publicar este produto');
+      }
+
+      const existingItemId = currentProduct.item_id ?? currentProduct.shopee_item_id;
+      if ((currentProduct.status === 'created' || currentProduct.status === 'published') && existingItemId) {
+        return {
+          alreadyPublished: true,
+          product: currentProduct,
+          lockToken: null as string | null,
+        };
+      }
+
+      if (currentProduct.status === 'publishing' && isPublishLockActive((currentProduct as any).publish_lock)) {
+        throw new Error('Publicacao ja em andamento para este rascunho');
+      }
+
+      transaction.update(docRef, {
+        status: 'publishing',
+        updated_at: now,
+        publish_lock: {
+          token: lockToken,
+          owner: userId,
+          acquired_at: now,
+          expires_at: lockExpiresAt,
+        },
+      });
+
+      return {
+        alreadyPublished: false,
+        product: currentProduct,
+        lockToken,
+      };
     });
+
+    if (lockedState.alreadyPublished) {
+      return lockedState.product;
+    }
+
+    product = lockedState.product;
+    publishLockToken = lockedState.lockToken;
   }
-  
+
+  let createdItemId: number | null = null;
+  let formattedName = '';
+  let formattedDescription = '';
+
   try {
+    // Busca dados do tecido para formatacao
+    const tecido = await getTecidoData(product.tecido_id);
+
+    // Formata nome e descricao para atender requisitos minimos
+    const preferredTitle = product.titulo_anuncio?.trim() || product.tecido_nome;
+    formattedName = formatItemName(
+      preferredTitle,
+      tecido?.nome,
+      tecido?.composicao
+    );
+    formattedDescription = formatDescription(
+      product.descricao,
+      tecido?.nome,
+      tecido?.composicao,
+      tecido?.largura
+    );
+
+    // Validacoes pre-publish
+    console.log('Validando produto...');
+    const validation = validateProductForPublish({
+      item_name: formattedName,
+      description: formattedDescription,
+      price: product.preco_base,
+      stock: product.estoque_padrao,
+      weight: product.peso,
+      dimensions: product.dimensoes,
+      images: product.imagens_principais,
+      tier_variations: product.tier_variations.map(t => ({
+        tier_name: t.tier_name,
+        options: t.options.map(o => ({ option_name: o.option_name })),
+      })),
+      item_sku: product.tecido_sku,
+      category_id: product.categoria_id,
+    });
+
+    if (!validation.valid) {
+      throw new Error(`Validacao falhou: ${validation.errors.join('; ')}`);
+    }
+
+    if (validation.warnings.length > 0) {
+      console.warn('Avisos de validacao:', validation.warnings);
+    }
+
+    await validatePrePublishRequirements(product);
+
     const accessToken = dryRun ? 'DRY_RUN' : await ensureValidToken(product.shop_id);
 
-    // Busca canais de logística compatíveis com peso/dimensões
-    console.log('Buscando canais de logística...');
+    // Busca canais de logistica compativeis com peso/dimensoes
+    console.log('Buscando canais de logistica...');
     const compatibleLogisticInfo = await logisticsService.buildLogisticInfoForProduct(
       product.shop_id,
       product.peso,
@@ -845,7 +982,7 @@ export async function publishProduct(
     let logisticInfo = compatibleLogisticInfo;
 
     if (configuredLogisticInfo.length > 0 && enabledConfiguredLogisticInfo.length === 0) {
-      throw new Error('Nenhum canal de logística foi habilitado no rascunho');
+      throw new Error('Nenhum canal de logistica foi habilitado no rascunho');
     }
 
     if (enabledConfiguredLogisticInfo.length > 0) {
@@ -865,13 +1002,13 @@ export async function publishProduct(
         });
 
       if (selectedCompatible.length === 0) {
-        throw new Error('Nenhum canal de logística selecionado é compatível com peso/dimensões do produto');
+        throw new Error('Nenhum canal de logistica selecionado e compativel com peso/dimensoes do produto');
       }
 
       logisticInfo = selectedCompatible;
-      console.log(`${logisticInfo.length} canal(is) de logística configurado(s) pela UI`);
+      console.log(`${logisticInfo.length} canal(is) de logistica configurado(s) pela UI`);
     } else {
-      console.log(`${logisticInfo.length} canal(is) de logística configurado(s) automaticamente`);
+      console.log(`${logisticInfo.length} canal(is) de logistica configurado(s) automaticamente`);
     }
 
     let processedMainImages: string[];
@@ -887,9 +1024,9 @@ export async function publishProduct(
           ...(tierIndex === 0 && opt.imagem_url ? { image: { image_id: `DRY_RUN_VAR_${opt.option_name}` } } : {}),
         })),
       }));
-      console.log('[publishProduct] DRY-RUN: imagens substituídas por placeholders');
+      console.log('[publishProduct] DRY-RUN: imagens substituidas por placeholders');
     } else {
-      // Processa imagens principais (comprime se necessário)
+      // Processa imagens principais (comprime se necessario)
       console.log('Processando imagens principais...');
       processedMainImages = await processImagesForPublish(
         product.shop_id,
@@ -898,9 +1035,9 @@ export async function publishProduct(
         product.usar_imagens_publicas
       );
 
-      // Processa imagens de variação (cores) - apenas tier 1
-      // Shopee exige: se uma opção do tier 1 tem imagem, TODAS devem ter
-      console.log('Processando imagens de variação...');
+      // Processa imagens de variacao (cores) - apenas tier 1
+      // Shopee exige: se uma opcao do tier 1 tem imagem, TODAS devem ter
+      console.log('Processando imagens de variacao...');
       processedTierVariations = await Promise.all(
         product.tier_variations.map(async (tier, tierIndex) => {
           const processedOptions = await Promise.all(
@@ -942,7 +1079,7 @@ export async function publishProduct(
         })
       );
     }
-    
+
     // Monta payload para API Shopee
     const shopeePayload: Record<string, unknown> = {
       item_name: formattedName,
@@ -962,7 +1099,7 @@ export async function publishProduct(
       image: {
         image_id_list: processedMainImages,
       },
-      // tier_variation e model NAO vao no add_item — sao enviados via init_tier_variation
+      // tier_variation e model NAO vao no add_item - sao enviados via init_tier_variation
       logistic_info: logisticInfo,
       condition: product.condition || 'NEW',
       item_status: 'NORMAL',
@@ -982,20 +1119,20 @@ export async function publishProduct(
         origin: '',
       };
     }
-    
-    // Adiciona vídeo se disponível
+
+    // Adiciona video se disponivel
     if (product.video_url) {
       shopeePayload.video = {
         video_url: product.video_url,
       };
     }
-    
-    // Adiciona atributos se disponíveis
+
+    // Adiciona atributos se disponiveis
     if (product.atributos && product.atributos.length > 0) {
       shopeePayload.attribute_list = product.atributos;
     }
-    
-    // Adiciona marca (brand_id + original_brand_name são obrigatórios dentro do objeto brand)
+
+    // Adiciona marca (brand_id + original_brand_name sao obrigatorios dentro do objeto brand)
     // brand_id=0 + original_brand_name="No Brand" quando sem marca
     if (product.brand_id !== null && product.brand_id !== undefined) {
       shopeePayload.brand = {
@@ -1003,32 +1140,32 @@ export async function publishProduct(
         original_brand_name: product.brand_nome || (product.brand_id === 0 ? 'No Brand' : ''),
       };
     } else {
-      // Se brand_id não foi definido, envia "Sem marca" por padrão
+      // Se brand_id nao foi definido, envia "Sem marca" por padrao
       shopeePayload.brand = {
         brand_id: 0,
         original_brand_name: 'No Brand',
       };
     }
-    
-    // Adiciona size chart se disponível (contrato v2)
+
+    // Adiciona size chart se disponivel (contrato v2)
     if (product.size_chart_id) {
       shopeePayload.size_chart_info = {
         size_chart_id: product.size_chart_id,
       };
     }
-    
-    // Adiciona descrição estendida se disponível (para vendedores whitelisted)
+
+    // Adiciona descricao estendida se disponivel (para vendedores whitelisted)
     if (product.description_type === 'extended' && product.extended_description) {
       shopeePayload.description_type = 'extended';
       shopeePayload.extended_description = product.extended_description;
     }
-    
-    // Adiciona configuração de atacado se disponível
+
+    // Adiciona configuracao de atacado se disponivel
     if (product.wholesale && product.wholesale.length > 0) {
       shopeePayload.wholesale = product.wholesale;
     }
-    
-    // Remove valores undefined do payload (Firestore/Shopee não aceitam)
+
+    // Remove valores undefined do payload (Firestore/Shopee nao aceitam)
     const cleanPayload = removeUndefinedValues(shopeePayload);
 
     console.log('[publishProduct] Payload add_item:', JSON.stringify(cleanPayload, null, 2));
@@ -1071,15 +1208,17 @@ export async function publishProduct(
       console.error('[publishProduct] Resposta Shopee ERRO:', JSON.stringify(response));
       throw new Error(`Erro Shopee: ${response.error} - ${response.message}`);
     }
-    
+
     const itemId = response.response?.item_id;
-    
+
     if (!itemId) {
-      throw new Error('Shopee não retornou item_id');
+      throw new Error('Shopee nao retornou item_id');
     }
 
+    createdItemId = itemId;
+
     // === INIT TIER VARIATION ===
-    // Shopee recomenda aguardar >= 5s após add_item antes de criar variantes
+    // Shopee recomenda aguardar >= 5s apos add_item antes de criar variantes
     console.log('[publishProduct] Aguardando 5s antes de init_tier_variation...');
     await new Promise(resolve => setTimeout(resolve, 5000));
 
@@ -1117,7 +1256,7 @@ export async function publishProduct(
 
     if (tierResponse.error && tierResponse.error !== '' && tierResponse.error !== '-') {
       console.error('[publishProduct] init_tier_variation ERRO:', JSON.stringify(tierResponse));
-      throw new Error(`Erro ao criar variações: ${tierResponse.error} - ${tierResponse.message}`);
+      throw new Error(`Erro ao criar variacoes: ${tierResponse.error} - ${tierResponse.message}`);
     }
 
     console.log(`[publishProduct] init_tier_variation OK - ${tierResponse.response?.model?.length || 0} modelos criados`);
@@ -1131,9 +1270,11 @@ export async function publishProduct(
       updated_at: now,
       last_synced_at: now,
       sync_status: 'synced',
+      publish_lock: admin.firestore.FieldValue.delete(),
+      error_message: admin.firestore.FieldValue.delete(),
     });
-    
-    // Atualiza últimos valores usados nas preferências
+
+    // Atualiza ultimos valores usados nas preferencias
     await preferencesService.updateLastUsedValues(userId, {
       preco_base: product.preco_base,
       estoque_padrao: product.estoque_padrao,
@@ -1141,29 +1282,74 @@ export async function publishProduct(
       peso: product.peso,
       dimensoes: product.dimensoes,
     });
-    
-    // Salva NCM e categoria como preferência padrão
+
+    // Salva NCM e categoria como preferencia padrao
     if (product.ncm_padrao || product.categoria_nome) {
       await preferencesService.saveUserPreferences(userId, {
         ...(product.ncm_padrao ? { ncm_padrao: product.ncm_padrao } : {}),
         ...(product.categoria_nome ? { categoria_nome_padrao: product.categoria_nome } : {}),
       });
     }
-    
+
     const updatedDoc = await docRef.get();
     return {
       id: updatedDoc.id,
       ...updatedDoc.data(),
     } as ShopeeProduct;
-    
+
   } catch (error: any) {
-    // Atualiza status para erro
-    await docRef.update({
-      status: 'error',
-      error_message: error.message,
-      updated_at: admin.firestore.Timestamp.now(),
-    });
-    
-    throw error;
+    let finalErrorMessage = error?.message || 'Erro ao publicar produto';
+
+    // Rollback: se add_item criou item mas init_tier_variation falhou
+    if (!dryRun && createdItemId) {
+      console.warn(`[publishProduct] Iniciando rollback do item ${createdItemId}...`);
+      try {
+        const rollbackToken = await ensureValidToken(product.shop_id);
+        const rollbackResponse = await callShopeeApi({
+          path: '/api/v2/product/delete_item',
+          method: 'POST',
+          shopId: product.shop_id,
+          accessToken: rollbackToken,
+          body: {
+            item_id: createdItemId,
+          },
+        }) as ShopeeDeleteItemResponse;
+
+        if (rollbackResponse.error && rollbackResponse.error !== '' && rollbackResponse.error !== '-') {
+          throw new Error(`${rollbackResponse.error} - ${rollbackResponse.message || 'sem detalhes'}`);
+        }
+
+        finalErrorMessage = `${finalErrorMessage} | rollback add_item concluido`;
+      } catch (rollbackError: any) {
+        finalErrorMessage = `${finalErrorMessage} | rollback falhou: ${rollbackError?.message || 'erro desconhecido'}`;
+      }
+    }
+
+    if (!dryRun) {
+      try {
+        await db.runTransaction(async (transaction) => {
+          const snapshot = await transaction.get(docRef);
+          if (!snapshot.exists) return;
+
+          const currentData = snapshot.data() as any;
+          const updatePayload: Record<string, unknown> = {
+            status: 'error',
+            error_message: finalErrorMessage,
+            updated_at: admin.firestore.Timestamp.now(),
+          };
+
+          const currentLock = currentData?.publish_lock;
+          if (!currentLock || !publishLockToken || currentLock.token === publishLockToken || !isPublishLockActive(currentLock)) {
+            updatePayload.publish_lock = admin.firestore.FieldValue.delete();
+          }
+
+          transaction.update(docRef, updatePayload);
+        });
+      } catch (persistError: any) {
+        console.error('[publishProduct] Falha ao persistir erro de publish:', persistError?.message || persistError);
+      }
+    }
+
+    throw new Error(finalErrorMessage);
   }
 }

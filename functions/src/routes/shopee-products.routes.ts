@@ -412,7 +412,7 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
   try {
     const userId = req.user?.uid;
     const { id } = req.params;
-    
+
     if (!userId) {
       res.status(401).json({
         success: false,
@@ -420,7 +420,7 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
       });
       return;
     }
-    
+
     const dryRun = req.query.dry_run === 'true';
     const result = await productService.publishProduct(id, userId, dryRun);
 
@@ -441,23 +441,43 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
     });
   } catch (error: any) {
     console.error('[publish] ERRO:', error.message);
+    const normalizedErrorMessage = String(error.message || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
 
-    if (error.message.includes('permissão')) {
+    if (normalizedErrorMessage.includes('publicacao ja em andamento')) {
+      res.status(409).json({
+        success: false,
+        error: error.message,
+      });
+      return;
+    }
+
+    if (normalizedErrorMessage.includes('validacao falhou') || normalizedErrorMessage.includes('validacao pre-publish reforcada falhou')) {
+      res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+      return;
+    }
+
+    if (normalizedErrorMessage.includes('permissao')) {
       res.status(403).json({
         success: false,
         error: error.message,
       });
       return;
     }
-    
-    if (error.message.includes('não encontrado')) {
+
+    if (normalizedErrorMessage.includes('nao encontrado')) {
       res.status(404).json({
         success: false,
         error: error.message,
       });
       return;
     }
-    
+
     res.status(500).json({
       success: false,
       error: error.message || 'Erro ao publicar produto',
@@ -526,4 +546,3 @@ router.post('/:id/sync', authMiddleware, async (req: Request, res: Response): Pr
 });
 
 export default router;
-
