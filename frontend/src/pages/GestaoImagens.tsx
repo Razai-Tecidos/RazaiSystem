@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/table';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
 import { useCorTecido } from '@/hooks/useCorTecido';
+import { useEstampas } from '@/hooks/useEstampas';
 import { useTecidos } from '@/hooks/useTecidos';
 import { useToast } from '@/hooks/use-toast';
 import { generateBrandOverlay } from '@/lib/brandOverlay';
@@ -38,7 +39,9 @@ import {
   listMosaicosByTecido,
   uploadMosaicoImage,
 } from '@/lib/firebase/gestao-imagens';
+import { uploadEstampaGeneratedImage } from '@/lib/firebase/estampas';
 import { CorTecido } from '@/types/cor.types';
+import { Estampa } from '@/types/estampa.types';
 import { GestaoImagemMosaico, MosaicTemplateId } from '@/types/gestao-imagens.types';
 import {
   ChevronDown,
@@ -64,10 +67,31 @@ type GroupedVinculos = {
   tecidoId: string;
   tecidoNome: string;
   vinculos: CorTecido[];
+  estampas: Estampa[];
 };
+
+type MosaicSelectionItem = {
+  key: string;
+  id: string;
+  tecidoId: string;
+  tecidoNome: string;
+  imageUrl: string;
+};
+
+function getCorSelectionKey(vinculoId: string): string {
+  return `cor:${vinculoId}`;
+}
+
+function getEstampaSelectionKey(estampaId: string): string {
+  return `estampa:${estampaId}`;
+}
 
 function buildGenerationFingerprint(vinculo: CorTecido): string {
   return `${vinculo.imagemTingida || ''}::${vinculo.corNome || ''}`;
+}
+
+function buildEstampaGenerationFingerprint(estampa: Estampa): string {
+  return `${estampa.imagem || ''}::${estampa.nome || ''}`;
 }
 
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
@@ -83,6 +107,7 @@ const MOSAIC_TEMPLATE_OPTIONS: Array<{ id: MosaicTemplateId; label: string; desc
 
 export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   const { vinculos, loading, updateVinculo } = useCorTecido();
+  const { estampas, loading: loadingEstampas, updateEstampa } = useEstampas();
   const { tecidos } = useTecidos();
   const { toast } = useToast();
 
@@ -106,6 +131,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     subtitle?: string;
   } | null>(null);
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
+  const [generatingEstampaIds, setGeneratingEstampaIds] = useState<Set<string>>(new Set());
   const [regeneratingTecidoIds, setRegeneratingTecidoIds] = useState<Set<string>>(new Set());
   const [regenerationProgressByTecido, setRegenerationProgressByTecido] = useState<
     Record<string, { done: number; total: number }>
@@ -114,6 +140,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   const [openingLatestMosaicoTecidoIds, setOpeningLatestMosaicoTecidoIds] = useState<Set<string>>(new Set());
 
   const generatingIdsRef = useRef<Set<string>>(new Set());
+  const generatingEstampaIdsRef = useRef<Set<string>>(new Set());
 
   const searchTermNormalized = useMemo(() => searchTerm.trim().toLowerCase(), [searchTerm]);
 
@@ -127,10 +154,16 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         map.set(v.tecidoId, v.tecidoNome);
       }
     });
+    estampas.forEach((estampa) => {
+      if (!estampa.tecidoBaseId) return;
+      if (!map.has(estampa.tecidoBaseId)) {
+        map.set(estampa.tecidoBaseId, estampa.tecidoBaseNome || 'Sem tecido');
+      }
+    });
     return Array.from(map.entries())
       .map(([id, nome]) => ({ id, nome }))
       .sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [tecidos, vinculos]);
+  }, [tecidos, vinculos, estampas]);
 
   const filteredVinculos = useMemo(() => {
     return vinculos.filter((v) => {
@@ -147,10 +180,28 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     });
   }, [vinculos, selectedTecidoId, searchTermNormalized]);
 
-  const tecidoIdsWithMatchingVinculos = useMemo(
-    () => new Set(filteredVinculos.map((vinculo) => vinculo.tecidoId)),
-    [filteredVinculos]
-  );
+  const filteredEstampas = useMemo(() => {
+    return estampas.filter((estampa) => {
+      if (!estampa.tecidoBaseId) return false;
+      if (selectedTecidoId !== 'all' && estampa.tecidoBaseId !== selectedTecidoId) {
+        return false;
+      }
+      if (!searchTermNormalized) return true;
+
+      return (
+        (estampa.nome || '').toLowerCase().includes(searchTermNormalized) ||
+        (estampa.tecidoBaseNome || '').toLowerCase().includes(searchTermNormalized) ||
+        (estampa.sku || '').toLowerCase().includes(searchTermNormalized)
+      );
+    });
+  }, [estampas, selectedTecidoId, searchTermNormalized]);
+
+  const tecidoIdsWithMatchingItems = useMemo(() => {
+    const ids = new Set<string>();
+    filteredVinculos.forEach((vinculo) => ids.add(vinculo.tecidoId));
+    filteredEstampas.forEach((estampa) => ids.add(estampa.tecidoBaseId));
+    return ids;
+  }, [filteredEstampas, filteredVinculos]);
 
   const groupedVinculos = useMemo<GroupedVinculos[]>(() => {
     const groupedMap = new Map<string, GroupedVinculos>();
@@ -162,8 +213,8 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
 
       if (searchTermNormalized) {
         const tecidoMatchesSearch = tecido.nome.toLowerCase().includes(searchTermNormalized);
-        const hasMatchingVinculo = tecidoIdsWithMatchingVinculos.has(tecido.id);
-        if (!tecidoMatchesSearch && !hasMatchingVinculo) {
+        const hasMatchingItem = tecidoIdsWithMatchingItems.has(tecido.id);
+        if (!tecidoMatchesSearch && !hasMatchingItem) {
           return;
         }
       }
@@ -172,6 +223,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         tecidoId: tecido.id,
         tecidoNome: tecido.nome,
         vinculos: [],
+        estampas: [],
       });
     });
 
@@ -186,11 +238,27 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         tecidoId: vinculo.tecidoId,
         tecidoNome: vinculo.tecidoNome,
         vinculos: [vinculo],
+        estampas: [],
+      });
+    });
+
+    filteredEstampas.forEach((estampa) => {
+      const existing = groupedMap.get(estampa.tecidoBaseId);
+      if (existing) {
+        existing.estampas.push(estampa);
+        return;
+      }
+
+      groupedMap.set(estampa.tecidoBaseId, {
+        tecidoId: estampa.tecidoBaseId,
+        tecidoNome: estampa.tecidoBaseNome || 'Sem tecido',
+        vinculos: [],
+        estampas: [estampa],
       });
     });
 
     return Array.from(groupedMap.values()).sort((a, b) => a.tecidoNome.localeCompare(b.tecidoNome));
-  }, [filteredVinculos, searchTermNormalized, selectedTecidoId, tecidoIdsWithMatchingVinculos, tecidosDisponiveis]);
+  }, [filteredEstampas, filteredVinculos, searchTermNormalized, selectedTecidoId, tecidoIdsWithMatchingItems, tecidosDisponiveis]);
 
   const loadMosaicos = useCallback(async (tecidoId: string) => {
     try {
@@ -221,7 +289,10 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
   useEffect(() => {
     setSelectedForMosaic((previous) => {
       const next = new Set<string>();
-      const visibleIds = new Set(filteredVinculos.map((v) => v.id));
+      const visibleIds = new Set([
+        ...filteredVinculos.map((v) => getCorSelectionKey(v.id)),
+        ...filteredEstampas.map((estampa) => getEstampaSelectionKey(estampa.id)),
+      ]);
       previous.forEach((id) => {
         if (visibleIds.has(id)) {
           next.add(id);
@@ -229,13 +300,22 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
       });
       return next;
     });
-  }, [filteredVinculos]);
+  }, [filteredEstampas, filteredVinculos]);
 
   const setGenerationStatus = useCallback((vinculoId: string, active: boolean) => {
     setGeneratingIds((previous) => {
       const next = new Set(previous);
       if (active) next.add(vinculoId);
       else next.delete(vinculoId);
+      return next;
+    });
+  }, []);
+
+  const setEstampaGenerationStatus = useCallback((estampaId: string, active: boolean) => {
+    setGeneratingEstampaIds((previous) => {
+      const next = new Set(previous);
+      if (active) next.add(estampaId);
+      else next.delete(estampaId);
       return next;
     });
   }, []);
@@ -272,6 +352,38 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     }
   }, [setGenerationStatus, toast, updateVinculo]);
 
+  const generateForEstampa = useCallback(async (estampa: Estampa) => {
+    if (!estampa.imagem) return;
+    if (generatingEstampaIdsRef.current.has(estampa.id)) return;
+
+    generatingEstampaIdsRef.current.add(estampa.id);
+    setEstampaGenerationStatus(estampa.id, true);
+
+    try {
+      const fingerprint = buildEstampaGenerationFingerprint(estampa);
+      const overlayDataUrl = await generateBrandOverlay(estampa.imagem, estampa.nome);
+      const overlayBlob = await dataUrlToBlob(overlayDataUrl);
+      const generatedUrl = await uploadEstampaGeneratedImage(estampa.id, overlayBlob);
+
+      await updateEstampa({
+        id: estampa.id,
+        imagemGerada: generatedUrl,
+        imagemGeradaFingerprint: fingerprint,
+        imagemGeradaAt: Timestamp.now(),
+      }, { silent: true });
+    } catch (error) {
+      console.error('[GestaoImagens] Erro ao gerar imagem de estampa:', error);
+      toast({
+        title: 'Erro ao gerar imagem',
+        description: `Falha ao gerar imagem de ${estampa.nome}.`,
+        variant: 'destructive',
+      });
+    } finally {
+      generatingEstampaIdsRef.current.delete(estampa.id);
+      setEstampaGenerationStatus(estampa.id, false);
+    }
+  }, [setEstampaGenerationStatus, toast, updateEstampa]);
+
   useEffect(() => {
     const pending = vinculos.filter((v) => {
       if (!v.imagemTingida) return false;
@@ -296,14 +408,45 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     };
   }, [vinculos, generateForVinculo]);
 
+  useEffect(() => {
+    const pending = estampas.filter((estampa) => {
+      if (!estampa.imagem) return false;
+      const currentFingerprint = buildEstampaGenerationFingerprint(estampa);
+      return !estampa.imagemGerada || estampa.imagemGeradaFingerprint !== currentFingerprint;
+    });
+
+    if (pending.length === 0) return;
+    let cancelled = false;
+
+    const run = async () => {
+      for (let index = 0; index < pending.length; index += 2) {
+        if (cancelled) return;
+        const chunk = pending.slice(index, index + 2);
+        await Promise.all(chunk.map((estampa) => generateForEstampa(estampa)));
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [estampas, generateForEstampa]);
+
   const handleRegenerateByTecido = useCallback(async (tecidoId: string) => {
     if (regeneratingTecidoIds.has(tecidoId)) return;
 
-    const eligible = filteredVinculos.filter((vinculo) => vinculo.tecidoId === tecidoId && vinculo.imagemTingida);
-    if (eligible.length === 0) {
+    const eligibleVinculos = filteredVinculos.filter(
+      (vinculo) => vinculo.tecidoId === tecidoId && vinculo.imagemTingida
+    );
+    const eligibleEstampas = filteredEstampas.filter(
+      (estampa) => estampa.tecidoBaseId === tecidoId && estampa.imagem
+    );
+    const totalEligible = eligibleVinculos.length + eligibleEstampas.length;
+
+    if (totalEligible === 0) {
       toast({
         title: 'Nada para regenerar',
-        description: 'Esse tecido nao possui vinculos com imagem base.',
+        description: 'Esse tecido nao possui imagens base elegiveis.',
       });
       return;
     }
@@ -315,15 +458,24 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     });
     setRegenerationProgressByTecido((previous) => ({
       ...previous,
-      [tecidoId]: { done: 0, total: eligible.length },
+      [tecidoId]: { done: 0, total: totalEligible },
     }));
 
     try {
-      for (let index = 0; index < eligible.length; index += 2) {
-        const chunk = eligible.slice(index, index + 2);
+      const processingQueue: Array<{ run: () => Promise<void> }> = [
+        ...eligibleVinculos.map((vinculo) => ({
+          run: () => generateForVinculo(vinculo),
+        })),
+        ...eligibleEstampas.map((estampa) => ({
+          run: () => generateForEstampa(estampa),
+        })),
+      ];
+
+      for (let index = 0; index < processingQueue.length; index += 2) {
+        const chunk = processingQueue.slice(index, index + 2);
         await Promise.all(
-          chunk.map(async (vinculo) => {
-            await generateForVinculo(vinculo);
+          chunk.map(async (item) => {
+            await item.run();
             setRegenerationProgressByTecido((previous) => {
               const current = previous[tecidoId];
               if (!current) return previous;
@@ -341,7 +493,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
 
       toast({
         title: 'Regeneracao concluida',
-        description: `${eligible.length} vinculo(s) processado(s) para este tecido.`,
+        description: `${totalEligible} item(ns) processado(s) para este tecido.`,
       });
     } finally {
       setRegeneratingTecidoIds((previous) => {
@@ -355,13 +507,13 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         return next;
       });
     }
-  }, [filteredVinculos, generateForVinculo, regeneratingTecidoIds, toast]);
+  }, [filteredEstampas, filteredVinculos, generateForEstampa, generateForVinculo, regeneratingTecidoIds, toast]);
 
-  const handleToggleSelectForMosaic = (vinculoId: string) => {
+  const handleToggleSelectForMosaic = (selectionKey: string) => {
     setSelectedForMosaic((previous) => {
       const next = new Set(previous);
-      if (next.has(vinculoId)) next.delete(vinculoId);
-      else next.add(vinculoId);
+      if (next.has(selectionKey)) next.delete(selectionKey);
+      else next.add(selectionKey);
       return next;
     });
   };
@@ -370,7 +522,10 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     setSelectedForMosaic((previous) => {
       const next = new Set(previous);
       filteredVinculos.forEach((v) => {
-        if (v.imagemTingida) next.add(v.id);
+        if (v.imagemTingida) next.add(getCorSelectionKey(v.id));
+      });
+      filteredEstampas.forEach((estampa) => {
+        if (estampa.imagem) next.add(getEstampaSelectionKey(estampa.id));
       });
       return next;
     });
@@ -380,24 +535,43 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     setSelectedForMosaic(new Set());
   };
 
-  const selectedMosaicVinculos = useMemo(
-    () => vinculos.filter((v) => selectedForMosaic.has(v.id) && v.imagemTingida),
-    [selectedForMosaic, vinculos]
-  );
+  const selectedMosaicItems = useMemo<MosaicSelectionItem[]>(() => {
+    const fromVinculos = vinculos
+      .filter((v) => selectedForMosaic.has(getCorSelectionKey(v.id)) && v.imagemTingida)
+      .map((v) => ({
+        key: getCorSelectionKey(v.id),
+        id: v.id,
+        tecidoId: v.tecidoId,
+        tecidoNome: v.tecidoNome,
+        imageUrl: v.imagemTingida!,
+      }));
+
+    const fromEstampas = estampas
+      .filter((estampa) => selectedForMosaic.has(getEstampaSelectionKey(estampa.id)) && estampa.imagem && estampa.tecidoBaseId)
+      .map((estampa) => ({
+        key: getEstampaSelectionKey(estampa.id),
+        id: estampa.id,
+        tecidoId: estampa.tecidoBaseId,
+        tecidoNome: estampa.tecidoBaseNome || 'Sem tecido',
+        imageUrl: estampa.imagem!,
+      }));
+
+    return [...fromVinculos, ...fromEstampas];
+  }, [estampas, selectedForMosaic, vinculos]);
 
   const handleGenerateMosaic = async () => {
-    if (selectedMosaicVinculos.length === 0) {
+    if (selectedMosaicItems.length === 0) {
       toast({
         title: 'Selecao vazia',
-        description: 'Selecione ao menos um vinculo com imagem original.',
+        description: 'Selecione ao menos um item com imagem para gerar o mosaico.',
         variant: 'destructive',
       });
       return;
     }
 
-    const tecidoId = selectedMosaicVinculos[0].tecidoId;
-    const tecidoNome = selectedMosaicVinculos[0].tecidoNome;
-    const hasMixedTecido = selectedMosaicVinculos.some((v) => v.tecidoId !== tecidoId);
+    const tecidoId = selectedMosaicItems[0].tecidoId;
+    const tecidoNome = selectedMosaicItems[0].tecidoNome;
+    const hasMixedTecido = selectedMosaicItems.some((item) => item.tecidoId !== tecidoId);
     if (hasMixedTecido) {
       toast({
         title: 'Selecao invalida',
@@ -410,7 +584,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
     try {
       setGeneratingMosaic(true);
       const outputs = await buildMosaicOutputs({
-        images: selectedMosaicVinculos.map((v) => v.imagemTingida!).filter(Boolean),
+        images: selectedMosaicItems.map((item) => item.imageUrl).filter(Boolean),
         tecidoNome,
         templateId,
       });
@@ -439,8 +613,8 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         tecidoNomeSnapshot: tecidoNome,
         templateId,
         sourcePolicy: 'original',
-        selectedVinculoIds: selectedMosaicVinculos.map((v) => v.id),
-        selectedImageUrls: selectedMosaicVinculos.map((v) => v.imagemTingida!).filter(Boolean),
+        selectedVinculoIds: selectedMosaicItems.map((item) => item.key),
+        selectedImageUrls: selectedMosaicItems.map((item) => item.imageUrl).filter(Boolean),
         outputSquareUrl: squareUrl,
         outputPortraitUrl: portraitUrl,
         isDefaultForTecido: true,
@@ -745,7 +919,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
           </div>
         </div>
 
-        {loading ? (
+        {loading || loadingEstampas ? (
           <div className="py-24 flex justify-center">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
@@ -760,7 +934,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-6">
               <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 justify-between">
                 <div className="text-sm text-gray-600">
-                  {filteredVinculos.length} vinculo(s) encontrado(s) - {selectedMosaicVinculos.length} selecionado(s) para mosaico
+                  {filteredVinculos.length} vinculo(s) + {filteredEstampas.length} estampa(s) - {selectedMosaicItems.length} selecionado(s) para mosaico
                 </div>
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline" onClick={handleSelectAllVisible}>
@@ -775,7 +949,9 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
 
             <div className="space-y-5 mb-6">
               {groupedVinculos.map((group) => {
-                const eligibleForTecido = group.vinculos.filter((vinculo) => vinculo.imagemTingida).length;
+                const eligibleForTecido =
+                  group.vinculos.filter((vinculo) => vinculo.imagemTingida).length +
+                  group.estampas.filter((estampa) => estampa.imagem).length;
                 const eligiblePremiumForTecido = group.vinculos.filter(
                   (vinculo) => vinculo.imagemTingida && vinculo.imagemModelo
                 ).length;
@@ -803,7 +979,9 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                           <ChevronDown className="w-4 h-4 text-gray-500" />
                         )}
                         <span className="font-medium text-gray-900">{group.tecidoNome}</span>
-                        <span className="text-gray-600">{group.vinculos.length} vinculo(s)</span>
+                        <span className="text-gray-600">
+                          {group.vinculos.length} vinculo(s) + {group.estampas.length} estampa(s)
+                        </span>
                       </button>
                       <div className="flex items-center gap-2">
                         <Button
@@ -865,7 +1043,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                           <TableHeader>
                             <TableRow>
                               <TableHead className="w-14">Mosaico</TableHead>
-                              <TableHead>Cor</TableHead>
+                              <TableHead>Item</TableHead>
                               <TableHead>Imagem Vinculo</TableHead>
                               <TableHead>Imagem Gerada</TableHead>
                               <TableHead>Foto Modelo</TableHead>
@@ -873,16 +1051,17 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {group.vinculos.length === 0 ? (
+                            {group.vinculos.length === 0 && group.estampas.length === 0 ? (
                               <TableRow>
                                 <TableCell colSpan={6}>
                                   <p className="text-sm text-gray-500 py-6 text-center">
-                                    Nenhum vinculo cadastrado para este tecido.
+                                    Nenhum vinculo ou estampa cadastrada para este tecido.
                                   </p>
                                 </TableCell>
                               </TableRow>
                             ) : (
-                              group.vinculos.map((vinculo) => {
+                              <>
+                                {group.vinculos.map((vinculo) => {
                                 const isGenerating = generatingIds.has(vinculo.id);
                                 const fingerprintOutdated =
                                   vinculo.imagemTingida &&
@@ -893,14 +1072,15 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                                     <TableCell>
                                       <input
                                         type="checkbox"
-                                        checked={selectedForMosaic.has(vinculo.id)}
+                                        checked={selectedForMosaic.has(getCorSelectionKey(vinculo.id))}
                                         disabled={!vinculo.imagemTingida}
-                                        onChange={() => handleToggleSelectForMosaic(vinculo.id)}
+                                        onChange={() => handleToggleSelectForMosaic(getCorSelectionKey(vinculo.id))}
                                         className="h-4 w-4 rounded border-gray-300"
                                       />
                                     </TableCell>
                                     <TableCell>
                                       <div className="font-medium text-gray-900">{vinculo.corNome}</div>
+                                      <div className="text-[11px] text-blue-700">Cor</div>
                                       <div className="text-xs text-gray-500">SKU {vinculo.sku || 'sem SKU'}</div>
                                     </TableCell>
                                     <TableCell>
@@ -1092,7 +1272,107 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
                                     </TableCell>
                                   </TableRow>
                                 );
-                              })
+                              })}
+                                {group.estampas.map((estampa) => {
+                                  const isGeneratingEstampa = generatingEstampaIds.has(estampa.id);
+                                  const estampaFingerprintOutdated =
+                                    estampa.imagem &&
+                                    estampa.imagemGeradaFingerprint !== buildEstampaGenerationFingerprint(estampa);
+
+                                  return (
+                                  <TableRow key={`estampa-${estampa.id}`}>
+                                    <TableCell>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedForMosaic.has(getEstampaSelectionKey(estampa.id))}
+                                        disabled={!estampa.imagem}
+                                        onChange={() => handleToggleSelectForMosaic(getEstampaSelectionKey(estampa.id))}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="font-medium text-gray-900">{estampa.nome}</div>
+                                      <div className="text-[11px] text-violet-700">Estampa</div>
+                                      <div className="text-xs text-gray-500">SKU {estampa.sku || 'sem SKU'}</div>
+                                    </TableCell>
+                                    <TableCell>
+                                      {estampa.imagem ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openImagePreview(
+                                              estampa.imagem!,
+                                              `${estampa.nome} em ${group.tecidoNome}`,
+                                              'Imagem da estampa vinculada ao tecido.'
+                                            )
+                                          }
+                                          className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
+                                        >
+                                          <img
+                                            src={estampa.imagem}
+                                            alt={estampa.nome}
+                                            className="w-16 h-16 rounded-md border object-cover hover:scale-105 transition-transform"
+                                          />
+                                        </button>
+                                      ) : (
+                                        <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                          <ImageIcon className="w-5 h-5" />
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {estampa.imagemGerada ? (
+                                        <div>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openImagePreview(
+                                                estampa.imagemGerada!,
+                                                `Imagem gerada - ${estampa.nome}`,
+                                                estampaFingerprintOutdated
+                                                  ? 'Versao desatualizada, sera regenerada automaticamente.'
+                                                  : 'Imagem gerada da estampa.'
+                                              )
+                                            }
+                                            className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
+                                          >
+                                            <img
+                                              src={estampa.imagemGerada}
+                                              alt={`Gerada ${estampa.nome}`}
+                                              className="w-16 h-16 rounded-md border object-cover hover:scale-105 transition-transform"
+                                            />
+                                          </button>
+                                          {isGeneratingEstampa ? (
+                                            <div className="text-[11px] text-gray-500 mt-1 inline-flex items-center gap-1">
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                              Atualizando
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      ) : (
+                                        <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-gray-300">
+                                          {isGeneratingEstampa ? (
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                          ) : (
+                                            <Sparkles className="w-5 h-5" />
+                                          )}
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-[11px] text-gray-400 bg-gray-50">
+                                        N/A
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="w-16 h-16 rounded-md border border-dashed flex items-center justify-center text-[11px] text-gray-400 bg-gray-50">
+                                        N/A
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                  );
+                                })}
+                              </>
                             )}
                           </TableBody>
                         </Table>
@@ -1130,7 +1410,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={handleGenerateMosaic} disabled={generatingMosaic || selectedMosaicVinculos.length === 0}>
+                <Button onClick={handleGenerateMosaic} disabled={generatingMosaic || selectedMosaicItems.length === 0}>
                   {generatingMosaic ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />

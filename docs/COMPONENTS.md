@@ -1,6 +1,6 @@
 # Documentacao de Componentes
 
-Ultima atualizacao: 2026-02-10
+Ultima atualizacao: 2026-02-11
 
 ## Layout
 
@@ -94,12 +94,17 @@ Responsavel por:
 Arquivo: `frontend/src/pages/GestaoImagens.tsx`
 
 Responsavel por:
-- listar vinculos agrupados por tecido para operacoes de imagem
+- listar itens agrupados por tecido (vinculos de cor + estampas)
 - regenerar imagens em lote por tecido
 - gerar `imagemGerada` e salvar no Firebase
 - upload de `imagemModelo`
 - montar e salvar mosaicos
 - preview de imagens em lightbox
+
+Notas:
+- linhas de estampa entram na selecao do mosaico quando possuem `estampa.imagem`.
+- `imagemGerada` tambem e suportada para estampas.
+- `imagemModelo` e `premium` permanecem exclusivos de `cor_tecido`.
 
 ### Shopee
 Arquivo: `frontend/src/pages/Shopee.tsx`

@@ -13,11 +13,14 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { auth, db, storage } from '@/config/firebase';
-import { Estampa, SkuControlEstampa, CreateEstampaData } from '@/types/estampa.types';
+import { Estampa, SkuControlEstampa, CreateEstampaData, UpdateEstampaData } from '@/types/estampa.types';
+import { createThumbnailBlobFromUrl } from '@/lib/imageThumb';
 
 const ESTAMPAS_COLLECTION = 'estampas';
 const SKU_CONTROL_DOC = 'sku_control';
 const SKU_CONTROL_ID = 'estampas';
+const THUMB_MAX_DIMENSION = 160;
+const THUMB_QUALITY = 0.62;
 
 /**
  * Verifica se já existe uma estampa com o mesmo nome (case-insensitive)
@@ -133,6 +136,51 @@ export async function uploadEstampaImage(
 }
 
 /**
+ * Faz upload da imagem gerada da estampa e retorna a URL
+ */
+export async function uploadEstampaGeneratedImage(
+  estampaId: string,
+  blob: Blob
+): Promise<string> {
+  if (!auth.currentUser) {
+    throw new Error('Usuario nao autenticado. Faca login para continuar.');
+  }
+
+  const timestamp = Date.now();
+  const storageRef = ref(storage, `estampas/${estampaId}/gerada_${timestamp}.png`);
+
+  try {
+    await uploadBytes(storageRef, blob);
+    const downloadURL = await getDownloadURL(storageRef);
+    return downloadURL;
+  } catch (error: any) {
+    if (error.code === 'storage/unauthorized') {
+      throw new Error('Sem permissao para fazer upload. Verifique as regras de seguranca do Firebase Storage.');
+    }
+    throw error;
+  }
+}
+
+async function uploadEstampaImageThumbnailFromUrl(
+  estampaId: string,
+  imageUrl: string
+): Promise<string | undefined> {
+  try {
+    const blob = await createThumbnailBlobFromUrl(imageUrl, {
+      maxDimension: THUMB_MAX_DIMENSION,
+      quality: THUMB_QUALITY,
+    });
+    const timestamp = Date.now();
+    const storageRef = ref(storage, `estampas/${estampaId}/thumb_${timestamp}.jpg`);
+    await uploadBytes(storageRef, blob);
+    return await getDownloadURL(storageRef);
+  } catch (error) {
+    console.warn('[estampas] Nao foi possivel gerar thumb da imagem:', error);
+    return undefined;
+  }
+}
+
+/**
  * Remove imagem do Firebase Storage
  */
 export async function deleteEstampaImage(imageUrl: string): Promise<void> {
@@ -151,6 +199,7 @@ export async function createEstampa(
   data: CreateEstampaData,
   sku: string | null,
   imageUrl?: string,
+  imageThumbUrl?: string,
   tecidoBaseNome?: string
 ): Promise<Estampa> {
   const estampaData: any = {
@@ -158,6 +207,7 @@ export async function createEstampa(
     tecidoBaseId: data.tecidoBaseId,
     tecidoBaseNome: tecidoBaseNome || '',
     imagem: imageUrl || '',
+    imagemThumb: imageThumbUrl || '',
     descricao: data.descricao || '',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -170,6 +220,17 @@ export async function createEstampa(
   }
 
   const docRef = await addDoc(collection(db, ESTAMPAS_COLLECTION), estampaData);
+
+  if (imageUrl && !imageThumbUrl) {
+    const generatedThumb = await uploadEstampaImageThumbnailFromUrl(docRef.id, imageUrl);
+    if (generatedThumb) {
+      await updateDoc(docRef, {
+        imagemThumb: generatedThumb,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  }
+
   const createdDoc = await getDoc(docRef);
 
   return {
@@ -183,10 +244,11 @@ export async function createEstampa(
  */
 export async function updateEstampa(
   id: string,
-  data: Partial<CreateEstampaData> & { sku?: string | null },
+  data: Omit<UpdateEstampaData, 'id'> & { sku?: string | null },
   imageUrl?: string,
+  imageThumbUrl?: string,
   tecidoBaseNome?: string
-): Promise<void> {
+): Promise<{ imageThumbUrl?: string }> {
   const docRef = doc(db, ESTAMPAS_COLLECTION, id);
   const updateData: any = {
     updatedAt: serverTimestamp(),
@@ -197,9 +259,22 @@ export async function updateEstampa(
   if (tecidoBaseNome !== undefined) updateData.tecidoBaseNome = tecidoBaseNome;
   if (data.descricao !== undefined) updateData.descricao = data.descricao;
   if (data.sku !== undefined) updateData.sku = data.sku;
+  if (data.imagemGerada !== undefined) updateData.imagemGerada = data.imagemGerada;
+  if (data.imagemGeradaFingerprint !== undefined) updateData.imagemGeradaFingerprint = data.imagemGeradaFingerprint;
+  if (data.imagemGeradaAt !== undefined) updateData.imagemGeradaAt = data.imagemGeradaAt;
   if (imageUrl) updateData.imagem = imageUrl;
+  if (imageThumbUrl) updateData.imagemThumb = imageThumbUrl;
+
+  if (imageUrl && !imageThumbUrl) {
+    const generatedThumb = await uploadEstampaImageThumbnailFromUrl(id, imageUrl);
+    if (generatedThumb) {
+      updateData.imagemThumb = generatedThumb;
+      imageThumbUrl = generatedThumb;
+    }
+  }
 
   await updateDoc(docRef, updateData);
+  return { imageThumbUrl };
 }
 
 /**

@@ -93,6 +93,7 @@ export function useEstampas() {
         tecidoBaseId: data.tecidoBaseId,
         tecidoBaseNome,
         imagem: data.imagem instanceof File ? '' : (data.imagem || ''),
+        imagemThumb: '',
         descricao: data.descricao,
         sku: '...',
         createdAt: {} as any,
@@ -112,7 +113,13 @@ export function useEstampas() {
           imageUrl = data.imagem;
         }
 
-        const created = await createEstampaFirebase(data, sku, imageUrl || undefined, tecidoBaseNome);
+        const created = await createEstampaFirebase(
+          data,
+          sku,
+          imageUrl || undefined,
+          undefined,
+          tecidoBaseNome
+        );
 
         setEstampas((prev) =>
           prev.map((e) =>
@@ -146,8 +153,9 @@ export function useEstampas() {
    * Atualiza uma estampa existente
    */
   const updateEstampa = useCallback(
-    async (data: UpdateEstampaData): Promise<void> => {
+    async (data: UpdateEstampaData, options?: { silent?: boolean }): Promise<void> => {
       const { id, ...updateData } = data;
+      const silent = options?.silent ?? false;
 
       // Usar ref para acessar estado atual sem dependência
       const currentEstampas = estampasRef.current;
@@ -176,6 +184,7 @@ export function useEstampas() {
 
       try {
         let imageUrl: string | undefined;
+        let imageThumbUrl: string | undefined;
         let tecidoBaseNome: string | undefined;
 
         if (updateData.imagem instanceof File) {
@@ -201,12 +210,14 @@ export function useEstampas() {
           }
         }
 
-        await updateEstampaFirebase(
+        const updateResult = await updateEstampaFirebase(
           id, 
           { ...updateData, sku: skuFinal }, 
           imageUrl, 
+          imageThumbUrl,
           tecidoBaseNome
         );
+        imageThumbUrl = updateResult.imageThumbUrl || imageThumbUrl;
 
         setEstampas((prev) =>
           prev.map((e) =>
@@ -215,6 +226,7 @@ export function useEstampas() {
                   ...e,
                   ...updateData,
                   imagem: imageUrl || (typeof updateData.imagem === 'string' ? updateData.imagem : e.imagem),
+                  imagemThumb: imageThumbUrl || e.imagemThumb,
                   tecidoBaseNome: tecidoBaseNome || e.tecidoBaseNome,
                   sku: skuFinal !== undefined ? skuFinal : e.sku,
                   _status: undefined,
@@ -223,10 +235,12 @@ export function useEstampas() {
           )
         );
 
-        toast({
-          title: 'Sucesso!',
-          description: 'Estampa atualizada com sucesso.',
-        });
+        if (!silent) {
+          toast({
+            title: 'Sucesso!',
+            description: 'Estampa atualizada com sucesso.',
+          });
+        }
       } catch (error: any) {
         console.error('Erro ao atualizar estampa:', error);
 
@@ -236,7 +250,7 @@ export function useEstampas() {
           )
         );
 
-        if (!error.message?.includes('Nome duplicado')) {
+        if (!silent && !error.message?.includes('Nome duplicado')) {
           toast({
             title: 'Erro',
             description: error.message || 'Não foi possível atualizar a estampa.',
@@ -354,6 +368,7 @@ export function useEstampas() {
           const created = await createEstampaFirebase(
             { nome, tecidoBaseId },
             sku,
+            undefined,
             undefined,
             tecidoBaseNome
           );

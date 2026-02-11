@@ -82,9 +82,9 @@ Ultima atualizacao: 2026-02-11
 7. Rollback em falha parcial.
 
 ### Gestao de imagens e mosaicos
-1. Fonte principal: `cor_tecido`.
+1. Fontes principais: `cor_tecido` e `estampas` (via `tecidoBaseId`).
 2. Geracao/reuso de imagens com fingerprint.
-3. Geracao de mosaicos por tecido/template.
+3. Geracao de mosaicos por tecido/template usando selecao mista (cor + estampa).
 4. Persistencia em Firestore + Storage.
 
 ## Modelos de dados (hotspots)
@@ -96,6 +96,12 @@ Ultima atualizacao: 2026-02-11
 - `imagemModelo?`
 - `imagemModeloAt?`
 
+### `estampas`
+- `imagem?`
+- `imagemGerada?`
+- `imagemGeradaFingerprint?`
+- `imagemGeradaAt?`
+
 ### `gestao_imagens_mosaicos`
 - `tecidoId`
 - `templateId`
@@ -105,6 +111,9 @@ Ultima atualizacao: 2026-02-11
 - `outputPortraitUrl`
 - `createdBy`
 - `createdAt`
+
+Observacao:
+- `selectedVinculoIds` pode conter chaves prefixadas (`cor:{id}` ou `estampa:{id}`).
 
 ### `shopee_products`
 - `titulo_anuncio?`

@@ -2,12 +2,16 @@ import { Timestamp } from 'firebase/firestore';
 
 export interface Estampa {
   id: string; // Document ID
-  nome: string; // Nome da estampa (primeira palavra = família)
+  nome: string; // Nome da estampa (primeira palavra = familia)
   tecidoBaseId: string; // ID do tecido base usado
-  tecidoBaseNome?: string; // Nome do tecido (para exibição)
+  tecidoBaseNome?: string; // Nome do tecido (para exibicao)
   imagem?: string; // URL da imagem no Firebase Storage (opcional)
+  imagemThumb?: string; // URL da miniatura otimizada para listas/PDF
+  imagemGerada?: string; // URL da imagem com overlay de marca/nome
+  imagemGeradaFingerprint?: string; // controle de versao da imagem gerada
+  imagemGeradaAt?: Timestamp; // data da ultima geracao
   descricao?: string;
-  sku?: string; // SKU baseado na família (JA001, FL002, etc)
+  sku?: string; // SKU baseado na familia (JA001, FL002, etc)
   createdAt: Timestamp;
   updatedAt: Timestamp;
   deletedAt?: Timestamp;
@@ -27,5 +31,8 @@ export interface CreateEstampaData {
 
 export interface UpdateEstampaData extends Partial<CreateEstampaData> {
   id: string;
-  sku?: string; // Permite atualização manual do SKU
+  sku?: string;
+  imagemGerada?: string;
+  imagemGeradaFingerprint?: string;
+  imagemGeradaAt?: Timestamp;
 }

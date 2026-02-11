@@ -1,14 +1,20 @@
 # Modulo de Gestao de Imagens
 
-Ultima atualizacao: 2026-02-10
+Ultima atualizacao: 2026-02-11
 
 ## Objetivo
 
-Centralizar operacoes de imagem por vinculo (`cor_tecido`) para Shopee:
+Centralizar operacoes de imagem para Shopee por tecido, considerando:
+- vinculos de cor (`cor_tecido`)
+- estampas vinculadas ao tecido (`estampas.tecidoBaseId`)
+
+Para vinculos de cor:
 - gerar imagem de variacao (`imagemGerada`)
 - subir/trocar foto de modelo (`imagemModelo`)
 - gerar premium 1:1 e 3:4 (`imagemPremiumSquare`, `imagemPremiumPortrait`)
-- montar e salvar mosaicos por tecido
+
+Para o mosaico:
+- montar e salvar mosaicos por tecido com imagens de cor e/ou estampa
 
 Arquivo principal:
 - `frontend/src/pages/GestaoImagens.tsx`
@@ -36,13 +42,21 @@ Todos os fluxos de imagem salvam em Storage e depois atualizam Firestore:
 
 ## Tabela por tecido
 
-A tela agrupa vinculos por tecido e exibe acoes no cabecalho:
+A tela agrupa itens por tecido e exibe na mesma tabela:
+- linhas de cor (pipeline completo: gerada/modelo/premium)
+- linhas de estampa (imagem vinculada, imagem gerada e selecao para mosaico)
+
+Acoes no cabecalho:
 - `Regenerar todos deste tecido`
 - `Gerar premium deste tecido`
 - `Ver ultimo mosaico`
 
 Regra de processamento:
 - lotes com concorrencia controlada para evitar pico de memoria.
+
+Observacao:
+- para linhas de estampa, `Imagem Gerada` e regeneracao em lote sao suportadas.
+- colunas `Foto Modelo` e `Premium` continuam `N/A` para estampas.
 
 ## Acoes por imagem (hover)
 
@@ -61,6 +75,12 @@ Regra de processamento:
 3. Ao gerar mosaico para um tecido, ele ja e marcado como default do tecido:
 - `isDefaultForTecido: true`
 4. Apenas um mosaico pode ser default por tecido (controle via batch update).
+5. Selecao aceita:
+- `cor_tecido.imagemTingida`
+- `estampas.imagem`
+6. `selectedVinculoIds` guarda chaves prefixadas para identificar origem:
+- `cor:{id}`
+- `estampa:{id}`
 
 Colecao:
 - `gestao_imagens_mosaicos`
