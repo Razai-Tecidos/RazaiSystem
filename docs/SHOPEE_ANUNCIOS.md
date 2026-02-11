@@ -5,7 +5,8 @@ Ultima atualizacao: 2026-02-11
 ## Acompanhamento de ondas e tasks
 
 Para acompanhar execucao por fase (Onda 1, 2 e 3), usar:
-- `docs/SHOPEE_ANUNCIOS_ROADMAP.md`
+- este documento (secoes "Onda 1/2/3 concluida")
+- `docs/ENTREGAS_2026-02-11.md` (consolidado das entregas implementadas)
 
 ## Navegacao rapida (para agentes)
 
@@ -169,7 +170,17 @@ O step permite:
 
 - `canProceedFromCores`: exige ao menos 1 cor
 - `canProceedFromTamanhosPrecificacao`: exige preco valido
-- `canProceedFromImagens`: mantem validacao atual
+- `canProceedFromImagens`: exige 9 imagens `1:1` e 9 imagens `3:4`
+
+## Regra de galeria de imagens (1:1 e 3:4)
+
+- o fluxo trabalha com duas galerias independentes: `imagens_principais_1_1` e `imagens_principais_3_4`
+- cada galeria suporta ate 9 imagens
+- a capa de cada proporcao e a primeira imagem da lista (indice `0`)
+- no preenchimento automatico, a ordem inicial e:
+  1. mosaicos mais recentes da proporcao
+  2. imagens premium da mesma proporcao (randomizadas)
+- no publish, e enviada apenas a galeria do `imagem_ratio_principal` selecionado
 
 ## Testes
 
@@ -218,3 +229,25 @@ Principais ajustes aplicados:
   - consistencia de logistica habilitada
   - compatibilidade de size chart com categoria
 - bloqueios equivalentes no frontend para impedir avancar/publicar com obrigatorios pendentes.
+
+## Onda 3 concluida (Performance + Observabilidade + DX)
+
+Status: concluida em 2026-02-11 (validacao cross aprovada).
+
+Principais ajustes aplicados:
+- logs estruturados por etapa no publish (`lock`, `validation`, `upload`, `add_item`, `init_tier_variation`, `rollback`, `persist`);
+- upload resiliente com pool controlado e retry/backoff para falhas transientes de imagem;
+- cache de categorias e logistica particionado por `shop_id + language` (default `pt-BR`);
+- rotas/hooks preparados para propagar `language` e evitar mistura de cache entre contextos;
+- testes de regressao adicionais para:
+  - retry de upload no fluxo de publish;
+  - cache por idioma em categorias/logistica;
+  - propagacao de `language` em hook frontend.
+- backlog fechado com:
+  - paginacao completa de marcas (`get_brand_list`) via agregacao de paginas no backend;
+  - mensagens de erro orientadas por endpoint Shopee nas rotas/componentes principais do fluxo;
+  - gate de politica em CI/local para bloquear endpoints Shopee proibidos.
+
+Detalhes e evidencias de validacao:
+- `docs/SHOPEE_ANUNCIOS.md`
+- `docs/ENTREGAS_2026-02-11.md`

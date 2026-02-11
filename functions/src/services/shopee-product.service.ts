@@ -30,6 +30,156 @@ const TECIDOS_COLLECTION = 'tecidos';
 const COR_TECIDO_COLLECTION = 'cor_tecido';
 const COMPRIMENTOS_PADRAO_METROS: number[] = [1, 2, 3];
 const PUBLISH_LOCK_TTL_MS = 10 * 60 * 1000;
+const IMAGE_UPLOAD_POOL_SIZE = 3;
+const IMAGE_UPLOAD_MAX_RETRIES = 2;
+const IMAGE_UPLOAD_RETRY_BASE_DELAY_MS = 500;
+
+type PublishLogLevel = 'info' | 'warn' | 'error';
+type PublishStage = 'lock' | 'validation' | 'upload' | 'add_item' | 'init_tier_variation' | 'rollback' | 'persist';
+
+interface PublishLogContext {
+  product_id: string;
+  user_id: string;
+  dry_run: boolean;
+  shop_id?: number;
+  lock_token?: string | null;
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'erro desconhecido';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableUploadError(error: unknown): boolean {
+  const message = toErrorMessage(error).toLowerCase();
+  return (
+    message.includes('timeout') ||
+    message.includes('econnreset') ||
+    message.includes('enetunreach') ||
+    message.includes('service_unavailable') ||
+    message.includes('system_error') ||
+    message.includes('api_limit') ||
+    message.includes('http 429') ||
+    message.includes('http 5')
+  );
+}
+
+function getUploadRetryDelay(attempt: number): number {
+  const exponential = IMAGE_UPLOAD_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1));
+  const jitter = Math.floor(Math.random() * 200);
+  return exponential + jitter;
+}
+
+async function withUploadRetry<T>(
+  label: string,
+  action: () => Promise<T>
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= IMAGE_UPLOAD_MAX_RETRIES + 1; attempt += 1) {
+    try {
+      return await action();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableUploadError(error) || attempt > IMAGE_UPLOAD_MAX_RETRIES) {
+        break;
+      }
+
+      const delayMs = getUploadRetryDelay(attempt);
+      console.warn(
+        `[uploadRetry] ${label} tentativa ${attempt}/${IMAGE_UPLOAD_MAX_RETRIES + 1} falhou com erro recuperavel: ${toErrorMessage(error)}. Retry em ${delayMs}ms`
+      );
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(`[uploadRetry] ${label} falhou apos ${IMAGE_UPLOAD_MAX_RETRIES + 1} tentativa(s): ${toErrorMessage(lastError)}`);
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+
+  const safeConcurrency = Math.max(1, Math.min(concurrency, items.length));
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  const workers = Array.from({ length: safeConcurrency }, async () => {
+    while (true) {
+      const currentIndex = cursor;
+      cursor += 1;
+      if (currentIndex >= items.length) {
+        return;
+      }
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
+function logPublishEvent(
+  level: PublishLogLevel,
+  event: string,
+  context: PublishLogContext,
+  details: Record<string, unknown> = {}
+): void {
+  const payload = {
+    ts: new Date().toISOString(),
+    module: 'shopee_product.publish',
+    event,
+    ...context,
+    ...details,
+  };
+  const line = JSON.stringify(payload);
+
+  if (level === 'error') {
+    console.error(line);
+    return;
+  }
+  if (level === 'warn') {
+    console.warn(line);
+    return;
+  }
+  console.log(line);
+}
+
+async function runPublishStage<T>(
+  stage: PublishStage,
+  context: PublishLogContext,
+  action: () => Promise<T>,
+  details: Record<string, unknown> = {}
+): Promise<T> {
+  const startedAt = Date.now();
+  logPublishEvent('info', 'publish.stage.start', context, { stage, ...details });
+
+  try {
+    const result = await action();
+    logPublishEvent('info', 'publish.stage.success', context, {
+      stage,
+      duration_ms: Date.now() - startedAt,
+      ...details,
+    });
+    return result;
+  } catch (error) {
+    logPublishEvent('error', 'publish.stage.error', context, {
+      stage,
+      duration_ms: Date.now() - startedAt,
+      error: toErrorMessage(error),
+      ...details,
+    });
+    throw error;
+  }
+}
 
 /**
  * Remove valores undefined recursivamente de um objeto
@@ -159,7 +309,8 @@ async function validatePrePublishRequirements(product: ShopeeProduct): Promise<v
 async function uploadImageToShopee(
   shopId: number,
   accessToken: string,
-  imageUrl: string
+  imageUrl: string,
+  ratio: '1:1' | '3:4'
 ): Promise<string> {
   // Baixa e comprime a imagem se necessário
   const { buffer, wasCompressed, originalSize, finalSize } = 
@@ -176,7 +327,8 @@ async function uploadImageToShopee(
     shopId,
     accessToken,
     buffer,
-    filename
+    filename,
+    ratio
   ) as ShopeeUploadImageResponse;
   
   if (response.error) {
@@ -199,7 +351,8 @@ async function uploadVariationImageToShopee(
   shopId: number,
   accessToken: string,
   imageUrl: string,
-  colorName: string
+  colorName: string,
+  ratio: '1:1' | '3:4'
 ): Promise<string> {
   // 1. Download da imagem original
   const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 30000 });
@@ -219,7 +372,7 @@ async function uploadVariationImageToShopee(
   // 4. Upload para Shopee
   const filename = `variation_${colorName.replace(/\s+/g, '_')}.png`;
   const uploadResponse = await uploadImageToShopeeMultipart(
-    shopId, accessToken, buffer, filename
+    shopId, accessToken, buffer, filename, ratio
   ) as ShopeeUploadImageResponse;
 
   if (uploadResponse.error) {
@@ -239,22 +392,16 @@ async function processImagesForPublish(
   shopId: number,
   accessToken: string,
   imageUrls: string[],
+  ratio: '1:1' | '3:4',
   _usarImagensPublicas: boolean = false
 ): Promise<string[]> {
-  const imageIds: string[] = [];
-
-  for (const url of imageUrls) {
-    try {
-      const imageId = await uploadImageToShopee(shopId, accessToken, url);
-      imageIds.push(imageId);
-      console.log(`[processImages] Upload OK: ${url.substring(0, 80)}... -> image_id=${imageId}`);
-    } catch (error: any) {
-      console.error(`[processImages] FALHA upload ${url.substring(0, 80)}...: ${error.message}`);
-      throw error;
-    }
-  }
-
-  return imageIds;
+  return mapWithConcurrency(imageUrls, IMAGE_UPLOAD_POOL_SIZE, async (url) => {
+    const imageId = await withUploadRetry(`main_image:${url.substring(0, 80)}`, () =>
+      uploadImageToShopee(shopId, accessToken, url, ratio)
+    );
+    console.log(`[processImages] Upload OK: ${url.substring(0, 80)}... -> image_id=${imageId}`);
+    return imageId;
+  });
 }
 
 /**
@@ -616,9 +763,33 @@ export async function createProduct(
     data.estoque_padrao
   );
   
-  // Imagens principais (usa imagem do tecido como padrão se não fornecidas)
-  const imagensPrincipais = data.imagens_principais && data.imagens_principais.length > 0
-    ? data.imagens_principais
+  const imagemRatioPrincipal: '1:1' | '3:4' =
+    data.imagem_ratio_principal === '3:4' ? '3:4' : '1:1';
+
+  const imagensPrincipais11 = data.imagens_principais_1_1 && data.imagens_principais_1_1.length > 0
+    ? data.imagens_principais_1_1
+    : [];
+
+  const imagensPrincipais34 = data.imagens_principais_3_4 && data.imagens_principais_3_4.length > 0
+    ? data.imagens_principais_3_4
+    : [];
+
+  // Compatibilidade retroativa: se vier apenas imagens_principais, usa no ratio ativo
+  if ((imagensPrincipais11.length === 0 && imagensPrincipais34.length === 0) && data.imagens_principais?.length) {
+    if (imagemRatioPrincipal === '3:4') {
+      imagensPrincipais34.push(...data.imagens_principais);
+    } else {
+      imagensPrincipais11.push(...data.imagens_principais);
+    }
+  }
+
+  // Galeria efetiva enviada para publicação (depende do ratio principal selecionado)
+  const imagensPrincipaisAtivas = imagemRatioPrincipal === '3:4'
+    ? imagensPrincipais34
+    : imagensPrincipais11;
+
+  const imagensPrincipais = imagensPrincipaisAtivas.length > 0
+    ? imagensPrincipaisAtivas
     : tecido.imagemUrl ? [tecido.imagemUrl] : [];
   
   const now = admin.firestore.Timestamp.now();
@@ -629,6 +800,9 @@ export async function createProduct(
     tecido_nome: tecido.nome,
     tecido_sku: tecido.sku,
     imagens_principais: imagensPrincipais,
+    imagens_principais_1_1: imagensPrincipais11,
+    imagens_principais_3_4: imagensPrincipais34,
+    imagem_ratio_principal: imagemRatioPrincipal,
     video_url: data.video_url || null,
     tier_variations: tierVariations,
     modelos,
@@ -774,7 +948,47 @@ export async function updateProduct(
   if (data.descricao_customizada !== undefined) updateData.descricao_customizada = data.descricao_customizada;
   if (data.titulo_anuncio !== undefined) updateData.titulo_anuncio = data.titulo_anuncio;
   if (data.usar_imagens_publicas !== undefined) updateData.usar_imagens_publicas = data.usar_imagens_publicas;
-  if (data.imagens_principais !== undefined) updateData.imagens_principais = data.imagens_principais;
+  const nextImageRatio: '1:1' | '3:4' =
+    data.imagem_ratio_principal === '3:4'
+      ? '3:4'
+      : existingData.imagem_ratio_principal === '3:4'
+        ? '3:4'
+        : '1:1';
+  if (data.imagem_ratio_principal !== undefined) {
+    updateData.imagem_ratio_principal = nextImageRatio;
+  }
+
+  const hasRatioSpecific11 = Object.prototype.hasOwnProperty.call(data, 'imagens_principais_1_1');
+  const hasRatioSpecific34 = Object.prototype.hasOwnProperty.call(data, 'imagens_principais_3_4');
+  const hasLegacyImages = Object.prototype.hasOwnProperty.call(data, 'imagens_principais');
+
+  const existing11 = existingData.imagens_principais_1_1 || [];
+  const existing34 = existingData.imagens_principais_3_4 || [];
+
+  let next11 = hasRatioSpecific11 ? (data.imagens_principais_1_1 || []) : existing11;
+  let next34 = hasRatioSpecific34 ? (data.imagens_principais_3_4 || []) : existing34;
+
+  // Compatibilidade: payload legado atualiza a lista do ratio ativo.
+  if (hasLegacyImages && !hasRatioSpecific11 && !hasRatioSpecific34) {
+    if (nextImageRatio === '3:4') {
+      next34 = data.imagens_principais || [];
+    } else {
+      next11 = data.imagens_principais || [];
+    }
+  }
+
+  if (hasRatioSpecific11 || (hasLegacyImages && nextImageRatio !== '3:4')) {
+    updateData.imagens_principais_1_1 = next11;
+  }
+  if (hasRatioSpecific34 || (hasLegacyImages && nextImageRatio === '3:4')) {
+    updateData.imagens_principais_3_4 = next34;
+  }
+
+  if (hasLegacyImages) {
+    updateData.imagens_principais = data.imagens_principais || [];
+  } else if (hasRatioSpecific11 || hasRatioSpecific34 || data.imagem_ratio_principal !== undefined) {
+    updateData.imagens_principais = nextImageRatio === '3:4' ? next34 : next11;
+  }
   if (data.condition !== undefined) updateData.condition = data.condition;
   if (data.is_pre_order !== undefined) updateData.is_pre_order = data.is_pre_order;
   if (data.days_to_ship !== undefined) updateData.days_to_ship = data.days_to_ship;
@@ -846,6 +1060,14 @@ export async function publishProduct(
   dryRun: boolean = false
 ): Promise<ShopeeProduct | Record<string, unknown>> {
   const docRef = db.collection(PRODUCTS_COLLECTION).doc(id);
+  const publishStartedAt = Date.now();
+  const publishContext: PublishLogContext = {
+    product_id: id,
+    user_id: userId,
+    dry_run: dryRun,
+  };
+  logPublishEvent('info', 'publish.request.start', publishContext);
+
   let publishLockToken: string | null = null;
   let product: ShopeeProduct;
 
@@ -859,59 +1081,69 @@ export async function publishProduct(
     if (getProductOwnerId(product) !== userId) {
       throw new Error('Sem permissao para publicar este produto');
     }
+    publishContext.shop_id = product.shop_id;
   } else {
     const now = admin.firestore.Timestamp.now();
     const lockToken = buildPublishLockToken(id);
     const lockExpiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + PUBLISH_LOCK_TTL_MS);
 
-    const lockedState = await db.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(docRef);
-      if (!snapshot.exists) {
-        throw new Error('Produto nao encontrado');
-      }
+    const lockedState = await runPublishStage('lock', publishContext, async () => {
+      return db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(docRef);
+        if (!snapshot.exists) {
+          throw new Error('Produto nao encontrado');
+        }
 
-      const currentProduct = { id: snapshot.id, ...snapshot.data() } as ShopeeProduct;
-      if (getProductOwnerId(currentProduct) !== userId) {
-        throw new Error('Sem permissao para publicar este produto');
-      }
+        const currentProduct = { id: snapshot.id, ...snapshot.data() } as ShopeeProduct;
+        publishContext.shop_id = currentProduct.shop_id;
 
-      const existingItemId = currentProduct.item_id ?? currentProduct.shopee_item_id;
-      if ((currentProduct.status === 'created' || currentProduct.status === 'published') && existingItemId) {
+        if (getProductOwnerId(currentProduct) !== userId) {
+          throw new Error('Sem permissao para publicar este produto');
+        }
+
+        const existingItemId = currentProduct.item_id ?? currentProduct.shopee_item_id;
+        if ((currentProduct.status === 'created' || currentProduct.status === 'published') && existingItemId) {
+          return {
+            alreadyPublished: true,
+            product: currentProduct,
+            lockToken: null as string | null,
+          };
+        }
+
+        if (currentProduct.status === 'publishing' && isPublishLockActive((currentProduct as any).publish_lock)) {
+          throw new Error('Publicacao ja em andamento para este rascunho');
+        }
+
+        transaction.update(docRef, {
+          status: 'publishing',
+          updated_at: now,
+          publish_lock: {
+            token: lockToken,
+            owner: userId,
+            acquired_at: now,
+            expires_at: lockExpiresAt,
+          },
+        });
+
         return {
-          alreadyPublished: true,
+          alreadyPublished: false,
           product: currentProduct,
-          lockToken: null as string | null,
+          lockToken,
         };
-      }
-
-      if (currentProduct.status === 'publishing' && isPublishLockActive((currentProduct as any).publish_lock)) {
-        throw new Error('Publicacao ja em andamento para este rascunho');
-      }
-
-      transaction.update(docRef, {
-        status: 'publishing',
-        updated_at: now,
-        publish_lock: {
-          token: lockToken,
-          owner: userId,
-          acquired_at: now,
-          expires_at: lockExpiresAt,
-        },
       });
-
-      return {
-        alreadyPublished: false,
-        product: currentProduct,
-        lockToken,
-      };
-    });
+    }, { lock_ttl_ms: PUBLISH_LOCK_TTL_MS });
 
     if (lockedState.alreadyPublished) {
+      logPublishEvent('info', 'publish.request.idempotent', publishContext, {
+        item_id: lockedState.product.item_id ?? lockedState.product.shopee_item_id ?? null,
+      });
       return lockedState.product;
     }
 
     product = lockedState.product;
     publishLockToken = lockedState.lockToken;
+    publishContext.shop_id = product.shop_id;
+    publishContext.lock_token = publishLockToken;
   }
 
   let createdItemId: number | null = null;
@@ -919,55 +1151,52 @@ export async function publishProduct(
   let formattedDescription = '';
 
   try {
-    // Busca dados do tecido para formatacao
-    const tecido = await getTecidoData(product.tecido_id);
+    await runPublishStage('validation', publishContext, async () => {
+      const tecido = await getTecidoData(product.tecido_id);
+      const preferredTitle = product.titulo_anuncio?.trim() || product.tecido_nome;
+      formattedName = formatItemName(
+        preferredTitle,
+        tecido?.nome,
+        tecido?.composicao
+      );
+      formattedDescription = formatDescription(
+        product.descricao,
+        tecido?.nome,
+        tecido?.composicao,
+        tecido?.largura
+      );
 
-    // Formata nome e descricao para atender requisitos minimos
-    const preferredTitle = product.titulo_anuncio?.trim() || product.tecido_nome;
-    formattedName = formatItemName(
-      preferredTitle,
-      tecido?.nome,
-      tecido?.composicao
-    );
-    formattedDescription = formatDescription(
-      product.descricao,
-      tecido?.nome,
-      tecido?.composicao,
-      tecido?.largura
-    );
+      const validation = validateProductForPublish({
+        item_name: formattedName,
+        description: formattedDescription,
+        price: product.preco_base,
+        stock: product.estoque_padrao,
+        weight: product.peso,
+        dimensions: product.dimensoes,
+        images: product.imagens_principais,
+        tier_variations: product.tier_variations.map(t => ({
+          tier_name: t.tier_name,
+          options: t.options.map(o => ({ option_name: o.option_name })),
+        })),
+        item_sku: product.tecido_sku,
+        category_id: product.categoria_id,
+      });
 
-    // Validacoes pre-publish
-    console.log('Validando produto...');
-    const validation = validateProductForPublish({
-      item_name: formattedName,
-      description: formattedDescription,
-      price: product.preco_base,
-      stock: product.estoque_padrao,
-      weight: product.peso,
-      dimensions: product.dimensoes,
-      images: product.imagens_principais,
-      tier_variations: product.tier_variations.map(t => ({
-        tier_name: t.tier_name,
-        options: t.options.map(o => ({ option_name: o.option_name })),
-      })),
-      item_sku: product.tecido_sku,
-      category_id: product.categoria_id,
+      if (!validation.valid) {
+        throw new Error(`Validacao falhou: ${validation.errors.join('; ')}`);
+      }
+
+      if (validation.warnings.length > 0) {
+        logPublishEvent('warn', 'publish.validation.warnings', publishContext, {
+          warnings: validation.warnings,
+        });
+      }
+
+      await validatePrePublishRequirements(product);
     });
-
-    if (!validation.valid) {
-      throw new Error(`Validacao falhou: ${validation.errors.join('; ')}`);
-    }
-
-    if (validation.warnings.length > 0) {
-      console.warn('Avisos de validacao:', validation.warnings);
-    }
-
-    await validatePrePublishRequirements(product);
 
     const accessToken = dryRun ? 'DRY_RUN' : await ensureValidToken(product.shop_id);
 
-    // Busca canais de logistica compativeis com peso/dimensoes
-    console.log('Buscando canais de logistica...');
     const compatibleLogisticInfo = await logisticsService.buildLogisticInfoForProduct(
       product.shop_id,
       product.peso,
@@ -1006,79 +1235,96 @@ export async function publishProduct(
       }
 
       logisticInfo = selectedCompatible;
-      console.log(`${logisticInfo.length} canal(is) de logistica configurado(s) pela UI`);
+      logPublishEvent('info', 'publish.logistics.selected_from_ui', publishContext, {
+        logistic_channel_count: logisticInfo.length,
+      });
     } else {
-      console.log(`${logisticInfo.length} canal(is) de logistica configurado(s) automaticamente`);
+      logPublishEvent('info', 'publish.logistics.auto_selected', publishContext, {
+        logistic_channel_count: logisticInfo.length,
+      });
     }
 
-    let processedMainImages: string[];
-    let processedTierVariations: Array<{ name: string; option_list: Array<{ option: string; image?: { image_id: string } }> }>;
+    const { processedMainImages, processedTierVariations } = await runPublishStage(
+      'upload',
+      publishContext,
+      async () => {
+        const mainImageRatio: '1:1' | '3:4' =
+          product.imagem_ratio_principal === '3:4' ? '3:4' : '1:1';
 
-    if (dryRun) {
-      // Dry-run: usa placeholders sem fazer upload
-      processedMainImages = product.imagens_principais.map((_, i) => `DRY_RUN_IMAGE_${i}`);
-      processedTierVariations = product.tier_variations.map((tier, tierIndex) => ({
-        name: tier.tier_name,
-        option_list: tier.options.map((opt) => ({
-          option: opt.option_name,
-          ...(tierIndex === 0 && opt.imagem_url ? { image: { image_id: `DRY_RUN_VAR_${opt.option_name}` } } : {}),
-        })),
-      }));
-      console.log('[publishProduct] DRY-RUN: imagens substituidas por placeholders');
-    } else {
-      // Processa imagens principais (comprime se necessario)
-      console.log('Processando imagens principais...');
-      processedMainImages = await processImagesForPublish(
-        product.shop_id,
-        accessToken,
-        product.imagens_principais,
-        product.usar_imagens_publicas
-      );
+        if (dryRun) {
+          return {
+            processedMainImages: product.imagens_principais.map((_, i) => `DRY_RUN_IMAGE_${i}`),
+            processedTierVariations: product.tier_variations.map((tier, tierIndex) => ({
+              name: tier.tier_name,
+              option_list: tier.options.map((opt) => ({
+                option: opt.option_name,
+                ...(tierIndex === 0 && opt.imagem_url ? { image: { image_id: `DRY_RUN_VAR_${opt.option_name}` } } : {}),
+              })),
+            })),
+          };
+        }
 
-      // Processa imagens de variacao (cores) - apenas tier 1
-      // Shopee exige: se uma opcao do tier 1 tem imagem, TODAS devem ter
-      console.log('Processando imagens de variacao...');
-      processedTierVariations = await Promise.all(
-        product.tier_variations.map(async (tier, tierIndex) => {
-          const processedOptions = await Promise.all(
-            tier.options.map(async (opt) => {
-              // Apenas tier 1 (index 0) pode ter imagens
-              if (tierIndex === 0 && opt.imagem_url) {
-                try {
+        const mainImages = await processImagesForPublish(
+          product.shop_id,
+          accessToken,
+          product.imagens_principais,
+          mainImageRatio,
+          product.usar_imagens_publicas
+        );
+
+        const tierVariations = await Promise.all(
+          product.tier_variations.map(async (tier, tierIndex) => {
+            const processedOptions = await mapWithConcurrency(
+              tier.options,
+              IMAGE_UPLOAD_POOL_SIZE,
+              async (opt) => {
+                if (tierIndex === 0 && opt.imagem_url) {
                   const isGeneratedImage = opt.imagem_gerada || /\/gerada_/i.test(opt.imagem_url);
                   const imageId = isGeneratedImage
-                    ? await uploadImageToShopee(
-                        product.shop_id,
-                        accessToken,
-                        opt.imagem_url
+                    ? await withUploadRetry(`tier_generated:${opt.option_name}`, () =>
+                        uploadImageToShopee(
+                          product.shop_id,
+                          accessToken,
+                          opt.imagem_url!,
+                          mainImageRatio
+                        )
                       )
-                    : await uploadVariationImageToShopee(
-                        product.shop_id,
-                        accessToken,
-                        opt.imagem_url,
-                        opt.option_name
+                    : await withUploadRetry(`tier_overlay:${opt.option_name}`, () =>
+                        uploadVariationImageToShopee(
+                          product.shop_id,
+                          accessToken,
+                          opt.imagem_url!,
+                          opt.option_name,
+                          mainImageRatio
+                        )
                       );
                   return {
                     option: opt.option_name,
                     image: { image_id: imageId },
                   };
-                } catch (error: any) {
-                  console.error(`[publishProduct] FALHA imagem variacao ${opt.option_name}: ${error.message}`);
-                  throw error; // Se uma falhar, todas falham (obrigatoriedade)
                 }
+                return {
+                  option: opt.option_name,
+                };
               }
-              return {
-                option: opt.option_name,
-              };
-            })
-          );
-          return {
-            name: tier.tier_name,
-            option_list: processedOptions,
-          };
-        })
-      );
-    }
+            );
+            return {
+              name: tier.tier_name,
+              option_list: processedOptions,
+            };
+          })
+        );
+
+        return {
+          processedMainImages: mainImages,
+          processedTierVariations: tierVariations,
+        };
+      },
+      {
+        main_image_count: product.imagens_principais.length,
+        tier_variation_count: product.tier_variations.length,
+      }
+    );
 
     // Monta payload para API Shopee
     const shopeePayload: Record<string, unknown> = {
@@ -1098,6 +1344,7 @@ export async function publishProduct(
       },
       image: {
         image_id_list: processedMainImages,
+        image_ratio: product.imagem_ratio_principal === '3:4' ? '3:4' : '1:1',
       },
       // tier_variation e model NAO vao no add_item - sao enviados via init_tier_variation
       logistic_info: logisticInfo,
@@ -1168,10 +1415,20 @@ export async function publishProduct(
     // Remove valores undefined do payload (Firestore/Shopee nao aceitam)
     const cleanPayload = removeUndefinedValues(shopeePayload);
 
-    console.log('[publishProduct] Payload add_item:', JSON.stringify(cleanPayload, null, 2));
+    logPublishEvent('info', 'publish.add_item.payload_summary', publishContext, {
+      main_image_count: processedMainImages.length,
+      logistic_channel_count: logisticInfo.length,
+      has_attributes: !!(product.atributos && product.atributos.length > 0),
+      has_video: !!product.video_url,
+      has_size_chart: !!product.size_chart_id,
+      has_wholesale: !!(product.wholesale && product.wholesale.length > 0),
+    });
 
     // Modo dry-run: retorna payload sem chamar API (para debug/teste)
     if (dryRun) {
+      logPublishEvent('info', 'publish.request.dry_run.success', publishContext, {
+        duration_ms: Date.now() - publishStartedAt,
+      });
       return {
         add_item: cleanPayload,
         init_tier_variation: {
@@ -1196,34 +1453,35 @@ export async function publishProduct(
       };
     }
 
-    const response = await callShopeeApi({
-      path: '/api/v2/product/add_item',
-      method: 'POST',
-      shopId: product.shop_id,
-      accessToken,
-      body: cleanPayload,
-    }) as ShopeeAddItemResponse;
+    const addItemResponse = await runPublishStage('add_item', publishContext, async () => {
+      const response = await callShopeeApi({
+        path: '/api/v2/product/add_item',
+        method: 'POST',
+        shopId: product.shop_id,
+        accessToken,
+        body: cleanPayload,
+      }) as ShopeeAddItemResponse;
 
-    if (response.error) {
-      console.error('[publishProduct] Resposta Shopee ERRO:', JSON.stringify(response));
-      throw new Error(`Erro Shopee: ${response.error} - ${response.message}`);
-    }
+      if (response.error) {
+        throw new Error(`Erro Shopee: ${response.error} - ${response.message}`);
+      }
 
-    const itemId = response.response?.item_id;
+      if (!response.response?.item_id) {
+        throw new Error('Shopee nao retornou item_id');
+      }
 
-    if (!itemId) {
-      throw new Error('Shopee nao retornou item_id');
-    }
+      return response;
+    }, {
+      logistic_channel_count: logisticInfo.length,
+    });
+    const itemId = addItemResponse.response!.item_id;
 
     createdItemId = itemId;
+    logPublishEvent('info', 'publish.add_item.item_created', publishContext, {
+      item_id: itemId,
+    });
 
     // === INIT TIER VARIATION ===
-    // Shopee recomenda aguardar >= 5s apos add_item antes de criar variantes
-    console.log('[publishProduct] Aguardando 5s antes de init_tier_variation...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    // Transforma processedTierVariations (formato { name, option_list }) para
-    // standardise_tier_variation (formato { variation_name, variation_option_list })
     const initTierPayload = {
       item_id: itemId,
       standardise_tier_variation: processedTierVariations.map((tier, tierIndex) => ({
@@ -1244,54 +1502,66 @@ export async function publishProduct(
       })),
     };
 
-    console.log('[publishProduct] Chamando init_tier_variation...', JSON.stringify(initTierPayload, null, 2));
+    const tierResponse = await runPublishStage('init_tier_variation', publishContext, async () => {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      const response = await callShopeeApi({
+        path: '/api/v2/product/init_tier_variation',
+        method: 'POST',
+        shopId: product.shop_id,
+        accessToken,
+        body: removeUndefinedValues(initTierPayload),
+      }) as ShopeeInitTierResponse;
 
-    const tierResponse = await callShopeeApi({
-      path: '/api/v2/product/init_tier_variation',
-      method: 'POST',
-      shopId: product.shop_id,
-      accessToken,
-      body: removeUndefinedValues(initTierPayload),
-    }) as ShopeeInitTierResponse;
+      if (response.error && response.error !== '' && response.error !== '-') {
+        throw new Error(`Erro ao criar variacoes: ${response.error} - ${response.message}`);
+      }
 
-    if (tierResponse.error && tierResponse.error !== '' && tierResponse.error !== '-') {
-      console.error('[publishProduct] init_tier_variation ERRO:', JSON.stringify(tierResponse));
-      throw new Error(`Erro ao criar variacoes: ${tierResponse.error} - ${tierResponse.message}`);
-    }
-
-    console.log(`[publishProduct] init_tier_variation OK - ${tierResponse.response?.model?.length || 0} modelos criados`);
+      return response;
+    }, {
+      item_id: itemId,
+      model_count: product.modelos.length,
+      tier_variation_count: processedTierVariations.length,
+    });
+    logPublishEvent('info', 'publish.init_tier_variation.models_created', publishContext, {
+      item_id: itemId,
+      created_model_count: tierResponse.response?.model?.length || 0,
+    });
 
     // Atualiza produto com sucesso
-    const now = admin.firestore.Timestamp.now();
-    await docRef.update({
-      item_id: itemId,
-      status: 'created',
-      published_at: now,
-      updated_at: now,
-      last_synced_at: now,
-      sync_status: 'synced',
-      publish_lock: admin.firestore.FieldValue.delete(),
-      error_message: admin.firestore.FieldValue.delete(),
-    });
-
-    // Atualiza ultimos valores usados nas preferencias
-    await preferencesService.updateLastUsedValues(userId, {
-      preco_base: product.preco_base,
-      estoque_padrao: product.estoque_padrao,
-      categoria_id: product.categoria_id,
-      peso: product.peso,
-      dimensoes: product.dimensoes,
-    });
-
-    // Salva NCM e categoria como preferencia padrao
-    if (product.ncm_padrao || product.categoria_nome) {
-      await preferencesService.saveUserPreferences(userId, {
-        ...(product.ncm_padrao ? { ncm_padrao: product.ncm_padrao } : {}),
-        ...(product.categoria_nome ? { categoria_nome_padrao: product.categoria_nome } : {}),
+    await runPublishStage('persist', publishContext, async () => {
+      const now = admin.firestore.Timestamp.now();
+      await docRef.update({
+        item_id: itemId,
+        status: 'created',
+        published_at: now,
+        updated_at: now,
+        last_synced_at: now,
+        sync_status: 'synced',
+        publish_lock: admin.firestore.FieldValue.delete(),
+        error_message: admin.firestore.FieldValue.delete(),
       });
-    }
+
+      await preferencesService.updateLastUsedValues(userId, {
+        preco_base: product.preco_base,
+        estoque_padrao: product.estoque_padrao,
+        categoria_id: product.categoria_id,
+        peso: product.peso,
+        dimensoes: product.dimensoes,
+      });
+
+      if (product.ncm_padrao || product.categoria_nome) {
+        await preferencesService.saveUserPreferences(userId, {
+          ...(product.ncm_padrao ? { ncm_padrao: product.ncm_padrao } : {}),
+          ...(product.categoria_nome ? { categoria_nome_padrao: product.categoria_nome } : {}),
+        });
+      }
+    }, { item_id: itemId });
 
     const updatedDoc = await docRef.get();
+    logPublishEvent('info', 'publish.request.success', publishContext, {
+      duration_ms: Date.now() - publishStartedAt,
+      item_id: itemId,
+    });
     return {
       id: updatedDoc.id,
       ...updatedDoc.data(),
@@ -1302,23 +1572,23 @@ export async function publishProduct(
 
     // Rollback: se add_item criou item mas init_tier_variation falhou
     if (!dryRun && createdItemId) {
-      console.warn(`[publishProduct] Iniciando rollback do item ${createdItemId}...`);
       try {
-        const rollbackToken = await ensureValidToken(product.shop_id);
-        const rollbackResponse = await callShopeeApi({
-          path: '/api/v2/product/delete_item',
-          method: 'POST',
-          shopId: product.shop_id,
-          accessToken: rollbackToken,
-          body: {
-            item_id: createdItemId,
-          },
-        }) as ShopeeDeleteItemResponse;
+        await runPublishStage('rollback', publishContext, async () => {
+          const rollbackToken = await ensureValidToken(product.shop_id);
+          const rollbackResponse = await callShopeeApi({
+            path: '/api/v2/product/delete_item',
+            method: 'POST',
+            shopId: product.shop_id,
+            accessToken: rollbackToken,
+            body: {
+              item_id: createdItemId,
+            },
+          }) as ShopeeDeleteItemResponse;
 
-        if (rollbackResponse.error && rollbackResponse.error !== '' && rollbackResponse.error !== '-') {
-          throw new Error(`${rollbackResponse.error} - ${rollbackResponse.message || 'sem detalhes'}`);
-        }
-
+          if (rollbackResponse.error && rollbackResponse.error !== '' && rollbackResponse.error !== '-') {
+            throw new Error(`${rollbackResponse.error} - ${rollbackResponse.message || 'sem detalhes'}`);
+          }
+        }, { item_id: createdItemId });
         finalErrorMessage = `${finalErrorMessage} | rollback add_item concluido`;
       } catch (rollbackError: any) {
         finalErrorMessage = `${finalErrorMessage} | rollback falhou: ${rollbackError?.message || 'erro desconhecido'}`;
@@ -1346,10 +1616,17 @@ export async function publishProduct(
           transaction.update(docRef, updatePayload);
         });
       } catch (persistError: any) {
-        console.error('[publishProduct] Falha ao persistir erro de publish:', persistError?.message || persistError);
+        logPublishEvent('error', 'publish.persist_error.failed', publishContext, {
+          error: persistError?.message || String(persistError),
+        });
       }
     }
 
+    logPublishEvent('error', 'publish.request.error', publishContext, {
+      duration_ms: Date.now() - publishStartedAt,
+      item_id: createdItemId ?? null,
+      error: finalErrorMessage,
+    });
     throw new Error(finalErrorMessage);
   }
 }

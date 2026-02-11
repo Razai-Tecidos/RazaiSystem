@@ -1,14 +1,45 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { ensureOwnedShopOrFail } from '../middleware/shopee-shop-ownership.middleware';
 import * as itemLimitService from '../services/shopee-item-limit.service';
 
 const router = Router();
+
+router.use(authMiddleware);
+router.use(async (req: Request, res: Response, next: NextFunction) => {
+  const rawShopId = req.method === 'GET'
+    ? req.query.shop_id
+    : req.body?.shop_id;
+
+  const shopId = await ensureOwnedShopOrFail(req, res, rawShopId);
+  if (!shopId) return;
+
+  res.locals.shopId = shopId;
+  next();
+});
+
+function extractShopeeEndpoint(errorMessage: string): string | null {
+  const match = errorMessage.match(/\/api\/v2\/[a-z0-9_/-]+/i);
+  return match?.[0] || null;
+}
+
+function toEndpointOrientedError(error: unknown, fallback: string): { message: string; endpoint?: string } {
+  const raw = error instanceof Error ? error.message : String(error || fallback);
+  const endpoint = extractShopeeEndpoint(raw);
+  if (endpoint) {
+    return {
+      message: `Falha ao consultar Shopee no endpoint ${endpoint}. Tente novamente e valide o category_id/loja. Detalhe: ${raw}`,
+      endpoint,
+    };
+  }
+  return { message: raw || fallback };
+}
 
 /**
  * GET /api/shopee/item-limit
  * Busca limites de item para uma categoria
  */
-router.get('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string);
     const categoryId = parseInt(req.query.category_id as string);
@@ -38,9 +69,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
     return;
   } catch (error: any) {
     console.error('Erro ao buscar limites:', error);
+    const mapped = toEndpointOrientedError(error, 'Erro ao buscar limites');
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: mapped.message,
+      endpoint: mapped.endpoint,
+      error_code: mapped.endpoint ? 'SHOPEE_ENDPOINT_ERROR' : 'SHOPEE_ITEM_LIMIT_ERROR',
     });
     return;
   }
@@ -50,7 +84,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
  * GET /api/shopee/item-limit/dts
  * Busca limites de dias para envio
  */
-router.get('/dts', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/dts', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string);
     const categoryId = parseInt(req.query.category_id as string);
@@ -72,9 +106,12 @@ router.get('/dts', authMiddleware, async (req: Request, res: Response): Promise<
     return;
   } catch (error: any) {
     console.error('Erro ao buscar limites de DTS:', error);
+    const mapped = toEndpointOrientedError(error, 'Erro ao buscar limites de DTS');
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: mapped.message,
+      endpoint: mapped.endpoint,
+      error_code: mapped.endpoint ? 'SHOPEE_ENDPOINT_ERROR' : 'SHOPEE_DTS_LIMIT_ERROR',
     });
     return;
   }
@@ -84,7 +121,7 @@ router.get('/dts', authMiddleware, async (req: Request, res: Response): Promise<
  * GET /api/shopee/item-limit/size-chart-support
  * Verifica se categoria suporta size chart
  */
-router.get('/size-chart-support', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/size-chart-support', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string);
     const categoryId = parseInt(req.query.category_id as string);
@@ -106,9 +143,12 @@ router.get('/size-chart-support', authMiddleware, async (req: Request, res: Resp
     return;
   } catch (error: any) {
     console.error('Erro ao verificar suporte a size chart:', error);
+    const mapped = toEndpointOrientedError(error, 'Erro ao verificar suporte a size chart');
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: mapped.message,
+      endpoint: mapped.endpoint,
+      error_code: mapped.endpoint ? 'SHOPEE_ENDPOINT_ERROR' : 'SHOPEE_SIZE_CHART_SUPPORT_ERROR',
     });
     return;
   }
@@ -118,7 +158,7 @@ router.get('/size-chart-support', authMiddleware, async (req: Request, res: Resp
  * GET /api/shopee/item-limit/size-charts
  * Lista size charts disponíveis
  */
-router.get('/size-charts', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/size-charts', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string);
     const categoryId = parseInt(req.query.category_id as string);
@@ -142,9 +182,12 @@ router.get('/size-charts', authMiddleware, async (req: Request, res: Response): 
     return;
   } catch (error: any) {
     console.error('Erro ao buscar size charts:', error);
+    const mapped = toEndpointOrientedError(error, 'Erro ao buscar size charts');
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: mapped.message,
+      endpoint: mapped.endpoint,
+      error_code: mapped.endpoint ? 'SHOPEE_ENDPOINT_ERROR' : 'SHOPEE_SIZE_CHART_LIST_ERROR',
     });
     return;
   }

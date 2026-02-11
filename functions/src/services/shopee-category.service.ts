@@ -9,14 +9,28 @@ import { callShopeeApi, ensureValidToken } from './shopee.service';
 
 const db = admin.firestore();
 const CATEGORIES_CACHE_COLLECTION = 'shopee_categories_cache';
-const CACHE_DOC_ID = 'main';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
+const DEFAULT_SHOPEE_LANGUAGE = 'pt-BR';
+
+function normalizeLanguage(language?: string): string {
+  const sanitized = (language || DEFAULT_SHOPEE_LANGUAGE)
+    .replace('_', '-')
+    .trim();
+  return sanitized || DEFAULT_SHOPEE_LANGUAGE;
+}
+
+function buildCacheDocId(shopId: number, language?: string): string {
+  const normalizedLanguage = normalizeLanguage(language)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-');
+  return `${shopId}_${normalizedLanguage}`;
+}
 
 /**
  * Busca categorias do cache se válido
  */
-export async function getCachedCategories(): Promise<ShopeeCategory[] | null> {
-  const cacheDoc = await db.collection(CATEGORIES_CACHE_COLLECTION).doc(CACHE_DOC_ID).get();
+export async function getCachedCategories(shopId: number, language: string = DEFAULT_SHOPEE_LANGUAGE): Promise<ShopeeCategory[] | null> {
+  const cacheDoc = await db.collection(CATEGORIES_CACHE_COLLECTION).doc(buildCacheDocId(shopId, language)).get();
   
   if (!cacheDoc.exists) {
     return null;
@@ -36,17 +50,23 @@ export async function getCachedCategories(): Promise<ShopeeCategory[] | null> {
 /**
  * Salva categorias no cache
  */
-async function saveCategoriesCache(categories: ShopeeCategory[]): Promise<void> {
-  await db.collection(CATEGORIES_CACHE_COLLECTION).doc(CACHE_DOC_ID).set({
+async function saveCategoriesCache(
+  shopId: number,
+  language: string,
+  categories: ShopeeCategory[]
+): Promise<void> {
+  await db.collection(CATEGORIES_CACHE_COLLECTION).doc(buildCacheDocId(shopId, language)).set({
     categories,
     updated_at: admin.firestore.Timestamp.now(),
+    shop_id: shopId,
+    language: normalizeLanguage(language),
   });
 }
 
 /**
  * Busca categorias da API Shopee
  */
-async function fetchCategoriesFromShopee(shopId: number): Promise<ShopeeCategory[]> {
+async function fetchCategoriesFromShopee(shopId: number, language: string): Promise<ShopeeCategory[]> {
   const accessToken = await ensureValidToken(shopId);
   
   const response = await callShopeeApi({
@@ -55,7 +75,7 @@ async function fetchCategoriesFromShopee(shopId: number): Promise<ShopeeCategory
     shopId,
     accessToken,
     query: {
-      language: 'pt-BR',
+      language: normalizeLanguage(language),
     },
   }) as {
     error?: string;
@@ -107,18 +127,22 @@ async function fetchCategoriesFromShopee(shopId: number): Promise<ShopeeCategory
 /**
  * Busca categorias (do cache ou da API)
  */
-export async function getCategories(shopId: number, forceRefresh = false): Promise<ShopeeCategory[]> {
+export async function getCategories(
+  shopId: number,
+  forceRefresh = false,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<ShopeeCategory[]> {
   // Tenta buscar do cache primeiro
   if (!forceRefresh) {
-    const cached = await getCachedCategories();
+    const cached = await getCachedCategories(shopId, language);
     if (cached) {
       return cached;
     }
   }
   
   // Busca da API e atualiza cache
-  const categories = await fetchCategoriesFromShopee(shopId);
-  await saveCategoriesCache(categories);
+  const categories = await fetchCategoriesFromShopee(shopId, language);
+  await saveCategoriesCache(shopId, language, categories);
   
   return categories;
 }
@@ -126,16 +150,24 @@ export async function getCategories(shopId: number, forceRefresh = false): Promi
 /**
  * Busca categoria por ID
  */
-export async function getCategoryById(shopId: number, categoryId: number): Promise<ShopeeCategory | null> {
-  const categories = await getCategories(shopId);
+export async function getCategoryById(
+  shopId: number,
+  categoryId: number,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<ShopeeCategory | null> {
+  const categories = await getCategories(shopId, false, language);
   return categories.find(c => c.id === categoryId) || null;
 }
 
 /**
  * Busca subcategorias de uma categoria
  */
-export async function getSubcategories(shopId: number, parentCategoryId?: number): Promise<ShopeeCategory[]> {
-  const categories = await getCategories(shopId);
+export async function getSubcategories(
+  shopId: number,
+  parentCategoryId?: number,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<ShopeeCategory[]> {
+  const categories = await getCategories(shopId, false, language);
   
   if (!parentCategoryId) {
     // Retorna categorias raiz (sem pai)
@@ -148,8 +180,12 @@ export async function getSubcategories(shopId: number, parentCategoryId?: number
 /**
  * Busca o caminho completo de uma categoria (breadcrumb)
  */
-export async function getCategoryPath(shopId: number, categoryId: number): Promise<ShopeeCategory[]> {
-  const categories = await getCategories(shopId);
+export async function getCategoryPath(
+  shopId: number,
+  categoryId: number,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<ShopeeCategory[]> {
+  const categories = await getCategories(shopId, false, language);
   const path: ShopeeCategory[] = [];
   
   let currentId: number | null | undefined = categoryId;
@@ -234,8 +270,9 @@ export async function getCategoryBrands(
   categoryId: number,
   status: 1 | 2 = 1, // 1 = normal, 2 = pending
   pageSize = 100,
-  offset = 0
-): Promise<{ brands: ShopeeBrand[]; hasMore: boolean; total: number }> {
+  offset = 0,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<{ brands: ShopeeBrand[]; hasMore: boolean; nextOffset: number }> {
   const accessToken = await ensureValidToken(shopId);
   
   const response = await callShopeeApi({
@@ -248,7 +285,7 @@ export async function getCategoryBrands(
       status,
       page_size: pageSize,
       offset,
-      language: 'pt-BR',
+      language: normalizeLanguage(language),
     },
   }) as {
     error?: string;
@@ -269,7 +306,48 @@ export async function getCategoryBrands(
   return {
     brands: response.response?.brand_list || [],
     hasMore: response.response?.has_next_page || false,
-    total: response.response?.next_offset || 0,
+    nextOffset: response.response?.next_offset || 0,
+  };
+}
+
+export async function getAllCategoryBrands(
+  shopId: number,
+  categoryId: number,
+  status: 1 | 2 = 1,
+  pageSize = 100,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<{ brands: ShopeeBrand[]; hasMore: boolean; pagesFetched: number }> {
+  const dedup = new Map<number, ShopeeBrand>();
+  let hasMore = true;
+  let offset = 0;
+  let pagesFetched = 0;
+  const maxPages = 50;
+
+  while (hasMore && pagesFetched < maxPages) {
+    const page = await getCategoryBrands(shopId, categoryId, status, pageSize, offset, language);
+    pagesFetched += 1;
+
+    for (const brand of page.brands) {
+      dedup.set(brand.brand_id, brand);
+    }
+
+    if (!page.hasMore) {
+      hasMore = false;
+      break;
+    }
+
+    if (page.nextOffset <= offset) {
+      // Guard-rail contra loop de paginação inconsistente.
+      hasMore = true;
+      break;
+    }
+    offset = page.nextOffset;
+  }
+
+  return {
+    brands: Array.from(dedup.values()),
+    hasMore,
+    pagesFetched,
   };
 }
 
@@ -303,15 +381,21 @@ export async function isBrandMandatory(shopId: number, categoryId: number): Prom
 /**
  * Força atualização do cache de categorias
  */
-export async function forceRefreshCategories(shopId: number): Promise<ShopeeCategory[]> {
-  return getCategories(shopId, true);
+export async function forceRefreshCategories(
+  shopId: number,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<ShopeeCategory[]> {
+  return getCategories(shopId, true, language);
 }
 
 /**
  * Verifica se o cache precisa ser atualizado
  */
-export async function isCacheExpired(): Promise<boolean> {
-  const cacheDoc = await db.collection(CATEGORIES_CACHE_COLLECTION).doc(CACHE_DOC_ID).get();
+export async function isCacheExpired(
+  shopId: number,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<boolean> {
+  const cacheDoc = await db.collection(CATEGORIES_CACHE_COLLECTION).doc(buildCacheDocId(shopId, language)).get();
   
   if (!cacheDoc.exists) {
     return true;

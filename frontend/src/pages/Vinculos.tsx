@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { pdf } from '@react-pdf/renderer';
 import { useCorTecido } from '@/hooks/useCorTecido';
 import { useCores } from '@/hooks/useCores';
 import { useTecidos } from '@/hooks/useTecidos';
@@ -29,6 +30,7 @@ import {
   Link as LinkIcon,
   Image as ImageIcon,
   Download,
+  FileDown,
   Filter,
   Brain,
   CheckCircle,
@@ -46,6 +48,10 @@ import ExcelJS from 'exceljs';
 import { EditarVinculo } from './EditarVinculo';
 import { updateCorDataInVinculos } from '@/lib/firebase/cor-tecido';
 import { ImageLightbox } from '@/components/ui/image-lightbox';
+import {
+  VinculosChecklistPdfDocument,
+  VinculosChecklistPdfSection,
+} from '@/components/Vinculos/VinculosChecklistPdfDocument';
 
 interface VinculosProps {
   onNavigateHome?: () => void;
@@ -118,6 +124,7 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
     total: number;
     currentItem: string;
   } | null>(null);
+  const [generatingChecklistPdf, setGeneratingChecklistPdf] = useState(false);
 
   // Função para gerar SKUs das cores e vínculos que não têm
   const handleGerarSkus = async () => {
@@ -299,6 +306,15 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
   const estampasFiltradas = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     const lista = estampas.filter((estampa) => {
+      const hasUploadedImage = Boolean(estampa.imagem && estampa.imagem.trim().length > 0);
+      if (!hasUploadedImage) {
+        return false;
+      }
+
+      if (!estampa.tecidoBaseId) {
+        return false;
+      }
+
       if (filtroCor) {
         return false;
       }
@@ -948,6 +964,83 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
     }
   };
 
+  const handleExportarChecklistPdf = async () => {
+    if (totalLinhasVinculo === 0) {
+      toast({
+        title: 'Nenhum dado para exportar',
+        description: 'Nao ha vinculos ou estampas para gerar checklist.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const secoesChecklist: VinculosChecklistPdfSection[] = gruposVisuais
+      .map((grupo) => ({
+        tecidoId: grupo.tecidoId,
+        tecidoNome: grupo.tecidoNome,
+        tecidoSku: grupo.tecidoSku,
+        rows: [
+          ...grupo.vinculos.map((vinculo) => ({
+            id: `cor-${vinculo.id}`,
+            tecidoNome: grupo.tecidoNome,
+            tipo: 'Cor' as const,
+            nome: vinculo.corNome,
+            sku: vinculo.sku || vinculo.corSku,
+            previewUrl: vinculo.imagemTingida,
+          })),
+          ...grupo.estampas.map((estampa) => ({
+            id: `estampa-${estampa.id}`,
+            tecidoNome: grupo.tecidoNome,
+            tipo: 'Estampa' as const,
+            nome: estampa.nome,
+            sku: estampa.sku,
+            previewUrl: estampa.imagem,
+          })),
+        ],
+      }))
+      .filter((secao) => secao.rows.length > 0);
+
+    if (secoesChecklist.length === 0) {
+      toast({
+        title: 'Nenhum dado para exportar',
+        description: 'Nao ha itens validos para montar o checklist em PDF.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setGeneratingChecklistPdf(true);
+
+    try {
+      const blob = await pdf(
+        <VinculosChecklistPdfDocument sections={secoesChecklist} />
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `checklist_vinculos_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Checklist gerado!',
+        description: `PDF com ${secoesChecklist.length} tecido(s) e ${totalLinhasVinculo} item(ns) foi baixado.`,
+      });
+    } catch (error) {
+      console.error('Erro ao exportar checklist PDF:', error);
+      toast({
+        title: 'Erro na exportacao',
+        description: 'Nao foi possivel gerar o checklist em PDF.',
+        variant: 'destructive',
+      });
+    } finally {
+      setGeneratingChecklistPdf(false);
+    }
+  };
+
   // Se estiver editando um vínculo
   if (editingVinculoId) {
     return (
@@ -1193,6 +1286,18 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
               </p>
             </div>
             <div className="flex gap-2">
+              <Button
+                onClick={handleExportarChecklistPdf}
+                variant="outline"
+                disabled={generatingChecklistPdf}
+              >
+                {generatingChecklistPdf ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <FileDown className="mr-2 h-4 w-4" />
+                )}
+                Checklist PDF
+              </Button>
               <Button onClick={handleExportarTabela} variant="outline">
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
                 Exportar XLSX
@@ -1718,4 +1823,3 @@ export function Vinculos({ onNavigateHome, onNavigateToEstampas }: VinculosProps
     </div>
   );
 }
-

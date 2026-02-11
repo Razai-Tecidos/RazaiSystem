@@ -11,3 +11,6 @@ fi
 
 echo "[pre-commit] running staged encoding guard..."
 npm run -s encoding:check:staged
+
+echo "[pre-commit] running Shopee endpoint policy gate..."
+npm run -s shopee:endpoint-policy:check

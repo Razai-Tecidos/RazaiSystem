@@ -36,6 +36,9 @@ if (-not (Test-Path $RepoRoot)) {
   throw "Repo path not found: $RepoRoot"
 }
 
+Run-Step -Title 'Policy Gate Validation' -WorkDir $RepoRoot -Commands @('npm run shopee:endpoint-policy:check')
+Run-Step -Title 'Security Audit (high+)' -WorkDir $RepoRoot -Commands @('npm run security:audit:high')
+
 switch ($Scope) {
   'frontend' {
     Run-Step -Title 'Frontend Validation' -WorkDir (Join-Path $RepoRoot 'frontend') -Commands @('npm test', 'npm run build')

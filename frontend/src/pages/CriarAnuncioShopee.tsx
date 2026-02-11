@@ -16,7 +16,7 @@ import { useShopeeProducts } from '@/hooks/useShopeeProducts';
 import { useShopee } from '@/hooks/useShopee';
 import { useShopeePreferences } from '@/hooks/useShopeePreferences';
 import { Tecido } from '@/types/tecido.types';
-import { ShopeeCategory, CreateShopeeProductData, ShopeeProduct, ProductAttributeValue, ExtendedDescription, WholesaleTier, PrecificacaoShopee, ProductLogisticInfo } from '@/types/shopee-product.types';
+import { ShopeeCategory, CreateShopeeProductData, ShopeeProduct, ProductAttributeValue, ExtendedDescription, WholesaleTier, PrecificacaoShopee, ProductLogisticInfo, ShopeeImageRatio } from '@/types/shopee-product.types';
 import { CategoryAttributes } from '@/components/Shopee/CategoryAttributes';
 import { BrandSelector } from '@/components/Shopee/BrandSelector';
 import { ShippingConfig } from '@/components/Shopee/ShippingConfig';
@@ -28,7 +28,7 @@ import { generateBrandOverlay } from '@/lib/brandOverlay';
 import { ShopeePricingParams, ShopeeMarginConfig, ShopeeMarginMode, ShopeeMarginOverridesByLength, DEFAULT_CNPJ_PRICING_PARAMS, calculateLengthPrices, calculateNetProfitReais, calculateSuggestedPrice, roundUpToPreferredCents, validatePricingParams } from '@/lib/shopeePricing';
 import { FieldHint } from '@/components/Shopee/FieldHint';
 import { FiscalInfo } from '@/components/Shopee/FiscalInfo';
-import { listMosaicosByTecido } from '@/lib/firebase/gestao-imagens';
+import { listRecentMosaicosByTecido } from '@/lib/firebase/gestao-imagens';
 import { GestaoImagemMosaico } from '@/types/gestao-imagens.types';
 import { 
   Loader2, 
@@ -82,6 +82,31 @@ function extractMetersFromTamanhoNome(nome?: string): number | null {
   if (!match) return null;
   const value = Number.parseFloat(match[1].replace(',', '.'));
   return Number.isFinite(value) ? value : null;
+}
+
+function shuffleArray<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[randomIndex]] = [copy[randomIndex], copy[index]];
+  }
+  return copy;
+}
+
+function composeInitialImageList(
+  mosaicoUrls: string[],
+  premiumUrls: string[],
+  maxItems: number = 9
+): string[] {
+  const uniqueMosaicos = Array.from(new Set(mosaicoUrls.filter(Boolean))).slice(0, 2);
+  const uniquePremium = Array.from(new Set(premiumUrls.filter(Boolean))).filter(
+    (url) => !uniqueMosaicos.includes(url)
+  );
+
+  const remainingSlots = Math.max(0, maxItems - uniqueMosaicos.length);
+  const premiumSelection = shuffleArray(uniquePremium).slice(0, remainingSlots);
+
+  return [...uniqueMosaicos, ...premiumSelection].slice(0, maxItems);
 }
 
 function toPrecificacaoPayload(
@@ -171,11 +196,17 @@ export function CriarAnuncioShopee({
   const [tituloAnuncio, setTituloAnuncio] = useState<string>('');
   const [tituloEditadoManual, setTituloEditadoManual] = useState(false);
   const [usarImagensPublicas, setUsarImagensPublicas] = useState<boolean>(true);
+  const [imagemRatioPrincipal, setImagemRatioPrincipal] = useState<ShopeeImageRatio>('1:1');
+  const [imagensPrincipais11, setImagensPrincipais11] = useState<string[]>([]);
+  const [imagensPrincipais34, setImagensPrincipais34] = useState<string[]>([]);
   const [imagensPrincipais, setImagensPrincipais] = useState<string[]>([]);
   const [uploadingImages, setUploadingImages] = useState<boolean>(false);
   const [mosaicosTecido, setMosaicosTecido] = useState<GestaoImagemMosaico[]>([]);
   const [loadingMosaicosTecido, setLoadingMosaicosTecido] = useState(false);
   const [productId, setProductId] = useState<string | null>(draftId?.startsWith('duplicate_') ? null : draftId || null);
+  const autoSelectedCoresRef = useRef(false);
+  const autoSelectedTamanhosRef = useRef(false);
+  const autoFilledImagesRef = useRef(false);
   
   // Novos campos opcionais
   const [atributos, setAtributos] = useState<ProductAttributeValue[]>([]);
@@ -269,6 +300,15 @@ export function CriarAnuncioShopee({
     [precificacaoParams, normalizePricingParams]
   );
 
+  const imagensAtivas = useMemo(
+    () => (imagemRatioPrincipal === '3:4' ? imagensPrincipais34 : imagensPrincipais11),
+    [imagemRatioPrincipal, imagensPrincipais11, imagensPrincipais34]
+  );
+
+  useEffect(() => {
+    setImagensPrincipais(imagensAtivas);
+  }, [imagensAtivas]);
+
   const getGlobalMarginDefault = useCallback((mode: ShopeeMarginMode) => {
     if (mode === 'valor_fixo') {
       return precificacaoParams.margem_lucro_fixa;
@@ -312,6 +352,19 @@ export function CriarAnuncioShopee({
     });
   }, [availableTamanhos]);
 
+  useEffect(() => {
+    if (!selectedTecido || productId || autoSelectedTamanhosRef.current) {
+      return;
+    }
+    if (availableTamanhos.length === 0) {
+      return;
+    }
+
+    const allTamanhoIds = availableTamanhos.map((tamanho) => tamanho.id);
+    setSelectedTamanhos(allTamanhoIds);
+    autoSelectedTamanhosRef.current = true;
+  }, [availableTamanhos, productId, selectedTecido]);
+
   // Carrega categorias quando shop está disponível (silencioso na carga inicial)
   useEffect(() => {
     if (selectedShop?.shopId) {
@@ -348,7 +401,7 @@ export function CriarAnuncioShopee({
     const loadMosaicos = async () => {
       try {
         setLoadingMosaicosTecido(true);
-        const data = await listMosaicosByTecido(selectedTecido.id);
+        const data = await listRecentMosaicosByTecido(selectedTecido.id, 2);
         if (active) {
           setMosaicosTecido(data);
         }
@@ -383,6 +436,9 @@ export function CriarAnuncioShopee({
   };
 
   const populateFromProduct = async (product: ShopeeProduct, id: string | null) => {
+    autoSelectedCoresRef.current = true;
+    autoSelectedTamanhosRef.current = true;
+    autoFilledImagesRef.current = true;
     // Preenche formulário com dados do produto
     const tecido = tecidos.find(t => t.id === product.tecido_id);
     if (tecido) {
@@ -403,6 +459,7 @@ export function CriarAnuncioShopee({
     setTituloAnuncio(product.titulo_anuncio || '');
     setTituloEditadoManual(Boolean(product.titulo_anuncio));
     setUsarImagensPublicas(product.usar_imagens_publicas);
+    setImagemRatioPrincipal(product.imagem_ratio_principal === '3:4' ? '3:4' : '1:1');
     setAtributos(product.atributos || []);
     setBrandId(product.brand_id ?? 0);
     setBrandNome(product.brand_nome || '');
@@ -413,9 +470,14 @@ export function CriarAnuncioShopee({
     setWholesaleTiers(product.wholesale || []);
     setSizeChartId(product.size_chart_id);
     setNcmPadrao(product.ncm_padrao || '58013600');
-    if (product.imagens_principais && product.imagens_principais.length > 0) {
-      setImagensPrincipais(product.imagens_principais);
-    }
+    const imagens11 = product.imagens_principais_1_1 && product.imagens_principais_1_1.length > 0
+      ? product.imagens_principais_1_1
+      : (product.imagem_ratio_principal !== '3:4' ? (product.imagens_principais || []) : []);
+    const imagens34 = product.imagens_principais_3_4 && product.imagens_principais_3_4.length > 0
+      ? product.imagens_principais_3_4
+      : (product.imagem_ratio_principal === '3:4' ? (product.imagens_principais || []) : []);
+    setImagensPrincipais11(imagens11.slice(0, 9));
+    setImagensPrincipais34(imagens34.slice(0, 9));
     if (id) {
       setProductId(id);
     }
@@ -465,8 +527,8 @@ export function CriarAnuncioShopee({
         comissao_percentual: defaults.comissao_percentual_padrao ?? current.comissao_percentual,
         taxa_fixa_item: defaults.taxa_fixa_item_padrao ?? current.taxa_fixa_item,
         margem_liquida_percentual: defaults.margem_liquida_percentual_padrao ?? current.margem_liquida_percentual,
-        modo_margem_lucro: defaults.modo_margem_lucro_padrao ?? current.modo_margem_lucro,
-        margem_lucro_fixa: defaults.margem_lucro_fixa_padrao ?? current.margem_lucro_fixa,
+        modo_margem_lucro: defaults.modo_margem_lucro_padrao ?? 'valor_fixo',
+        margem_lucro_fixa: defaults.margem_lucro_fixa_padrao ?? 4,
         valor_minimo_baixo_valor: defaults.valor_minimo_baixo_valor_padrao ?? current.valor_minimo_baixo_valor,
         adicional_baixo_valor: defaults.adicional_baixo_valor_padrao ?? current.adicional_baixo_valor,
         teto_comissao: defaults.teto_comissao_padrao ?? current.teto_comissao,
@@ -481,7 +543,17 @@ export function CriarAnuncioShopee({
   const handleTecidoSelect = async (tecidoId: string) => {
     const tecido = tecidos.find(t => t.id === tecidoId);
     if (tecido) {
+      autoSelectedCoresRef.current = false;
+      autoSelectedTamanhosRef.current = false;
+      autoFilledImagesRef.current = false;
       setSelectedTecido(tecido);
+      setCoresConfig([]);
+      setSelectedTamanhos([]);
+      setPrecosPorTamanho({});
+      setMargemPorTamanho({});
+      setImagensPrincipais11([]);
+      setImagensPrincipais34([]);
+      setImagemRatioPrincipal('1:1');
       await getVinculosByTecido(tecidoId);
       
       // Atualiza largura nas dimensões
@@ -496,7 +568,7 @@ export function CriarAnuncioShopee({
 
   // Quando vínculos são carregados, configura cores filtrando pelo tecido selecionado
   useEffect(() => {
-    if (vinculos.length > 0 && selectedTecido && !productId && coresConfig.length === 0) {
+    if (vinculos.length > 0 && selectedTecido && !productId && !autoSelectedCoresRef.current && coresConfig.length === 0) {
       const vinculosDoTecido = vinculos.filter(v => v.tecidoId === selectedTecido.id);
       const cores = vinculosDoTecido.map(v => ({
         cor_id: v.corId,
@@ -505,9 +577,10 @@ export function CriarAnuncioShopee({
         imagem_url: v.imagemGerada || v.imagemTingida,
         imagem_gerada: Boolean(v.imagemGerada),
         estoque: estoquePadrao,
-        selected: false,
+        selected: true,
       }));
       setCoresConfig(cores);
+      autoSelectedCoresRef.current = true;
     }
   }, [vinculos, selectedTecido, productId, estoquePadrao, coresConfig.length]);
 
@@ -625,6 +698,13 @@ export function CriarAnuncioShopee({
     });
   };
 
+  useEffect(() => {
+    if (productId) return;
+    if (selectedTamanhos.length === 0) return;
+    if (Object.keys(precosPorTamanho).length > 0) return;
+    applySuggestedPrices(precificacaoParams, selectedTamanhos, margemPorTamanho);
+  }, [applySuggestedPrices, margemPorTamanho, precificacaoParams, precosPorTamanho, productId, selectedTamanhos]);
+
   // Navegação de categorias
   const handleCategorySelect = (category: ShopeeCategory) => {
     if (category.has_children) {
@@ -662,7 +742,7 @@ export function CriarAnuncioShopee({
   const lucroLiquidoPorTamanho = useMemo(() => {
     return selectedTamanhos.reduce<Record<string, number | null>>((acc, id) => {
       const tamanho = tamanhos.find((t) => t.id === id);
-      const metros = parseFloat(tamanho?.nome || '') || 1;
+      const metros = extractMetersFromTamanhoNome(tamanho?.nome) || 1;
       const price = precosPorTamanho[id] || 0;
       if (price <= 0) {
         acc[id] = null;
@@ -681,7 +761,7 @@ export function CriarAnuncioShopee({
   const lucroLiquidoPorMetroPorTamanho = useMemo(() => {
     return selectedTamanhos.reduce<Record<string, number | null>>((acc, id) => {
       const tamanho = tamanhos.find((t) => t.id === id);
-      const metros = parseFloat(tamanho?.nome || '') || 1;
+      const metros = extractMetersFromTamanhoNome(tamanho?.nome) || 1;
       const lucroTotal = lucroLiquidoPorTamanho[id];
       if (lucroTotal === null || lucroTotal === undefined || metros <= 0) {
         acc[id] = null;
@@ -711,7 +791,7 @@ export function CriarAnuncioShopee({
 
   // Validação de etapas
   const canProceedFromTecido = selectedTecido !== null;
-  const canProceedFromImagens = true;
+  const canProceedFromImagens = imagensPrincipais11.length >= 9 && imagensPrincipais34.length >= 9;
   const canProceedFromCores = coresConfig.some(c => c.selected);
   const hasEnabledLogistics = logisticInfo.some((channel) => channel.enabled);
   const canProceedFromTamanhosPrecificacao = temPrecoValido && !pricingError && pricingParamErrors.length === 0;
@@ -791,6 +871,9 @@ export function CriarAnuncioShopee({
       titulo_anuncio: tituloTrim || undefined,
       descricao_customizada: descricaoCustomizada || undefined,
       usar_imagens_publicas: usarImagensPublicas,
+      imagem_ratio_principal: imagemRatioPrincipal,
+      imagens_principais_1_1: imagensPrincipais11.length > 0 ? imagensPrincipais11 : undefined,
+      imagens_principais_3_4: imagensPrincipais34.length > 0 ? imagensPrincipais34 : undefined,
       imagens_principais: imagensPrincipais.length > 0 ? imagensPrincipais : undefined,
       atributos: atributos.length > 0 ? atributos : undefined,
       brand_id: brandId,
@@ -831,6 +914,61 @@ export function CriarAnuncioShopee({
 
   // Cores selecionadas
   const selectedCores = coresConfig.filter(c => c.selected);
+  const selectedCorIds = useMemo(() => new Set(selectedCores.map((cor) => cor.cor_id)), [selectedCores]);
+
+  const premiumSquareCandidates = useMemo(() => {
+    if (!selectedTecido) return [];
+    return vinculos
+      .filter((vinculo) =>
+        vinculo.tecidoId === selectedTecido.id &&
+        selectedCorIds.has(vinculo.corId) &&
+        Boolean(vinculo.imagemPremiumSquare)
+      )
+      .map((vinculo) => vinculo.imagemPremiumSquare!)
+      .filter(Boolean);
+  }, [selectedCorIds, selectedTecido, vinculos]);
+
+  const premiumPortraitCandidates = useMemo(() => {
+    if (!selectedTecido) return [];
+    return vinculos
+      .filter((vinculo) =>
+        vinculo.tecidoId === selectedTecido.id &&
+        selectedCorIds.has(vinculo.corId) &&
+        Boolean(vinculo.imagemPremiumPortrait)
+      )
+      .map((vinculo) => vinculo.imagemPremiumPortrait!)
+      .filter(Boolean);
+  }, [selectedCorIds, selectedTecido, vinculos]);
+
+  useEffect(() => {
+    if (!selectedTecido || productId || autoFilledImagesRef.current) {
+      return;
+    }
+
+    const mosaicosSquare = mosaicosTecido.map((mosaico) => mosaico.outputSquareUrl).filter(Boolean);
+    const mosaicosPortrait = mosaicosTecido.map((mosaico) => mosaico.outputPortraitUrl).filter(Boolean);
+    const next11 = composeInitialImageList(mosaicosSquare, premiumSquareCandidates, 9);
+    const next34 = composeInitialImageList(mosaicosPortrait, premiumPortraitCandidates, 9);
+
+    if (next11.length > 0 && imagensPrincipais11.length === 0) {
+      setImagensPrincipais11(next11);
+    }
+    if (next34.length > 0 && imagensPrincipais34.length === 0) {
+      setImagensPrincipais34(next34);
+    }
+
+    if (next11.length > 0 || next34.length > 0) {
+      autoFilledImagesRef.current = true;
+    }
+  }, [
+    imagensPrincipais11.length,
+    imagensPrincipais34.length,
+    mosaicosTecido,
+    premiumPortraitCandidates,
+    premiumSquareCandidates,
+    productId,
+    selectedTecido,
+  ]);
 
   // Calcula total de combinações
   const totalCombinations = selectedCores.length * (selectedTamanhos.length || 1);
@@ -905,7 +1043,11 @@ export function CriarAnuncioShopee({
       if (pricingParamErrors.length === 0) filled++;
       return Math.round((filled / 3) * 100);
     }
-    if (currentStep === 'imagens') return imagensPrincipais.length > 0 ? 100 : 0;
+    if (currentStep === 'imagens') {
+      const progress11 = Math.min(imagensPrincipais11.length, 9);
+      const progress34 = Math.min(imagensPrincipais34.length, 9);
+      return Math.round(((progress11 + progress34) / 18) * 100);
+    }
     if (currentStep === 'configuracoes') {
       const totalFields = 10;
       let filled = 0;
@@ -923,7 +1065,7 @@ export function CriarAnuncioShopee({
       return Math.round((filled / totalFields) * 100);
     }
     return 100;
-  }, [currentStep, selectedTecido, imagensPrincipais.length, selectedCores, selectedTamanhos.length, precoUnico, temPrecoValido, pricingParamErrors.length, estoquePadrao, tituloValido, categoriaId, mandatoryAttributesReadyAndValid, mandatoryBrandReadyAndValid, hasEnabledLogistics, sizeChartReadyAndValid, peso, dimensoes]);
+  }, [currentStep, selectedTecido, imagensPrincipais11.length, imagensPrincipais34.length, selectedCores, selectedTamanhos.length, precoUnico, temPrecoValido, pricingParamErrors.length, estoquePadrao, tituloValido, categoriaId, mandatoryAttributesReadyAndValid, mandatoryBrandReadyAndValid, hasEnabledLogistics, sizeChartReadyAndValid, peso, dimensoes]);
 
   // Gerar overlays de marca quando entrar no preview
   useEffect(() => {
@@ -955,13 +1097,30 @@ export function CriarAnuncioShopee({
   }, [coresConfig]);
 
   // Upload de imagens principais
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInput11Ref = useRef<HTMLInputElement>(null);
+  const fileInput34Ref = useRef<HTMLInputElement>(null);
 
-  const handleImageUpload = useCallback(async (files: FileList) => {
-    if (imagensPrincipais.length + files.length > 9) {
+  const updateImagesByRatio = useCallback((
+    ratio: ShopeeImageRatio,
+    updater: (current: string[]) => string[]
+  ) => {
+    if (ratio === '3:4') {
+      setImagensPrincipais34((previous) => updater(previous));
+      return;
+    }
+    setImagensPrincipais11((previous) => updater(previous));
+  }, []);
+
+  const getImagesByRatio = useCallback((ratio: ShopeeImageRatio): string[] => {
+    return ratio === '3:4' ? imagensPrincipais34 : imagensPrincipais11;
+  }, [imagensPrincipais11, imagensPrincipais34]);
+
+  const handleImageUpload = useCallback(async (files: FileList, ratio: ShopeeImageRatio) => {
+    const currentImages = getImagesByRatio(ratio);
+    if (currentImages.length + files.length > 9) {
       toast({
         title: 'Limite de imagens',
-        description: 'O máximo é 9 imagens principais por anúncio.',
+        description: `O maximo e 9 imagens ${ratio} por anuncio.`,
         variant: 'destructive',
       });
       return;
@@ -975,7 +1134,7 @@ export function CriarAnuncioShopee({
       try {
         const timestamp = Date.now();
         const safeName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-        const storageRef = ref(storage, `shopee-anuncios/${productId || 'temp'}/${timestamp}_${safeName}`);
+        const storageRef = ref(storage, `shopee-anuncios/${productId || 'temp'}/${ratio}/${timestamp}_${safeName}`);
         await uploadBytes(storageRef, file);
         const url = await getDownloadURL(storageRef);
         newUrls.push(url);
@@ -990,163 +1149,198 @@ export function CriarAnuncioShopee({
     }
 
     if (newUrls.length > 0) {
-      setImagensPrincipais(prev => [...prev, ...newUrls]);
+      updateImagesByRatio(ratio, (previous) => [...previous, ...newUrls].slice(0, 9));
     }
-    setUploadingImages(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [imagensPrincipais, productId, toast]);
 
-  const useImageAsCover = useCallback((url: string) => {
-    setImagensPrincipais((previous) => {
+    setUploadingImages(false);
+    if (ratio === '3:4' && fileInput34Ref.current) fileInput34Ref.current.value = '';
+    if (ratio === '1:1' && fileInput11Ref.current) fileInput11Ref.current.value = '';
+  }, [getImagesByRatio, productId, toast, updateImagesByRatio]);
+
+  const useImageAsCover = useCallback((url: string, ratio: ShopeeImageRatio) => {
+    updateImagesByRatio(ratio, (previous) => {
       const deduped = previous.filter((existing) => existing !== url);
       return [url, ...deduped].slice(0, 9);
     });
-  }, []);
+  }, [updateImagesByRatio]);
 
-  const removeMainImage = useCallback((index: number) => {
-    setImagensPrincipais(prev => prev.filter((_, i) => i !== index));
-  }, []);
+  const removeMainImage = useCallback((ratio: ShopeeImageRatio, index: number) => {
+    updateImagesByRatio(ratio, (previous) => previous.filter((_, imageIndex) => imageIndex !== index));
+  }, [updateImagesByRatio]);
 
-  const moveMainImage = useCallback((fromIndex: number, toIndex: number) => {
-    if (toIndex < 0 || toIndex >= imagensPrincipais.length) return;
-    setImagensPrincipais(prev => {
-      const arr = [...prev];
-      const [item] = arr.splice(fromIndex, 1);
-      arr.splice(toIndex, 0, item);
-      return arr;
+  const moveMainImage = useCallback((ratio: ShopeeImageRatio, fromIndex: number, toIndex: number) => {
+    const images = getImagesByRatio(ratio);
+    if (toIndex < 0 || toIndex >= images.length) return;
+
+    updateImagesByRatio(ratio, (previous) => {
+      const next = [...previous];
+      const [item] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, item);
+      return next;
     });
-  }, [imagensPrincipais.length]);
+  }, [getImagesByRatio, updateImagesByRatio]);
 
-  const renderImageSelectionStep = () => (
-    <div className="space-y-6">
-      <div>
-        <FieldHint
-          label="Imagens Principais do Anuncio"
-          hint="Essas imagens formam a galeria do anuncio. A primeira e a capa. Maximo 9 imagens."
-          description={`${imagensPrincipais.length}/9 imagens`}
-        >
-          <div className="mt-2 space-y-3">
-            {selectedTecido && (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-medium text-gray-700">Capas prontas da Gestao de Imagens</p>
-                  {loadingMosaicosTecido ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />
-                  ) : null}
-                </div>
-                {mosaicosTecido.length === 0 ? (
-                  <p className="text-xs text-gray-500">
-                    Nenhum mosaico salvo para este tecido.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                    {mosaicosTecido.slice(0, 8).map((mosaico) => (
-                      <button
-                        key={mosaico.id}
-                        type="button"
-                        onClick={() => useImageAsCover(mosaico.outputSquareUrl)}
-                        className="group rounded-md border border-gray-200 overflow-hidden hover:border-blue-300 hover:shadow-sm transition-all text-left"
-                      >
-                        <img
-                          src={mosaico.outputSquareUrl}
-                          alt={`Mosaico ${mosaico.templateId}`}
-                          className="w-full aspect-square object-cover"
-                        />
-                        <div className="px-2 py-1.5 text-[11px] text-gray-600 group-hover:text-blue-700 truncate">
-                          Usar como capa
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+  const renderRatioGallery = (ratio: ShopeeImageRatio) => {
+    const images = getImagesByRatio(ratio);
+    const isSquare = ratio === '1:1';
+    const mosaicoPreviewUrls = mosaicosTecido
+      .map((mosaico) => (isSquare ? mosaico.outputSquareUrl : mosaico.outputPortraitUrl))
+      .filter(Boolean);
+
+    return (
+      <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Galeria {ratio}</p>
+            <p className="text-xs text-gray-500">{images.length}/9 imagens</p>
+          </div>
+          <Button
+            type="button"
+            variant={imagemRatioPrincipal === ratio ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setImagemRatioPrincipal(ratio)}
+          >
+            Usar como principal
+          </Button>
+        </div>
+
+        {selectedTecido && (
+          <div className="rounded-md border border-gray-200 bg-gray-50 p-2.5">
+            <p className="text-[11px] font-medium text-gray-700 mb-2">
+              Sugestoes automaticas ({ratio}): 2 ultimos mosaicos + premium random
+            </p>
+            {loadingMosaicosTecido ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Carregando mosaicos...
               </div>
-            )}
-
-            {imagensPrincipais.length > 0 && (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                {imagensPrincipais.map((url, index) => (
-                  <div key={index} className="relative group aspect-square border rounded-lg overflow-hidden bg-gray-50">
+            ) : mosaicoPreviewUrls.length === 0 ? (
+              <p className="text-xs text-gray-500">Nenhum mosaico salvo para este tecido.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {mosaicoPreviewUrls.map((url, index) => (
+                  <button
+                    key={`${ratio}-mosaico-${index}`}
+                    type="button"
+                    onClick={() => useImageAsCover(url, ratio)}
+                    className="group rounded-md border border-gray-200 overflow-hidden hover:border-blue-300 hover:shadow-sm transition-all text-left"
+                  >
                     <img
                       src={url}
-                      alt={`Imagem ${index + 1}`}
-                      className="w-full h-full object-cover"
+                      alt={`Mosaico ${ratio}`}
+                      className={`w-full ${isSquare ? 'aspect-square' : 'aspect-[3/4]'} object-cover`}
                     />
-                    {index === 0 && (
-                      <span className="absolute top-1 left-1 bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-medium">
-                        Capa
-                      </span>
-                    )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
-                      {index > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => moveMainImage(index, index - 1)}
-                          className="bg-white rounded-full p-1.5 shadow hover:bg-gray-100"
-                          title="Mover para esquerda"
-                        >
-                          <ChevronLeft className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {index < imagensPrincipais.length - 1 && (
-                        <button
-                          type="button"
-                          onClick={() => moveMainImage(index, index + 1)}
-                          className="bg-white rounded-full p-1.5 shadow hover:bg-gray-100"
-                          title="Mover para direita"
-                        >
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => removeMainImage(index)}
-                        className="bg-red-500 text-white rounded-full p-1.5 shadow hover:bg-red-600"
-                        title="Remover"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="px-2 py-1 text-[11px] text-gray-600 group-hover:text-blue-700 truncate">
+                      Usar na galeria {ratio}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
-
-            {imagensPrincipais.length < 9 && (
-              <div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => e.target.files && handleImageUpload(e.target.files)}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingImages}
-                  className="min-h-[44px]"
-                >
-                  {uploadingImages ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4 mr-2" />
-                  )}
-                  {uploadingImages ? 'Enviando...' : 'Adicionar Imagens'}
-                </Button>
-              </div>
-            )}
-
-            {imagensPrincipais.length === 0 && (
-              <p className="text-sm text-amber-600 flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4" />
-                Adicione pelo menos 1 imagem. Se nao adicionar, sera usada a imagem padrao do tecido.
-              </p>
-            )}
           </div>
-        </FieldHint>
+        )}
+
+        {images.length > 0 ? (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+            {images.map((url, index) => (
+              <div key={`${ratio}-${index}`} className={`relative group border rounded-lg overflow-hidden bg-gray-50 ${isSquare ? 'aspect-square' : 'aspect-[3/4]'}`}>
+                <img
+                  src={url}
+                  alt={`Imagem ${ratio} ${index + 1}`}
+                  className="w-full h-full object-cover"
+                />
+                {index === 0 && (
+                  <span className="absolute top-1 left-1 bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-medium">
+                    Capa
+                  </span>
+                )}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                  {index > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => moveMainImage(ratio, index, index - 1)}
+                      className="bg-white rounded-full p-1.5 shadow hover:bg-gray-100"
+                      title="Mover para esquerda"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {index < images.length - 1 && (
+                    <button
+                      type="button"
+                      onClick={() => moveMainImage(ratio, index, index + 1)}
+                      className="bg-white rounded-full p-1.5 shadow hover:bg-gray-100"
+                      title="Mover para direita"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeMainImage(ratio, index)}
+                    className="bg-red-500 text-white rounded-full p-1.5 shadow hover:bg-red-600"
+                    title="Remover"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-amber-600 flex items-center gap-1.5">
+            <AlertCircle className="w-4 h-4" />
+            Galeria {ratio} vazia. Adicione imagens para usar essa proporcao.
+          </p>
+        )}
+
+        {images.length < 9 && (
+          <div>
+            <input
+              ref={isSquare ? fileInput11Ref : fileInput34Ref}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              className="hidden"
+              onChange={(e) => e.target.files && handleImageUpload(e.target.files, ratio)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => (isSquare ? fileInput11Ref.current?.click() : fileInput34Ref.current?.click())}
+              disabled={uploadingImages}
+              className="min-h-[44px]"
+            >
+              {uploadingImages ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 mr-2" />
+              )}
+              {uploadingImages ? 'Enviando...' : `Adicionar imagens ${ratio}`}
+            </Button>
+          </div>
+        )}
       </div>
+    );
+  };
+
+  const renderImageSelectionStep = () => (
+    <div className="space-y-6">
+      <FieldHint
+        label="Imagens Principais do Anuncio"
+        hint="A Shopee suporta 1:1 como padrao e 3:4 quando enviado com ratio explicito."
+        description={`1:1: ${imagensPrincipais11.length}/9 | 3:4: ${imagensPrincipais34.length}/9`}
+      >
+        <div className="mt-2 space-y-4">
+          {renderRatioGallery('1:1')}
+          {renderRatioGallery('3:4')}
+        </div>
+      </FieldHint>
+      {!canProceedFromImagens && (
+        <p className="text-sm text-amber-600">
+          Para continuar, complete as duas galerias com 9 imagens em 1:1 e 9 imagens em 3:4.
+        </p>
+      )}
 
       <div>
         <FieldHint
@@ -1177,7 +1371,6 @@ export function CriarAnuncioShopee({
       </div>
     </div>
   );
-
   return (
     <div className="min-h-screen bg-gray-50">
       <Header onNavigateHome={onNavigateHome} />

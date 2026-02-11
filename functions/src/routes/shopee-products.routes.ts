@@ -1,10 +1,30 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { ensureOwnedShopOrFail } from '../middleware/shopee-shop-ownership.middleware';
 import * as productService from '../services/shopee-product.service';
 import * as syncService from '../services/shopee-sync.service';
 import { CreateShopeeProductData } from '../types/shopee-product.types';
 
 const router = Router();
+
+function logPublishRoute(
+  level: 'info' | 'error',
+  event: string,
+  details: Record<string, unknown>
+): void {
+  const payload = JSON.stringify({
+    ts: new Date().toISOString(),
+    module: 'shopee_products.route',
+    event,
+    ...details,
+  });
+
+  if (level === 'error') {
+    console.error(payload);
+    return;
+  }
+  console.log(payload);
+}
 
 /**
  * GET /api/shopee/products
@@ -66,7 +86,10 @@ router.post('/sync-all', authMiddleware, async (req: Request, res: Response): Pr
       return;
     }
     
-    const result = await syncService.syncAllProducts(shop_id);
+    const shopId = await ensureOwnedShopOrFail(req, res, shop_id);
+    if (!shopId) return;
+
+    const result = await syncService.syncAllProducts(shopId);
     
     res.json({
       success: true,
@@ -162,6 +185,9 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       titulo_anuncio,
       usar_imagens_publicas,
       imagens_principais,
+      imagens_principais_1_1,
+      imagens_principais_3_4,
+      imagem_ratio_principal,
       template_id,
       video_url,
       atributos,
@@ -242,6 +268,30 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       });
       return;
     }
+
+    if (imagem_ratio_principal !== undefined && imagem_ratio_principal !== '1:1' && imagem_ratio_principal !== '3:4') {
+      res.status(400).json({
+        success: false,
+        error: 'imagem_ratio_principal deve ser "1:1" ou "3:4"',
+      });
+      return;
+    }
+
+    if (imagens_principais_1_1 && imagens_principais_1_1.length > 9) {
+      res.status(400).json({
+        success: false,
+        error: 'imagens_principais_1_1 permite no maximo 9 imagens',
+      });
+      return;
+    }
+
+    if (imagens_principais_3_4 && imagens_principais_3_4.length > 9) {
+      res.status(400).json({
+        success: false,
+        error: 'imagens_principais_3_4 permite no maximo 9 imagens',
+      });
+      return;
+    }
     
     // Valida estoque de cada cor
     for (const cor of cores) {
@@ -277,6 +327,9 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       titulo_anuncio,
       usar_imagens_publicas,
       imagens_principais,
+      imagens_principais_1_1,
+      imagens_principais_3_4,
+      imagem_ratio_principal,
       template_id,
       video_url,
       atributos,
@@ -409,22 +462,40 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response): Promi
  * Publica um rascunho na Shopee
  */
 router.post('/:id/publish', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const requestStartedAt = Date.now();
+  const { id } = req.params;
+  const dryRun = req.query.dry_run === 'true';
+
   try {
     const userId = req.user?.uid;
-    const { id } = req.params;
 
     if (!userId) {
+      logPublishRoute('error', 'publish.request.unauthenticated', {
+        product_id: id,
+        dry_run: dryRun,
+      });
       res.status(401).json({
         success: false,
-        error: 'Usuário não autenticado',
+        error: 'Usuario nao autenticado',
       });
       return;
     }
 
-    const dryRun = req.query.dry_run === 'true';
+    logPublishRoute('info', 'publish.request.received', {
+      product_id: id,
+      user_id: userId,
+      dry_run: dryRun,
+    });
+
     const result = await productService.publishProduct(id, userId, dryRun);
 
     if (dryRun) {
+      logPublishRoute('info', 'publish.request.success', {
+        product_id: id,
+        user_id: userId,
+        dry_run: true,
+        duration_ms: Date.now() - requestStartedAt,
+      });
       res.json({
         success: true,
         dry_run: true,
@@ -434,19 +505,33 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
       return;
     }
 
+    logPublishRoute('info', 'publish.request.success', {
+      product_id: id,
+      user_id: userId,
+      dry_run: false,
+      duration_ms: Date.now() - requestStartedAt,
+    });
+
     res.json({
       success: true,
       data: result,
       message: 'Produto publicado com sucesso na Shopee',
     });
   } catch (error: any) {
-    console.error('[publish] ERRO:', error.message);
+    const errorMessage = error.message || 'Erro ao publicar produto';
     const normalizedErrorMessage = String(error.message || '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase();
 
     if (normalizedErrorMessage.includes('publicacao ja em andamento')) {
+      logPublishRoute('error', 'publish.request.error', {
+        product_id: id,
+        dry_run: dryRun,
+        status_code: 409,
+        duration_ms: Date.now() - requestStartedAt,
+        error: errorMessage,
+      });
       res.status(409).json({
         success: false,
         error: error.message,
@@ -455,6 +540,13 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
     }
 
     if (normalizedErrorMessage.includes('validacao falhou') || normalizedErrorMessage.includes('validacao pre-publish reforcada falhou')) {
+      logPublishRoute('error', 'publish.request.error', {
+        product_id: id,
+        dry_run: dryRun,
+        status_code: 400,
+        duration_ms: Date.now() - requestStartedAt,
+        error: errorMessage,
+      });
       res.status(400).json({
         success: false,
         error: error.message,
@@ -463,6 +555,13 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
     }
 
     if (normalizedErrorMessage.includes('permissao')) {
+      logPublishRoute('error', 'publish.request.error', {
+        product_id: id,
+        dry_run: dryRun,
+        status_code: 403,
+        duration_ms: Date.now() - requestStartedAt,
+        error: errorMessage,
+      });
       res.status(403).json({
         success: false,
         error: error.message,
@@ -471,6 +570,13 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
     }
 
     if (normalizedErrorMessage.includes('nao encontrado')) {
+      logPublishRoute('error', 'publish.request.error', {
+        product_id: id,
+        dry_run: dryRun,
+        status_code: 404,
+        duration_ms: Date.now() - requestStartedAt,
+        error: errorMessage,
+      });
       res.status(404).json({
         success: false,
         error: error.message,
@@ -478,9 +584,16 @@ router.post('/:id/publish', authMiddleware, async (req: Request, res: Response):
       return;
     }
 
+    logPublishRoute('error', 'publish.request.error', {
+      product_id: id,
+      dry_run: dryRun,
+      status_code: 500,
+      duration_ms: Date.now() - requestStartedAt,
+      error: errorMessage,
+    });
     res.status(500).json({
       success: false,
-      error: error.message || 'Erro ao publicar produto',
+      error: errorMessage,
     });
   }
 });

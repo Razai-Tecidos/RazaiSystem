@@ -4,7 +4,7 @@ Ultima atualizacao: 2026-02-11
 
 ## Leitura rapida (para agentes)
 1. Fluxo de anuncio end-to-end: `docs/SHOPEE_ANUNCIOS.md`
-2. Status por ondas/tasks: `docs/SHOPEE_ANUNCIOS_ROADMAP.md`
+2. Status e historico consolidado: `docs/SHOPEE_ANUNCIOS.md` + `docs/ENTREGAS_2026-02-11.md`
 3. Endpoints e contratos: `docs/SHOPEE_API_REFERENCIA.md`
 4. Entrypoints de codigo:
 - `frontend/src/pages/CriarAnuncioShopee.tsx`
@@ -104,7 +104,7 @@ rg -n "canProceedFrom|validationErrors|STEP_ORDER" frontend/src/pages/CriarAnunc
 
 ## Documentos relacionados
 - Fluxo de anuncio: `docs/SHOPEE_ANUNCIOS.md`
-- Roadmap de implementacao: `docs/SHOPEE_ANUNCIOS_ROADMAP.md`
+- Historico consolidado de entregas: `docs/ENTREGAS_2026-02-11.md`
 - Referencia de endpoints: `docs/SHOPEE_API_REFERENCIA.md`
 - Setup de webhook: `docs/SHOPEE_WEBHOOK_SETUP.md`
 - Revisao de estoque: `docs/SHOPEE_STOCK_REVIEW.md`

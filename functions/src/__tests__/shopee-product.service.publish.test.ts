@@ -270,4 +270,57 @@ describe('shopee-product.service publish rollback', () => {
       jest.useRealTimers();
     }
   });
+
+  it('faz retry de upload de imagem e publica com sucesso apos falha transiente', async () => {
+    jest.useFakeTimers();
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    try {
+      mockUploadImageToShopeeMultipart
+        .mockRejectedValueOnce(new Error('timeout while uploading image'))
+        .mockResolvedValue({
+          error: '',
+          message: '',
+          response: {
+            image_info: {
+              image_id: 'image-main-1',
+            },
+          },
+        });
+
+      mockCallShopeeApi
+        .mockReset()
+        .mockResolvedValueOnce({
+          error: '',
+          message: '',
+          response: { item_id: 123456789 },
+        })
+        .mockResolvedValueOnce({
+          error: '',
+          message: '',
+          response: { model: [] },
+        });
+
+      const publishPromise = publishProduct('prod-1', 'user-1');
+      await jest.advanceTimersByTimeAsync(7000);
+      const published = await publishPromise;
+
+      expect(mockUploadImageToShopeeMultipart).toHaveBeenCalledTimes(2);
+      expect(mockCallShopeeApi).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        path: '/api/v2/product/add_item',
+        method: 'POST',
+      }));
+      expect(mockCallShopeeApi).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        path: '/api/v2/product/init_tier_variation',
+        method: 'POST',
+      }));
+
+      expect((published as any).item_id).toBe(123456789);
+      expect(mockProductState.status).toBe('created');
+      expect(mockProductState.publish_lock).toBe(mockFieldDeleteSentinel);
+    } finally {
+      randomSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
 });

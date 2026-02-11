@@ -4,8 +4,6 @@ import {
   collection,
   doc,
   getDocs,
-  limit,
-  orderBy,
   query,
   writeBatch,
   where,
@@ -60,8 +58,38 @@ export async function createGestaoImagemMosaico(
   if (data.isDefaultForTecido) {
     await setDefaultMosaicoForTecido(data.tecidoId, docRef.id);
   }
+  await keepOnlyLatestMosaicoForTecido(data.tecidoId, docRef.id);
 
   return docRef.id;
+}
+
+async function keepOnlyLatestMosaicoForTecido(tecidoId: string, keepMosaicoId: string): Promise<void> {
+  const q = query(
+    collection(db, COLLECTION_NAME),
+    where('tecidoId', '==', tecidoId)
+  );
+
+  const snapshot = await getDocs(q);
+  const batch = writeBatch(db);
+  let hasDelete = false;
+
+  const docsSorted = snapshot.docs.sort((a, b) => {
+    if (a.id === keepMosaicoId) return -1;
+    if (b.id === keepMosaicoId) return 1;
+    const aCreatedAt = a.data().createdAt?.toMillis?.() ?? 0;
+    const bCreatedAt = b.data().createdAt?.toMillis?.() ?? 0;
+    return bCreatedAt - aCreatedAt;
+  });
+
+  docsSorted.forEach((mosaicoDoc, index) => {
+    if (index < 2) return;
+    batch.delete(mosaicoDoc.ref);
+    hasDelete = true;
+  });
+
+  if (hasDelete) {
+    await batch.commit();
+  }
 }
 
 export async function setDefaultMosaicoForTecido(
@@ -98,41 +126,63 @@ export async function setDefaultMosaicoForTecido(
 }
 
 export async function listMosaicosByTecido(tecidoId: string): Promise<GestaoImagemMosaico[]> {
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    where('tecidoId', '==', tecidoId),
-    orderBy('createdAt', 'desc')
-  );
+  return listMosaicosByTecidoWithLimit(tecidoId, 1);
+}
 
-  const snapshot = await getDocs(q);
-  const items = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  })) as GestaoImagemMosaico[];
+export async function listRecentMosaicosByTecido(
+  tecidoId: string,
+  limit: number = 2
+): Promise<GestaoImagemMosaico[]> {
+  const items = await listMosaicosByTecidoWithLimit(tecidoId, Math.max(1, limit));
+  return items;
+}
 
-  return items.sort((a, b) => {
+async function listMosaicosByTecidoWithLimit(
+  tecidoId: string,
+  limit: number
+): Promise<GestaoImagemMosaico[]> {
+  let items: GestaoImagemMosaico[] = [];
+
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('tecidoId', '==', tecidoId)
+    );
+
+    const snapshot = await getDocs(q);
+    items = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as GestaoImagemMosaico[];
+  } catch (primaryError) {
+    console.warn('[gestao-imagens] Falha na query filtrada. Aplicando fallback por varredura completa.', primaryError);
+    const snapshot = await getDocs(collection(db, COLLECTION_NAME));
+    const allItems = snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as GestaoImagemMosaico[];
+    items = allItems.filter((item) => item.tecidoId === tecidoId);
+  }
+
+  const sorted = items.sort((a, b) => {
     const aDefault = a.isDefaultForTecido ? 1 : 0;
     const bDefault = b.isDefaultForTecido ? 1 : 0;
-    return bDefault - aDefault;
+    if (bDefault !== aDefault) return bDefault - aDefault;
+
+    const aCreatedAt = a.createdAt?.toMillis?.() ?? 0;
+    const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
+    return bCreatedAt - aCreatedAt;
   });
+
+  return sorted.slice(0, limit);
 }
 
 export async function getLatestMosaicoByTecido(tecidoId: string): Promise<GestaoImagemMosaico | null> {
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    where('tecidoId', '==', tecidoId),
-    orderBy('createdAt', 'desc'),
-    limit(1)
-  );
-
-  const snapshot = await getDocs(q);
-  if (snapshot.empty) {
+  const items = await listMosaicosByTecido(tecidoId);
+  if (items.length === 0) {
     return null;
   }
 
-  const latestDoc = snapshot.docs[0];
-  return {
-    id: latestDoc.id,
-    ...latestDoc.data(),
-  } as GestaoImagemMosaico;
+  return items[0];
 }

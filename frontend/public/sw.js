@@ -32,8 +32,11 @@ self.addEventListener('activate', (event) => {
 
 // Fetch - estratégia Network First com fallback para cache
 self.addEventListener('fetch', (event) => {
+  const requestUrl = new URL(event.request.url);
+
   // Ignorar requisições para Firebase e APIs externas
   if (
+    requestUrl.pathname.startsWith('/api/') ||
     event.request.url.includes('firebaseapp.com') ||
     event.request.url.includes('googleapis.com') ||
     event.request.url.includes('firebaseio.com') ||

@@ -1,17 +1,56 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { ensureOwnedShopOrFail } from '../middleware/shopee-shop-ownership.middleware';
 import * as categoryService from '../services/shopee-category.service';
 
 const router = Router();
+const DEFAULT_SHOPEE_LANGUAGE = 'pt-BR';
+
+router.use(authMiddleware);
+router.use(async (req: Request, res: Response, next: NextFunction) => {
+  const rawShopId = req.method === 'GET'
+    ? req.query.shop_id
+    : req.body?.shop_id;
+
+  const shopId = await ensureOwnedShopOrFail(req, res, rawShopId);
+  if (!shopId) return;
+
+  res.locals.shopId = shopId;
+  next();
+});
+
+function resolveLanguage(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_SHOPEE_LANGUAGE;
+  const sanitized = value.replace('_', '-').trim();
+  return sanitized || DEFAULT_SHOPEE_LANGUAGE;
+}
+
+function extractShopeeEndpoint(errorMessage: string): string | null {
+  const match = errorMessage.match(/\/api\/v2\/[a-z0-9_/-]+/i);
+  return match?.[0] || null;
+}
+
+function toEndpointOrientedError(error: unknown, fallback: string): { message: string; endpoint?: string } {
+  const raw = error instanceof Error ? error.message : String(error || fallback);
+  const endpoint = extractShopeeEndpoint(raw);
+  if (endpoint) {
+    return {
+      message: `Falha ao consultar Shopee no endpoint ${endpoint}. Verifique permissões/categoria e tente novamente. Detalhe: ${raw}`,
+      endpoint,
+    };
+  }
+  return { message: raw || fallback };
+}
 
 /**
  * GET /api/shopee/categories
  * Lista categorias (do cache ou da API)
  */
-router.get('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string, 10);
     const forceRefresh = req.query.refresh === 'true';
+    const language = resolveLanguage(req.query.language);
     
     if (!shopId || isNaN(shopId)) {
       res.status(400).json({
@@ -21,7 +60,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
       return;
     }
     
-    const categories = await categoryService.getCategories(shopId, forceRefresh);
+    const categories = await categoryService.getCategories(shopId, forceRefresh, language);
     
     res.json({
       success: true,
@@ -40,10 +79,11 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
  * GET /api/shopee/categories/subcategories
  * Lista subcategorias de uma categoria pai
  */
-router.get('/subcategories', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/subcategories', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string, 10);
     const parentId = req.query.parent_id ? parseInt(req.query.parent_id as string, 10) : undefined;
+    const language = resolveLanguage(req.query.language);
     
     if (!shopId || isNaN(shopId)) {
       res.status(400).json({
@@ -53,7 +93,7 @@ router.get('/subcategories', authMiddleware, async (req: Request, res: Response)
       return;
     }
     
-    const subcategories = await categoryService.getSubcategories(shopId, parentId);
+    const subcategories = await categoryService.getSubcategories(shopId, parentId, language);
     
     res.json({
       success: true,
@@ -73,9 +113,10 @@ router.get('/subcategories', authMiddleware, async (req: Request, res: Response)
  * Força atualização do cache de categorias
  * IMPORTANTE: Esta rota deve vir ANTES das rotas com :id
  */
-router.post('/refresh', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.body.shop_id as string, 10);
+    const language = resolveLanguage(req.body.language);
     
     if (!shopId || isNaN(shopId)) {
       res.status(400).json({
@@ -85,7 +126,7 @@ router.post('/refresh', authMiddleware, async (req: Request, res: Response): Pro
       return;
     }
     
-    const categories = await categoryService.forceRefreshCategories(shopId);
+    const categories = await categoryService.forceRefreshCategories(shopId, language);
     
     res.json({
       success: true,
@@ -105,10 +146,11 @@ router.post('/refresh', authMiddleware, async (req: Request, res: Response): Pro
  * GET /api/shopee/categories/:id
  * Busca uma categoria por ID
  */
-router.get('/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string, 10);
     const categoryId = parseInt(req.params.id, 10);
+    const language = resolveLanguage(req.query.language);
     
     if (!shopId || isNaN(shopId)) {
       res.status(400).json({
@@ -126,7 +168,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response): Promise<
       return;
     }
     
-    const category = await categoryService.getCategoryById(shopId, categoryId);
+    const category = await categoryService.getCategoryById(shopId, categoryId, language);
     
     if (!category) {
       res.status(404).json({
@@ -153,10 +195,11 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response): Promise<
  * GET /api/shopee/categories/:id/path
  * Busca o caminho completo de uma categoria (breadcrumb)
  */
-router.get('/:id/path', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/:id/path', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string, 10);
     const categoryId = parseInt(req.params.id, 10);
+    const language = resolveLanguage(req.query.language);
     
     if (!shopId || isNaN(shopId)) {
       res.status(400).json({
@@ -174,7 +217,7 @@ router.get('/:id/path', authMiddleware, async (req: Request, res: Response): Pro
       return;
     }
     
-    const path = await categoryService.getCategoryPath(shopId, categoryId);
+    const path = await categoryService.getCategoryPath(shopId, categoryId, language);
     
     res.json({
       success: true,
@@ -193,7 +236,7 @@ router.get('/:id/path', authMiddleware, async (req: Request, res: Response): Pro
  * GET /api/shopee/categories/:id/attributes
  * Busca atributos de uma categoria
  */
-router.get('/:id/attributes', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/:id/attributes', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string, 10);
     const categoryId = parseInt(req.params.id, 10);
@@ -226,9 +269,12 @@ router.get('/:id/attributes', authMiddleware, async (req: Request, res: Response
     return;
   } catch (error: any) {
     console.error('Erro ao buscar atributos da categoria:', error);
+    const mapped = toEndpointOrientedError(error, 'Erro ao buscar atributos da categoria');
     res.status(500).json({
       success: false,
-      error: error.message || 'Erro ao buscar atributos da categoria',
+      error: mapped.message,
+      endpoint: mapped.endpoint,
+      error_code: mapped.endpoint ? 'SHOPEE_ENDPOINT_ERROR' : 'SHOPEE_ATTRIBUTE_TREE_ERROR',
     });
     return;
   }
@@ -238,12 +284,14 @@ router.get('/:id/attributes', authMiddleware, async (req: Request, res: Response
  * GET /api/shopee/categories/:id/brands
  * Busca marcas disponíveis para uma categoria
  */
-router.get('/:id/brands', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/:id/brands', async (req: Request, res: Response): Promise<void> => {
   try {
     const shopId = parseInt(req.query.shop_id as string, 10);
     const categoryId = parseInt(req.params.id, 10);
+    const language = resolveLanguage(req.query.language);
     const pageSize = parseInt(req.query.page_size as string) || 100;
     const offset = parseInt(req.query.offset as string) || 0;
+    const fetchAllPages = req.query.all !== 'false';
     
     if (!shopId || isNaN(shopId)) {
       res.status(400).json({
@@ -261,26 +309,47 @@ router.get('/:id/brands', authMiddleware, async (req: Request, res: Response): P
       return;
     }
     
-    const result = await categoryService.getCategoryBrands(shopId, categoryId, 1, pageSize, offset);
     const isMandatory = await categoryService.isBrandMandatory(shopId, categoryId);
-    
+
+    if (fetchAllPages) {
+      const result = await categoryService.getAllCategoryBrands(shopId, categoryId, 1, pageSize, language);
+      res.json({
+        success: true,
+        data: {
+          brands: result.brands,
+          has_more: result.hasMore,
+          total: result.brands.length,
+          pages_fetched: result.pagesFetched,
+          is_mandatory: isMandatory,
+        },
+      });
+      return;
+    }
+
+    const result = await categoryService.getCategoryBrands(shopId, categoryId, 1, pageSize, offset, language);
     res.json({
       success: true,
       data: {
         brands: result.brands,
         has_more: result.hasMore,
+        next_offset: result.nextOffset,
+        total: result.brands.length,
         is_mandatory: isMandatory,
       },
     });
     return;
   } catch (error: any) {
     console.error('Erro ao buscar marcas da categoria:', error);
+    const mapped = toEndpointOrientedError(error, 'Erro ao buscar marcas da categoria');
     res.status(500).json({
       success: false,
-      error: error.message || 'Erro ao buscar marcas da categoria',
+      error: mapped.message,
+      endpoint: mapped.endpoint,
+      error_code: mapped.endpoint ? 'SHOPEE_ENDPOINT_ERROR' : 'SHOPEE_BRAND_LIST_ERROR',
     });
     return;
   }
 });
 
 export default router;
+

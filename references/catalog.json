@@ -1,0 +1,38 @@
+{
+  "v2.media_space.upload_image": {
+    "path": "/api/v2/media_space/upload_image",
+    "http_method": "POST",
+    "module_name": "MediaSpace",
+    "latest_update_log": "2025-09-08",
+    "fetched_at_utc": "2026-02-11T15:52:38+00:00",
+    "files": {
+      "raw": "references/raw/v2.media_space.upload_image.json",
+      "normalized": "references/normalized/v2.media_space.upload_image.json",
+      "markdown": "references/endpoints/v2.media_space.upload_image.md"
+    }
+  },
+  "v2.product.add_item": {
+    "path": "/api/v2/product/add_item",
+    "http_method": "POST",
+    "module_name": "Product",
+    "latest_update_log": "2025-09-19",
+    "fetched_at_utc": "2026-02-11T15:52:36+00:00",
+    "files": {
+      "raw": "references/raw/v2.product.add_item.json",
+      "normalized": "references/normalized/v2.product.add_item.json",
+      "markdown": "references/endpoints/v2.product.add_item.md"
+    }
+  },
+  "v2.product.init_tier_variation": {
+    "path": "/api/v2/product/init_tier_variation",
+    "http_method": "POST",
+    "module_name": "Product",
+    "latest_update_log": "2025-09-12",
+    "fetched_at_utc": "2026-02-11T15:52:40+00:00",
+    "files": {
+      "raw": "references/raw/v2.product.init_tier_variation.json",
+      "normalized": "references/normalized/v2.product.init_tier_variation.json",
+      "markdown": "references/endpoints/v2.product.init_tier_variation.md"
+    }
+  }
+}

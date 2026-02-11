@@ -4,6 +4,21 @@ import { callShopeeApi, ensureValidToken } from './shopee.service';
 const db = admin.firestore();
 const LOGISTICS_CACHE_COLLECTION = 'shopee_logistics_cache';
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
+const DEFAULT_SHOPEE_LANGUAGE = 'pt-BR';
+
+function normalizeLanguage(language?: string): string {
+  const sanitized = (language || DEFAULT_SHOPEE_LANGUAGE)
+    .replace('_', '-')
+    .trim();
+  return sanitized || DEFAULT_SHOPEE_LANGUAGE;
+}
+
+function buildLogisticsCacheDocId(shopId: number, language?: string): string {
+  const normalizedLanguage = normalizeLanguage(language)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-');
+  return `${shopId}_${normalizedLanguage}`;
+}
 
 export interface LogisticsChannel {
   logistics_channel_id: number;
@@ -47,8 +62,8 @@ export interface LogisticsInfo {
 /**
  * Busca canais de logística do cache
  */
-async function getCachedLogistics(shopId: number): Promise<LogisticsChannel[] | null> {
-  const cacheDoc = await db.collection(LOGISTICS_CACHE_COLLECTION).doc(shopId.toString()).get();
+async function getCachedLogistics(shopId: number, language: string = DEFAULT_SHOPEE_LANGUAGE): Promise<LogisticsChannel[] | null> {
+  const cacheDoc = await db.collection(LOGISTICS_CACHE_COLLECTION).doc(buildLogisticsCacheDocId(shopId, language)).get();
   
   if (!cacheDoc.exists) {
     return null;
@@ -67,17 +82,23 @@ async function getCachedLogistics(shopId: number): Promise<LogisticsChannel[] | 
 /**
  * Salva canais de logística no cache
  */
-async function saveLogisticsCache(shopId: number, channels: LogisticsChannel[]): Promise<void> {
-  await db.collection(LOGISTICS_CACHE_COLLECTION).doc(shopId.toString()).set({
+async function saveLogisticsCache(
+  shopId: number,
+  language: string,
+  channels: LogisticsChannel[]
+): Promise<void> {
+  await db.collection(LOGISTICS_CACHE_COLLECTION).doc(buildLogisticsCacheDocId(shopId, language)).set({
     channels,
     updated_at: admin.firestore.Timestamp.now(),
+    shop_id: shopId,
+    language: normalizeLanguage(language),
   });
 }
 
 /**
  * Busca canais de logística da API Shopee
  */
-async function fetchLogisticsFromShopee(shopId: number): Promise<LogisticsChannel[]> {
+async function fetchLogisticsFromShopee(shopId: number, language: string): Promise<LogisticsChannel[]> {
   const accessToken = await ensureValidToken(shopId);
   
   const response = await callShopeeApi({
@@ -85,6 +106,9 @@ async function fetchLogisticsFromShopee(shopId: number): Promise<LogisticsChanne
     method: 'GET',
     shopId,
     accessToken,
+    query: {
+      language: normalizeLanguage(language),
+    },
   }) as {
     error?: string;
     message?: string;
@@ -103,16 +127,20 @@ async function fetchLogisticsFromShopee(shopId: number): Promise<LogisticsChanne
 /**
  * Busca canais de logística (do cache ou da API)
  */
-export async function getLogisticsChannels(shopId: number, forceRefresh = false): Promise<LogisticsChannel[]> {
+export async function getLogisticsChannels(
+  shopId: number,
+  forceRefresh = false,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<LogisticsChannel[]> {
   if (!forceRefresh) {
-    const cached = await getCachedLogistics(shopId);
+    const cached = await getCachedLogistics(shopId, language);
     if (cached) {
       return cached;
     }
   }
   
-  const channels = await fetchLogisticsFromShopee(shopId);
-  await saveLogisticsCache(shopId, channels);
+  const channels = await fetchLogisticsFromShopee(shopId, language);
+  await saveLogisticsCache(shopId, language, channels);
   
   return channels;
 }
@@ -120,8 +148,11 @@ export async function getLogisticsChannels(shopId: number, forceRefresh = false)
 /**
  * Busca apenas canais habilitados
  */
-export async function getEnabledLogisticsChannels(shopId: number): Promise<LogisticsChannel[]> {
-  const channels = await getLogisticsChannels(shopId);
+export async function getEnabledLogisticsChannels(
+  shopId: number,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<LogisticsChannel[]> {
+  const channels = await getLogisticsChannels(shopId, false, language);
   return channels.filter(c => c.enabled);
 }
 
@@ -132,9 +163,10 @@ export async function getEnabledLogisticsChannels(shopId: number): Promise<Logis
 export async function buildLogisticInfoForProduct(
   shopId: number,
   peso: number, // em kg
-  dimensoes: { comprimento: number; largura: number; altura: number } // em cm
+  dimensoes: { comprimento: number; largura: number; altura: number }, // em cm
+  language: string = DEFAULT_SHOPEE_LANGUAGE
 ): Promise<LogisticsInfo[]> {
-  const enabledChannels = await getEnabledLogisticsChannels(shopId);
+  const enabledChannels = await getEnabledLogisticsChannels(shopId, language);
   
   if (enabledChannels.length === 0) {
     throw new Error('Nenhum canal de logística habilitado. Configure a logística na Shopee primeiro.');
@@ -194,6 +226,9 @@ export async function buildLogisticInfoForProduct(
 /**
  * Força atualização do cache de logística
  */
-export async function forceRefreshLogistics(shopId: number): Promise<LogisticsChannel[]> {
-  return getLogisticsChannels(shopId, true);
+export async function forceRefreshLogistics(
+  shopId: number,
+  language: string = DEFAULT_SHOPEE_LANGUAGE
+): Promise<LogisticsChannel[]> {
+  return getLogisticsChannels(shopId, true, language);
 }

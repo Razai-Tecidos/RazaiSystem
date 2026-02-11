@@ -9,10 +9,10 @@ interface UseShopeeLogisticsReturn {
   enabledChannels: LogisticsChannel[];
   loading: boolean;
   error: string | null;
-  loadChannels: (shopId: number) => Promise<void>;
-  loadEnabledChannels: (shopId: number) => Promise<void>;
-  validateLogistics: (shopId: number, peso: number, dimensoes: { comprimento: number; largura: number; altura: number }) => Promise<{ compatible: number; valid: boolean }>;
-  refreshCache: (shopId: number) => Promise<void>;
+  loadChannels: (shopId: number, language?: string) => Promise<void>;
+  loadEnabledChannels: (shopId: number, language?: string) => Promise<void>;
+  validateLogistics: (shopId: number, peso: number, dimensoes: { comprimento: number; largura: number; altura: number }, language?: string) => Promise<{ compatible: number; valid: boolean }>;
+  refreshCache: (shopId: number, language?: string) => Promise<void>;
 }
 
 export function useShopeeLogistics(): UseShopeeLogisticsReturn {
@@ -31,15 +31,18 @@ export function useShopeeLogistics(): UseShopeeLogisticsReturn {
     };
   }, [user]);
 
-  const loadChannels = useCallback(async (shopId: number) => {
+  const loadChannels = useCallback(async (shopId: number, language = 'pt-BR') => {
     setLoading(true);
     setError(null);
     
     try {
       const headers = await getAuthHeaders();
-      const response = await fetch(`${API_BASE}/api/shopee/logistics?shop_id=${shopId}`, {
+      const response = await fetch(
+        `${API_BASE}/api/shopee/logistics?shop_id=${shopId}&language=${encodeURIComponent(language)}`,
+        {
         headers,
-      });
+        }
+      );
       
       const data = await response.json();
       
@@ -56,15 +59,18 @@ export function useShopeeLogistics(): UseShopeeLogisticsReturn {
     }
   }, [getAuthHeaders]);
 
-  const loadEnabledChannels = useCallback(async (shopId: number) => {
+  const loadEnabledChannels = useCallback(async (shopId: number, language = 'pt-BR') => {
     setLoading(true);
     setError(null);
     
     try {
       const headers = await getAuthHeaders();
-      const response = await fetch(`${API_BASE}/api/shopee/logistics/enabled?shop_id=${shopId}`, {
+      const response = await fetch(
+        `${API_BASE}/api/shopee/logistics/enabled?shop_id=${shopId}&language=${encodeURIComponent(language)}`,
+        {
         headers,
-      });
+        }
+      );
       
       const data = await response.json();
       
@@ -84,14 +90,15 @@ export function useShopeeLogistics(): UseShopeeLogisticsReturn {
   const validateLogistics = useCallback(async (
     shopId: number, 
     peso: number, 
-    dimensoes: { comprimento: number; largura: number; altura: number }
+    dimensoes: { comprimento: number; largura: number; altura: number },
+    language = 'pt-BR'
   ): Promise<{ compatible: number; valid: boolean }> => {
     try {
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE}/api/shopee/logistics/validate`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ shop_id: shopId, peso, dimensoes }),
+        body: JSON.stringify({ shop_id: shopId, peso, dimensoes, language }),
       });
       
       const data = await response.json();
@@ -110,7 +117,7 @@ export function useShopeeLogistics(): UseShopeeLogisticsReturn {
     }
   }, [getAuthHeaders]);
 
-  const refreshCache = useCallback(async (shopId: number) => {
+  const refreshCache = useCallback(async (shopId: number, language = 'pt-BR') => {
     setLoading(true);
     setError(null);
     
@@ -119,7 +126,7 @@ export function useShopeeLogistics(): UseShopeeLogisticsReturn {
       const response = await fetch(`${API_BASE}/api/shopee/logistics/refresh`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ shop_id: shopId }),
+        body: JSON.stringify({ shop_id: shopId, language }),
       });
       
       const data = await response.json();

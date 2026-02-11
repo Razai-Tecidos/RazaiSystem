@@ -324,7 +324,7 @@ export function AnunciosShopee({ onNavigateHome, onNavigateToCriar }: AnunciosSh
                         variant="outline"
                         size="sm"
                         className="min-h-[40px] flex-1 sm:flex-none"
-                        onClick={() => window.open(`https://seller.shopee.com.br/portal/product/${product.item_id}`, '_blank')}
+                        onClick={() => window.open(`https://seller.shopee.com.br/portal/product/${product.item_id}`, '_blank', 'noopener,noreferrer')}
                       >
                         <ExternalLink className="w-4 h-4 mr-1" />
                         <span className="hidden sm:inline">Ver na Shopee</span>

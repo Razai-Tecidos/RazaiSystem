@@ -28,8 +28,8 @@ export function PreferenciasShopee({ onNavigateHome, onNavigateBack }: Preferenc
   const [comissaoPercentualPadrao, setComissaoPercentualPadrao] = useState<string>('20');
   const [taxaFixaItemPadrao, setTaxaFixaItemPadrao] = useState<string>('4');
   const [margemLiquidaPercentualPadrao, setMargemLiquidaPercentualPadrao] = useState<string>('20');
-  const [modoMargemLucroPadrao, setModoMargemLucroPadrao] = useState<'percentual' | 'valor_fixo'>('percentual');
-  const [margemLucroFixaPadrao, setMargemLucroFixaPadrao] = useState<string>('0');
+  const [modoMargemLucroPadrao, setModoMargemLucroPadrao] = useState<'percentual' | 'valor_fixo'>('valor_fixo');
+  const [margemLucroFixaPadrao, setMargemLucroFixaPadrao] = useState<string>('4');
   const [valorMinimoBaixoValorPadrao, setValorMinimoBaixoValorPadrao] = useState<string>('8');
   const [adicionalBaixoValorPadrao, setAdicionalBaixoValorPadrao] = useState<string>('1');
   const [tetoComissaoPadrao, setTetoComissaoPadrao] = useState<string>('100');
@@ -173,8 +173,8 @@ export function PreferenciasShopee({ onNavigateHome, onNavigateBack }: Preferenc
     setComissaoPercentualPadrao('20');
     setTaxaFixaItemPadrao('4');
     setMargemLiquidaPercentualPadrao('20');
-    setModoMargemLucroPadrao('percentual');
-    setMargemLucroFixaPadrao('0');
+    setModoMargemLucroPadrao('valor_fixo');
+    setMargemLucroFixaPadrao('4');
     setValorMinimoBaixoValorPadrao('8');
     setAdicionalBaixoValorPadrao('1');
     setTetoComissaoPadrao('100');

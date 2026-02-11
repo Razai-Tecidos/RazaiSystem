@@ -64,8 +64,8 @@ function calculateAnticipationFeeForPrice(
 export const DEFAULT_CNPJ_PRICING_PARAMS: ShopeePricingParams = {
   custo_metro: 0,
   margem_liquida_percentual: 20,
-  modo_margem_lucro: 'percentual',
-  margem_lucro_fixa: 0,
+  modo_margem_lucro: 'valor_fixo',
+  margem_lucro_fixa: 4,
   comissao_percentual: 20,
   taxa_fixa_item: 4,
   valor_minimo_baixo_valor: 8,

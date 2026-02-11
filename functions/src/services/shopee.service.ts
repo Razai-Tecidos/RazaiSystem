@@ -44,6 +44,46 @@ export interface ShopeeApiRequest {
   body?: Record<string, unknown>;
 }
 
+export interface UploadRetryOptions {
+  maxRetries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+}
+
+const DEFAULT_UPLOAD_RETRY_OPTIONS: Required<UploadRetryOptions> = {
+  maxRetries: 1,
+  baseDelayMs: 500,
+  maxDelayMs: 4000,
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getBackoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
+  const exponential = Math.min(maxDelayMs, baseDelayMs * (2 ** Math.max(0, attempt - 1)));
+  const jitter = Math.floor(Math.random() * 200);
+  return exponential + jitter;
+}
+
+function shouldRetryUpload(statusCode: number | undefined, errorCode: string | undefined, shopeeError: string): boolean {
+  if (statusCode === 429) return true;
+  if (typeof statusCode === 'number' && statusCode >= 500) return true;
+
+  const normalizedErrorCode = (errorCode || '').toUpperCase();
+  if (['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'ENETUNREACH', 'EAI_AGAIN'].includes(normalizedErrorCode)) {
+    return true;
+  }
+
+  const normalizedShopeeError = (shopeeError || '').toLowerCase();
+  return (
+    normalizedShopeeError.includes('system_error') ||
+    normalizedShopeeError.includes('internal_error') ||
+    normalizedShopeeError.includes('service_unavailable') ||
+    normalizedShopeeError.includes('api_limit')
+  );
+}
+
 /**
  * Gera URL de autorizacao
  */
@@ -286,7 +326,9 @@ export async function uploadImageToShopeeMultipart(
   shopId: number,
   accessToken: string,
   imageBuffer: Buffer,
-  filename: string = 'image.jpg'
+  filename: string = 'image.jpg',
+  ratio?: '1:1' | '3:4',
+  retryOptions?: UploadRetryOptions
 ): Promise<unknown> {
   const { partnerId, partnerKey } = getShopeeCredentials();
   const { host } = getShopeeUrls();
@@ -302,14 +344,6 @@ export async function uploadImageToShopeeMultipart(
     shopId
   );
 
-  // Cria FormData com a imagem como arquivo binário
-  const formData = new FormData();
-  formData.append('image', imageBuffer, {
-    filename,
-    contentType: 'image/jpeg', // Shopee aceita JPEG, PNG
-  });
-  formData.append('scene', 'normal');
-
   // Parâmetros da query (assinatura HMAC)
   const params = {
     partner_id: partnerId,
@@ -320,32 +354,74 @@ export async function uploadImageToShopeeMultipart(
   };
 
   const url = `${host}${path}`;
+  const retryConfig = { ...DEFAULT_UPLOAD_RETRY_OPTIONS, ...(retryOptions || {}) };
 
-  try {
-    const response = await axios.post(url, formData, {
-      params,
-      headers: {
-        ...formData.getHeaders(), // Inclui Content-Type com boundary
-      },
-      timeout: 60000, // 60 segundos para upload de imagem
-    });
+  for (let attempt = 1; attempt <= retryConfig.maxRetries + 1; attempt += 1) {
+    try {
+      // Recria o FormData a cada tentativa para evitar reuse de stream em retry.
+      const formData = new FormData();
+      formData.append('image', imageBuffer, {
+        filename,
+        contentType: 'image/jpeg', // Shopee aceita JPEG, PNG
+      });
+      formData.append('scene', 'normal');
+      if (ratio === '3:4') {
+        formData.append('ratio', '3:4');
+      }
 
-    if (response.data?.error) {
-      console.error(`[ShopeeAPI] ${path} - Error:`, response.data.error, response.data.message);
+      const response = await axios.post(url, formData, {
+        params,
+        headers: {
+          ...formData.getHeaders(), // Inclui Content-Type com boundary
+        },
+        timeout: 60000, // 60 segundos para upload de imagem
+      });
+
+      if (response.data?.error) {
+        const shopeeError = String(response.data.error || '');
+        const shopeeMessage = String(response.data.message || '');
+        const retryable = shouldRetryUpload(response.status, undefined, shopeeError);
+
+        if (retryable && attempt <= retryConfig.maxRetries) {
+          const delayMs = getBackoffDelay(attempt, retryConfig.baseDelayMs, retryConfig.maxDelayMs);
+          console.warn(
+            `[ShopeeAPI] ${path} - tentativa ${attempt}/${retryConfig.maxRetries + 1} com erro recuperavel (${shopeeError}). Retry em ${delayMs}ms`
+          );
+          await sleep(delayMs);
+          continue;
+        }
+
+        console.error(`[ShopeeAPI] ${path} - Error:`, shopeeError, shopeeMessage);
+      }
+
+      return response.data;
+    } catch (error: any) {
+      const shopeeError = error.response?.data?.error || '';
+      const shopeeMessage = error.response?.data?.message || error.message;
+      const httpStatus = error.response?.status;
+      const errorCode = error.code;
+      const retryable = shouldRetryUpload(httpStatus, errorCode, shopeeError);
+
+      if (retryable && attempt <= retryConfig.maxRetries) {
+        const delayMs = getBackoffDelay(attempt, retryConfig.baseDelayMs, retryConfig.maxDelayMs);
+        console.warn(
+          `[ShopeeAPI] ${path} - tentativa ${attempt}/${retryConfig.maxRetries + 1} falhou (status=${httpStatus || 'N/A'}, code=${errorCode || 'N/A'}). Retry em ${delayMs}ms`
+        );
+        await sleep(delayMs);
+        continue;
+      }
+
+      const statusLog = httpStatus || 'N/A';
+      console.error(`[ShopeeAPI] ${path} - FALHOU: status=${statusLog}, error=${shopeeError}, message=${shopeeMessage}`);
+
+      const errorMsg = shopeeError
+        ? `Erro Shopee upload (${path}): ${shopeeError} - ${shopeeMessage}`
+        : `Erro upload imagem (${path}): HTTP ${statusLog} - ${shopeeMessage}`;
+      throw new Error(errorMsg);
     }
-
-    return response.data;
-  } catch (error: any) {
-    const shopeeError = error.response?.data?.error || '';
-    const shopeeMessage = error.response?.data?.message || error.message;
-    const httpStatus = error.response?.status || 'N/A';
-    console.error(`[ShopeeAPI] ${path} - FALHOU: status=${httpStatus}, error=${shopeeError}, message=${shopeeMessage}`);
-
-    const errorMsg = shopeeError
-      ? `Erro Shopee upload (${path}): ${shopeeError} - ${shopeeMessage}`
-      : `Erro upload imagem (${path}): HTTP ${httpStatus} - ${shopeeMessage}`;
-    throw new Error(errorMsg);
   }
+
+  throw new Error(`Erro upload imagem (${path}): tentativas esgotadas`);
 }
 
 /**
@@ -879,40 +955,10 @@ export async function getOrderDetailBatch(
   orderSnList: string[],
   responseOptionalFields?: string[]
 ): Promise<OrderDetail[]> {
-  try {
-    const accessToken = await ensureValidToken(shopId);
-    
-    const query: Record<string, string> = {
-      order_sn_list: orderSnList.join(','),
-    };
-    
-    if (responseOptionalFields?.length) {
-      query.response_optional_fields = responseOptionalFields.join(',');
-    }
-
-    const response = await callShopeeApi({
-      path: '/api/v2/order/get_order_detail',
-      method: 'GET',
-      shopId,
-      accessToken,
-      query,
-    }) as {
-      error?: string;
-      response?: {
-        order_list: OrderDetail[];
-      };
-    };
-
-    if (response.error) {
-      console.error(`Erro ao buscar order detail batch: ${response.error}`);
-      return [];
-    }
-
-    return response.response?.order_list || [];
-  } catch (error: any) {
-    console.error('Erro ao buscar order detail batch:', error.message);
-    return [];
-  }
+  void shopId;
+  void orderSnList;
+  void responseOptionalFields;
+  throw new Error('Detalhes de pedido nao disponiveis nesta integracao');
 }
 
 // ============================================================

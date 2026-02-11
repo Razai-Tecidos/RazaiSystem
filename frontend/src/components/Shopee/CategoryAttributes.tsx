@@ -83,6 +83,8 @@ export function CategoryAttributes({ shopId, categoryId, values, onChange, onVal
 
       if (data.success) {
         setAttributes(data.data || []);
+      } else {
+        setError(data.error || 'Erro ao carregar atributos da categoria');
       }
     } catch (err: any) {
       setError(err.message);

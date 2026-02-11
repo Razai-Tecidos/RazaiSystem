@@ -1,4 +1,5 @@
 import razaiLogo from '@/assets/RazaiW.png';
+import { ensureInterCanvasFontLoaded, getInterCanvasFont } from '@/lib/interCanvasFont';
 
 // Cache para evitar re-processamento
 const overlayCache = new Map<string, string>();
@@ -13,33 +14,6 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error('Falha ao carregar imagem'));
     img.src = src;
   });
-}
-
-let interFontLoadPromise: Promise<void> | null = null;
-
-async function ensureInterFontLoaded(fontSize: number, fontWeight: 400 | 700 | 900 = 700): Promise<void> {
-  if (typeof document === 'undefined' || !('fonts' in document)) return;
-  const fontFaceSet = (document as any).fonts;
-  const descriptor = `${fontWeight} ${fontSize}px "Inter"`;
-
-  if (typeof fontFaceSet.check === 'function' && fontFaceSet.check(descriptor)) {
-    return;
-  }
-
-  if (!interFontLoadPromise) {
-    interFontLoadPromise = fontFaceSet
-      .load(descriptor)
-      .then(() => undefined)
-      .finally(() => {
-        interFontLoadPromise = null;
-      });
-  }
-
-  await interFontLoadPromise;
-
-  if (typeof fontFaceSet.check === 'function' && !fontFaceSet.check(descriptor)) {
-    throw new Error('Falha ao carregar a fonte Inter para gerar imagem');
-  }
 }
 
 /**
@@ -93,8 +67,8 @@ export async function generateBrandOverlay(
   // 3. Nome da cor sem faixa/gradiente no rodape.
   // Distancia da borda inferior: ~16% (4x maior que os ~4% anteriores).
   const fontSize = Math.round(size * 0.032);
-  await ensureInterFontLoaded(fontSize, 700);
-  ctx.font = `700 ${fontSize}px "Inter"`;
+  await ensureInterCanvasFontLoaded(fontSize, 700);
+  ctx.font = getInterCanvasFont(fontSize, 700);
   ctx.shadowColor = 'rgba(0, 0, 0, 0.30)';
   ctx.shadowBlur = Math.round(size * 0.013);
   ctx.shadowOffsetX = 0;

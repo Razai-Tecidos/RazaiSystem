@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { app } from '../index';
-import { callShopeeApi, ensureValidToken } from '../services/shopee.service';
+import { callShopeeApi, ensureValidToken, getShopTokens } from '../services/shopee.service';
 
 jest.mock('../middleware/auth.middleware', () => ({
   authMiddleware: (req: any, _res: any, next: any) => {
@@ -12,15 +12,22 @@ jest.mock('../middleware/auth.middleware', () => ({
 jest.mock('../services/shopee.service', () => ({
   ensureValidToken: jest.fn(),
   callShopeeApi: jest.fn(),
+  getShopTokens: jest.fn(),
 }));
 
 const mockedEnsureValidToken = ensureValidToken as jest.Mock;
 const mockedCallShopeeApi = callShopeeApi as jest.Mock;
+const mockedGetShopTokens = getShopTokens as jest.Mock;
 
 describe('POST /api/shopee/update-color-availability', () => {
   beforeEach(() => {
     mockedEnsureValidToken.mockReset();
     mockedCallShopeeApi.mockReset();
+    mockedGetShopTokens.mockReset();
+    mockedGetShopTokens.mockResolvedValue({
+      shopId: 803215808,
+      connectedBy: 'test-user',
+    });
   });
 
   it('deve atualizar status e estoque para targets', async () => {

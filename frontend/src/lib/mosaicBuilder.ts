@@ -1,5 +1,6 @@
 import { MosaicTemplateId } from '@/types/gestao-imagens.types';
 import razaiLogo from '@/assets/RazaiW.png';
+import { ensureInterCanvasFontLoaded, getInterCanvasFont } from '@/lib/interCanvasFont';
 
 interface MosaicBuildInput {
   images: string[];
@@ -64,33 +65,6 @@ function drawImageCover(
   ctx.drawImage(image, sx, sy, sw, sh, x, y, width, height);
 }
 
-let interMosaicFontLoadInFlight: Promise<void> | null = null;
-
-async function ensureInterMosaicFontLoaded(fontSize: number, fontWeight: 400 | 700 | 900 = 900): Promise<void> {
-  if (typeof document === 'undefined' || !('fonts' in document)) return;
-  const fontFaceSet = (document as any).fonts;
-  const fontDescriptor = `${fontWeight} ${fontSize}px "Inter"`;
-
-  if (typeof fontFaceSet.check === 'function' && fontFaceSet.check(fontDescriptor)) {
-    return;
-  }
-
-  if (!interMosaicFontLoadInFlight) {
-    interMosaicFontLoadInFlight = fontFaceSet
-      .load(fontDescriptor)
-      .then(() => undefined)
-      .finally(() => {
-        interMosaicFontLoadInFlight = null;
-      });
-  }
-
-  await interMosaicFontLoadInFlight;
-
-  if (typeof fontFaceSet.check === 'function' && !fontFaceSet.check(fontDescriptor)) {
-    throw new Error('Falha ao carregar a fonte Inter para gerar imagem');
-  }
-}
-
 function measureTrackedTextWidth(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -150,7 +124,7 @@ function fitCenterLabelFontSize(
   let fontSize = defaultSize;
   while (fontSize > minSize) {
     const letterSpacingPx = fontSize * -0.03;
-    ctx.font = `900 ${fontSize}px "Inter"`;
+    ctx.font = getInterCanvasFont(fontSize, 900);
     const textWidth = measureTrackedTextWidth(ctx, text, letterSpacingPx);
     if (textWidth <= maxTextWidth) {
       return { fontSize, letterSpacingPx };
@@ -168,9 +142,9 @@ async function drawCenterLabel(
   tecidoNome: string
 ): Promise<void> {
   const text = tecidoNome.trim().toUpperCase();
-  await ensureInterMosaicFontLoaded(Math.max(56, Math.round(width * 0.10)), 900);
+  await ensureInterCanvasFontLoaded(Math.max(56, Math.round(width * 0.10)), 900);
   const { fontSize, letterSpacingPx } = fitCenterLabelFontSize(ctx, text, width);
-  ctx.font = `900 ${fontSize}px "Inter"`;
+  ctx.font = getInterCanvasFont(fontSize, 900);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   const centerX = width / 2;
@@ -371,7 +345,7 @@ function fitPremiumColorNameFontSize(
   let fontSize = targetSize;
 
   while (fontSize > minSize) {
-    ctx.font = `700 ${fontSize}px "Inter"`;
+    ctx.font = getInterCanvasFont(fontSize, 700);
     if (ctx.measureText(text).width <= maxWidth) return fontSize;
     fontSize -= 1;
   }
@@ -396,12 +370,12 @@ function drawPremiumInfoBlock(
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillStyle = PREMIUM_INFO_TEXT_COLOR;
-  ctx.font = `400 ${titleSize}px "Inter"`;
+  ctx.font = getInterCanvasFont(titleSize, 400);
   ctx.fillText(label.toUpperCase(), x, y);
 
   const valueY = y + Math.round(titleSize * 1.25);
   ctx.fillStyle = PREMIUM_INFO_TEXT_COLOR;
-  ctx.font = `700 ${valueSize}px "Inter"`;
+  ctx.font = getInterCanvasFont(valueSize, 700);
   const blockBottom = drawWrappedText(
     ctx,
     value.trim() || '-',
@@ -425,8 +399,8 @@ async function drawPremiumInfoPanel(
   ctx.fillStyle = PREMIUM_INFO_PANEL_BG;
   ctx.fillRect(infoRect.x, infoRect.y, infoRect.width, infoRect.height);
 
-  await ensureInterMosaicFontLoaded(layout.titleSize, 400);
-  await ensureInterMosaicFontLoaded(layout.valueSize, 700);
+  await ensureInterCanvasFontLoaded(layout.titleSize, 400);
+  await ensureInterCanvasFontLoaded(layout.valueSize, 700);
 
   const contentX = infoRect.x + layout.panelPaddingX;
   const contentY = infoRect.y + layout.panelPaddingY;
@@ -568,8 +542,8 @@ async function drawPremiumFabricBranding(
   const targetCenterX = fabricRect.x + (rightBound - fabricRect.x) / 2;
 
   const fontSize = fitPremiumColorNameFontSize(ctx, text, maxTextWidth, layout.colorNameSize);
-  await ensureInterMosaicFontLoaded(fontSize, 700);
-  ctx.font = `700 ${fontSize}px "Inter"`;
+  await ensureInterCanvasFontLoaded(fontSize, 700);
+  ctx.font = getInterCanvasFont(fontSize, 700);
   const letterSpacingPx = fontSize * -0.03;
 
   const measuredTextWidth = measureTrackedTextWidth(ctx, text, letterSpacingPx);

@@ -9,6 +9,7 @@ export type ShopeeProductStatus = 'draft' | 'publishing' | 'created' | 'error' |
  * Condição do produto
  */
 export type ProductCondition = 'NEW' | 'USED';
+export type ShopeeImageRatio = '1:1' | '3:4';
 
 /**
  * Valor de atributo para criação de produto
@@ -112,6 +113,9 @@ export interface ShopeeProduct {
   tecido_nome: string;
   tecido_sku: string;
   imagens_principais: string[];
+  imagens_principais_1_1?: string[];
+  imagens_principais_3_4?: string[];
+  imagem_ratio_principal?: ShopeeImageRatio;
   video_url?: string;
   tier_variations: TierVariation[];
   modelos: ProductModel[];
@@ -181,6 +185,9 @@ export interface CreateShopeeProductData {
   titulo_anuncio?: string;
   usar_imagens_publicas?: boolean;
   imagens_principais?: string[];
+  imagens_principais_1_1?: string[];
+  imagens_principais_3_4?: string[];
+  imagem_ratio_principal?: ShopeeImageRatio;
   template_id?: string;
   video_url?: string;
   atributos?: ProductAttributeValue[];

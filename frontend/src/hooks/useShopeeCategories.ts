@@ -59,11 +59,16 @@ export function useShopeeCategories() {
    * @param forceRefresh - Forçar atualização do cache
    * @param silent - Se true, não exibe toast de erro (útil para carregamento inicial)
    */
-  const loadCategories = useCallback(async (shopId: number, forceRefresh = false, silent = false) => {
+  const loadCategories = useCallback(async (
+    shopId: number,
+    forceRefresh = false,
+    silent = false,
+    language = 'pt-BR'
+  ) => {
     try {
       setLoading(true);
       const response = await apiRequest<{ success: boolean; data: ShopeeCategory[] }>(
-        `/api/shopee/categories?shop_id=${shopId}${forceRefresh ? '&refresh=true' : ''}`
+        `/api/shopee/categories?shop_id=${shopId}${forceRefresh ? '&refresh=true' : ''}&language=${encodeURIComponent(language)}`
       );
       setCategories(response.data);
       setError(null);
@@ -87,10 +92,14 @@ export function useShopeeCategories() {
   /**
    * Busca subcategorias de uma categoria pai
    */
-  const getSubcategories = useCallback(async (shopId: number, parentId?: number): Promise<ShopeeCategory[]> => {
+  const getSubcategories = useCallback(async (
+    shopId: number,
+    parentId?: number,
+    language = 'pt-BR'
+  ): Promise<ShopeeCategory[]> => {
     try {
       const response = await apiRequest<{ success: boolean; data: ShopeeCategory[] }>(
-        `/api/shopee/categories/subcategories?shop_id=${shopId}${parentId ? `&parent_id=${parentId}` : ''}`
+        `/api/shopee/categories/subcategories?shop_id=${shopId}${parentId ? `&parent_id=${parentId}` : ''}&language=${encodeURIComponent(language)}`
       );
       return response.data;
     } catch (err: any) {
@@ -102,10 +111,14 @@ export function useShopeeCategories() {
   /**
    * Busca caminho completo de uma categoria (breadcrumb)
    */
-  const getCategoryPath = useCallback(async (shopId: number, categoryId: number): Promise<ShopeeCategory[]> => {
+  const getCategoryPath = useCallback(async (
+    shopId: number,
+    categoryId: number,
+    language = 'pt-BR'
+  ): Promise<ShopeeCategory[]> => {
     try {
       const response = await apiRequest<{ success: boolean; data: ShopeeCategory[] }>(
-        `/api/shopee/categories/${categoryId}/path?shop_id=${shopId}`
+        `/api/shopee/categories/${categoryId}/path?shop_id=${shopId}&language=${encodeURIComponent(language)}`
       );
       return response.data;
     } catch (err: any) {
@@ -132,14 +145,14 @@ export function useShopeeCategories() {
   /**
    * Força atualização do cache de categorias
    */
-  const refreshCategories = useCallback(async (shopId: number): Promise<ShopeeCategory[]> => {
+  const refreshCategories = useCallback(async (shopId: number, language = 'pt-BR'): Promise<ShopeeCategory[]> => {
     try {
       setLoading(true);
       const response = await apiRequest<{ success: boolean; data: ShopeeCategory[] }>(
         '/api/shopee/categories/refresh',
         {
           method: 'POST',
-          body: JSON.stringify({ shop_id: shopId }),
+          body: JSON.stringify({ shop_id: shopId, language }),
         }
       );
       setCategories(response.data);

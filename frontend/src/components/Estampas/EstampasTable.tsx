@@ -69,6 +69,7 @@ function EstampaCard({
 }) {
   const isSaving = estampa._status === 'saving';
   const isDeleting = estampa._status === 'deleting';
+  const hasActiveVinculo = Boolean(estampa.imagem && estampa.tecidoBaseId && estampa.tecidoBaseNome);
 
   if (isGridView) {
     // Layout de grid - imagem maior
@@ -141,7 +142,7 @@ function EstampaCard({
           >
             {estampa.nome}
           </h4>
-          {estampa.tecidoBaseNome ? (
+          {hasActiveVinculo ? (
             <div className="mt-1 space-y-1">
               <div className="flex items-center gap-1.5">
                 <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
@@ -161,7 +162,7 @@ function EstampaCard({
               </div>
             </div>
           ) : (
-            <p className="text-xs text-gray-400 mt-0.5">Nenhum vinculo</p>
+            <p className="text-xs text-gray-400 mt-0.5">Envie imagem para vincular</p>
           )}
         </div>
       </div>
@@ -247,11 +248,11 @@ function EstampaCard({
 
           {/* Detalhes */}
           <div className="mt-2 pt-2 border-t border-gray-100 text-xs">
-            {estampa.tecidoBaseNome ? (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5">
-                  <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
-                  <span className="text-xs font-medium text-blue-600">1 tecido</span>
+          {hasActiveVinculo ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
+                <span className="text-xs font-medium text-blue-600">1 tecido</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-gray-600">
                   <span className="truncate">{estampa.tecidoBaseNome}</span>
@@ -267,7 +268,7 @@ function EstampaCard({
                 </div>
               </div>
             ) : (
-              <span className="text-gray-400">Nenhum vinculo</span>
+              <span className="text-gray-400">Envie imagem para vincular</span>
             )}
           </div>
         </div>
@@ -718,7 +719,7 @@ export function EstampasTable({
 
                             {/* Vinculos */}
                             <TableCell>
-                              {estampa.tecidoBaseNome ? (
+                              {Boolean(estampa.imagem && estampa.tecidoBaseId && estampa.tecidoBaseNome) ? (
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-1.5">
                                     <LinkIcon className="h-3.5 w-3.5 text-blue-500" />
@@ -738,7 +739,7 @@ export function EstampasTable({
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-gray-400 text-sm">Nenhum vinculo</span>
+                                <span className="text-gray-400 text-sm">Envie imagem para vincular</span>
                               )}
                             </TableCell>
 
@@ -795,4 +796,3 @@ export function EstampasTable({
 
   return <div className="animate-fade-in">{estampasAgrupadas.map(renderGrupo)}</div>;
 }
-

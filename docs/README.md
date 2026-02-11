@@ -5,8 +5,9 @@ Ultima atualizacao: 2026-02-11
 ## Leitura em 60s (para agentes)
 1. Entenda o escopo global: [ARCHITECTURE.md](ARCHITECTURE.md)
 2. Se for Shopee (mais comum): [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md)
-3. Para status de execucao por ondas/tasks: [SHOPEE_ANUNCIOS_ROADMAP.md](SHOPEE_ANUNCIOS_ROADMAP.md)
+3. Para status de execucao e consolidado de entregas: [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md) e [ENTREGAS_2026-02-11.md](ENTREGAS_2026-02-11.md)
 4. Para deploy: [DEPLOY.md](DEPLOY.md) e [DEPLOY_FIREBASE.md](DEPLOY_FIREBASE.md)
+5. Para historico consolidado de entregas: [ENTREGAS_2026-02-11.md](ENTREGAS_2026-02-11.md)
 
 ## Mapa por intencao (task -> onde abrir primeiro)
 - `Criar/editar fluxo de anuncio Shopee`:
@@ -17,7 +18,7 @@ Ultima atualizacao: 2026-02-11
   - Doc: [SHOPEE_API_REFERENCIA.md](SHOPEE_API_REFERENCIA.md)
   - Codigo: `functions/src/services/shopee*.service.ts` e `functions/src/routes/shopee*.routes.ts`
 - `Acompanhar progresso de implementacao`:
-  - Doc: [SHOPEE_ANUNCIOS_ROADMAP.md](SHOPEE_ANUNCIOS_ROADMAP.md)
+  - Docs: [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md) e [ENTREGAS_2026-02-11.md](ENTREGAS_2026-02-11.md)
 - `UI base, layout e componentes compartilhados`:
   - Docs: [COMPONENTS.md](COMPONENTS.md), [UX_RESPONSIVIDADE.md](UX_RESPONSIVIDADE.md)
 - `Navegacao e hooks`:
@@ -36,10 +37,10 @@ Ultima atualizacao: 2026-02-11
 ### Shopee
 1. [SHOPEE.md](SHOPEE.md) - visao geral da integracao.
 2. [SHOPEE_ANUNCIOS.md](SHOPEE_ANUNCIOS.md) - fluxo de criacao/publicacao.
-3. [SHOPEE_ANUNCIOS_ROADMAP.md](SHOPEE_ANUNCIOS_ROADMAP.md) - ondas/tasks/status.
-4. [SHOPEE_API_REFERENCIA.md](SHOPEE_API_REFERENCIA.md) - endpoints.
-5. [SHOPEE_WEBHOOK_SETUP.md](SHOPEE_WEBHOOK_SETUP.md) - setup webhook.
-6. [SHOPEE_STOCK_REVIEW.md](SHOPEE_STOCK_REVIEW.md) - revisao de estoque.
+3. [SHOPEE_API_REFERENCIA.md](SHOPEE_API_REFERENCIA.md) - endpoints.
+4. [SHOPEE_WEBHOOK_SETUP.md](SHOPEE_WEBHOOK_SETUP.md) - setup webhook.
+5. [SHOPEE_STOCK_REVIEW.md](SHOPEE_STOCK_REVIEW.md) - revisao de estoque.
+6. [ENTREGAS_2026-02-11.md](ENTREGAS_2026-02-11.md) - consolidado do que foi implementado nas ultimas ondas.
 
 ### Deploy
 1. [DEPLOY.md](DEPLOY.md)

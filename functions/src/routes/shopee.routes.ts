@@ -1,6 +1,7 @@
 // Shopee Routes - v2 with seller_stock format
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { ensureOwnedShopOrFail } from '../middleware/shopee-shop-ownership.middleware';
 import admin from '../config/firebase';
 import {
   getAuthUrl,
@@ -15,7 +16,6 @@ import {
   getEscrowDetailBatch,
   getIncomeOverview,
   getOrderList,
-  getOrderDetailBatch,
   updatePrice,
   getItemPriceInfo,
 } from '../services/shopee.service';
@@ -23,12 +23,36 @@ import {
 const router = Router();
 const db = admin.firestore();
 const DISABLED_COLORS_COLLECTION = 'disabled_colors';
+const OWNERSHIP_EXEMPT_PATHS = new Set(['/auth-url', '/callback', '/shops']);
+
+router.use(authMiddleware);
+router.use(async (req: Request, res: Response, next: NextFunction) => {
+  if (OWNERSHIP_EXEMPT_PATHS.has(req.path)) {
+    next();
+    return;
+  }
+
+  const rawShopId = req.method === 'GET'
+    ? req.query.shop_id
+    : req.body?.shop_id;
+
+  if (rawShopId === undefined || rawShopId === null || rawShopId === '') {
+    next();
+    return;
+  }
+
+  const ownedShopId = await ensureOwnedShopOrFail(req, res, rawShopId);
+  if (!ownedShopId) return;
+
+  res.locals.shopId = ownedShopId;
+  next();
+});
 
 /**
  * GET /api/shopee/auth-url
  * Gera URL de autorizacao para conectar loja Shopee
  */
-router.get('/auth-url', authMiddleware, async (req: Request, res: Response) => {
+router.get('/auth-url', async (req: Request, res: Response) => {
   try {
     const authUrl = getAuthUrl();
 
@@ -49,7 +73,7 @@ router.get('/auth-url', authMiddleware, async (req: Request, res: Response) => {
  * POST /api/shopee/callback
  * Recebe o codigo de autorizacao e troca por tokens
  */
-router.post('/callback', authMiddleware, async (req: Request, res: Response) => {
+router.post('/callback', async (req: Request, res: Response) => {
   try {
     const { code, shop_id } = req.body;
 
@@ -61,6 +85,12 @@ router.post('/callback', authMiddleware, async (req: Request, res: Response) => 
     }
 
     const shopId = parseInt(shop_id, 10);
+    if (isNaN(shopId) || shopId <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'shop_id invalido',
+      });
+    }
     const userId = req.user?.uid;
 
     if (!userId) {
@@ -100,28 +130,59 @@ router.post('/callback', authMiddleware, async (req: Request, res: Response) => 
  * GET /api/shopee/status
  * Verifica status de conexao das lojas
  */
-router.get('/status', authMiddleware, async (req: Request, res: Response) => {
+router.get('/status', async (req: Request, res: Response) => {
   try {
+    const userId = req.user?.uid;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario nao autenticado',
+      });
+    }
+
     const { shop_id } = req.query;
-
-    const shopId = shop_id ? parseInt(shop_id as string, 10) : undefined;
-    const status = await getShopConnectionStatus(shopId);
-
-    const sanitizedStatus = {
-      connected: status.connected,
-      shop: status.shop ? {
-        shopId: status.shop.shopId,
-        shopName: status.shop.shopName,
-        connectedAt: status.shop.connectedAt,
-        tokenExpiresAt: status.shop.tokenExpiresAt,
-      } : undefined,
-      shops: status.shops?.map(shop => ({
-        shopId: shop.shopId,
-        shopName: shop.shopName,
-        connectedAt: shop.connectedAt,
-        tokenExpiresAt: shop.tokenExpiresAt,
-      })),
+    let sanitizedStatus: {
+      connected: boolean;
+      shop?: {
+        shopId: number;
+        shopName?: string;
+        connectedAt: unknown;
+        tokenExpiresAt: unknown;
+      };
+      shops?: Array<{
+        shopId: number;
+        shopName?: string;
+        connectedAt: unknown;
+        tokenExpiresAt: unknown;
+      }>;
     };
+
+    if (shop_id !== undefined && shop_id !== null && shop_id !== '') {
+      const shopId = await ensureOwnedShopOrFail(req, res, shop_id);
+      if (!shopId) return;
+
+      const status = await getShopConnectionStatus(shopId);
+      sanitizedStatus = {
+        connected: status.connected,
+        shop: status.shop ? {
+          shopId: status.shop.shopId,
+          shopName: status.shop.shopName,
+          connectedAt: status.shop.connectedAt,
+          tokenExpiresAt: status.shop.tokenExpiresAt,
+        } : undefined,
+      };
+    } else {
+      const ownedShops = (await getConnectedShops()).filter((shop) => shop.connectedBy === userId);
+      sanitizedStatus = {
+        connected: ownedShops.length > 0,
+        shops: ownedShops.map((shop) => ({
+          shopId: shop.shopId,
+          shopName: shop.shopName,
+          connectedAt: shop.connectedAt,
+          tokenExpiresAt: shop.tokenExpiresAt,
+        })),
+      };
+    }
 
     return res.json({
       success: true,
@@ -140,15 +201,21 @@ router.get('/status', authMiddleware, async (req: Request, res: Response) => {
  * GET /api/shopee/shops
  * Lista todas as lojas conectadas
  */
-router.get('/shops', authMiddleware, async (req: Request, res: Response) => {
+router.get('/shops', async (req: Request, res: Response) => {
   try {
-    const shops = await getConnectedShops();
+    const userId = req.user?.uid;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario nao autenticado',
+      });
+    }
 
+    const shops = (await getConnectedShops()).filter((shop) => shop.connectedBy === userId);
     const sanitizedShops = shops.map(shop => ({
       shopId: shop.shopId,
       shopName: shop.shopName,
       connectedAt: shop.connectedAt,
-      connectedBy: shop.connectedBy,
       tokenExpiresAt: shop.tokenExpiresAt,
     }));
 
@@ -169,7 +236,7 @@ router.get('/shops', authMiddleware, async (req: Request, res: Response) => {
  * POST /api/shopee/disconnect
  * Desconecta uma loja
  */
-router.post('/disconnect', authMiddleware, async (req: Request, res: Response) => {
+router.post('/disconnect', async (req: Request, res: Response) => {
   try {
     const { shop_id } = req.body;
 
@@ -204,7 +271,7 @@ router.post('/disconnect', authMiddleware, async (req: Request, res: Response) =
  * POST /api/shopee/proxy
  * Faz chamada assinada para endpoints Shopee
  */
-router.post('/proxy', authMiddleware, async (req: Request, res: Response) => {
+router.post('/proxy', async (req: Request, res: Response) => {
   try {
     const { path, method, query, body, shop_id } = req.body as {
       path?: string;
@@ -262,7 +329,7 @@ router.post('/proxy', authMiddleware, async (req: Request, res: Response) => {
  * POST /api/shopee/inventory
  * Agrega lista de itens, detalhes e modelos
  */
-router.post('/inventory', authMiddleware, async (req: Request, res: Response) => {
+router.post('/inventory', async (req: Request, res: Response) => {
   try {
     const { shop_id, page_size, offset } = req.body as {
       shop_id?: number | string;
@@ -555,7 +622,7 @@ async function removeDisabledColor(
  * POST /api/shopee/update-color-availability
  * Atualiza status e estoque (opcional) para um conjunto de modelos
  */
-router.post('/update-color-availability', authMiddleware, async (req: Request, res: Response) => {
+router.post('/update-color-availability', async (req: Request, res: Response) => {
   try {
     const { shop_id, item_id, model_ids, model_status, stock, targets, item_sku, color_option } = req.body as {
       shop_id?: number | string;
@@ -810,7 +877,7 @@ router.post('/update-color-availability', authMiddleware, async (req: Request, r
  * - action: 'zero' = zera estoque e salva no Firestore para monitoramento via webhook
  * - action: 'restore' = restaura estoque e remove do Firestore
  */
-router.post('/update-stock', authMiddleware, async (req: Request, res: Response) => {
+router.post('/update-stock', async (req: Request, res: Response) => {
   try {
     const { shop_id, targets, action, stock, item_sku, color_option } = req.body as {
       shop_id: number | string;
@@ -955,7 +1022,7 @@ router.post('/update-stock', authMiddleware, async (req: Request, res: Response)
  * GET /api/shopee/payment/income-overview
  * Busca visão geral de receita em um período
  */
-router.get('/payment/income-overview', authMiddleware, async (req: Request, res: Response) => {
+router.get('/payment/income-overview', async (req: Request, res: Response) => {
   try {
     const { shop_id, release_time_from, release_time_to } = req.query;
 
@@ -996,7 +1063,7 @@ router.get('/payment/income-overview', authMiddleware, async (req: Request, res:
  * GET /api/shopee/payment/escrow-list
  * Busca lista de escrows em um período
  */
-router.get('/payment/escrow-list', authMiddleware, async (req: Request, res: Response) => {
+router.get('/payment/escrow-list', async (req: Request, res: Response) => {
   try {
     const { shop_id, release_time_from, release_time_to, page_size, cursor } = req.query;
 
@@ -1031,7 +1098,7 @@ router.get('/payment/escrow-list', authMiddleware, async (req: Request, res: Res
  * POST /api/shopee/payment/escrow-detail-batch
  * Busca detalhes de escrow em lote
  */
-router.post('/payment/escrow-detail-batch', authMiddleware, async (req: Request, res: Response) => {
+router.post('/payment/escrow-detail-batch', async (req: Request, res: Response) => {
   try {
     const { shop_id, order_sn_list } = req.body;
 
@@ -1064,7 +1131,7 @@ router.post('/payment/escrow-detail-batch', authMiddleware, async (req: Request,
  * Coleta dados financeiros de um período e agrega por SKU
  * Retorna receita líquida por SKU para cálculo de margem
  */
-router.post('/payment/collect-financial-data', authMiddleware, async (req: Request, res: Response) => {
+router.post('/payment/collect-financial-data', async (req: Request, res: Response) => {
   try {
     const { shop_id, days_back = 30 } = req.body;
 
@@ -1255,7 +1322,7 @@ router.post('/payment/collect-financial-data', authMiddleware, async (req: Reque
  * GET /api/shopee/orders/list
  * Busca lista de pedidos em um período
  */
-router.get('/orders/list', authMiddleware, async (req: Request, res: Response) => {
+router.get('/orders/list', async (req: Request, res: Response) => {
   try {
     const { shop_id, time_from, time_to, time_range_field, order_status, page_size, cursor } = req.query;
 
@@ -1297,193 +1364,30 @@ router.get('/orders/list', authMiddleware, async (req: Request, res: Response) =
 
 /**
  * POST /api/shopee/orders/detail-batch
- * Busca detalhes de pedidos em lote
+ * Endpoint bloqueado por politica interna
  */
-router.post('/orders/detail-batch', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const { shop_id, order_sn_list, response_optional_fields } = req.body;
-
-    if (!shop_id || !order_sn_list?.length) {
-      return res.status(400).json({
-        success: false,
-        error: 'shop_id e order_sn_list são obrigatórios',
-      });
-    }
-
-    const shopId = typeof shop_id === 'string' ? parseInt(shop_id, 10) : shop_id;
-
-    const details = await getOrderDetailBatch(shopId, order_sn_list, response_optional_fields);
-
-    return res.json({
-      success: true,
-      data: { orders: details },
-    });
-  } catch (error: any) {
-    console.error('Erro ao buscar order detail batch:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Erro ao buscar detalhes de pedidos',
-    });
-  }
+router.post('/orders/detail-batch', async (_req: Request, res: Response) => {
+  return res.status(403).json({
+    success: false,
+    data: { orders: [] },
+    blocked: true,
+    error_code: 'SHOPEE_ENDPOINT_BLOCKED_BY_POLICY',
+    message: 'Detalhes de pedidos nao disponiveis nesta integracao',
+  });
 });
 
 /**
  * POST /api/shopee/orders/collect-sales-data
- * Coleta dados de vendas de um período e agrega por SKU
- * Retorna quantidade vendida, preço médio, etc. por SKU
+ * Endpoint bloqueado por politica interna
  */
-router.post('/orders/collect-sales-data', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const { shop_id, days_back = 30 } = req.body;
-
-    if (!shop_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'shop_id é obrigatório',
-      });
-    }
-
-    const shopId = typeof shop_id === 'string' ? parseInt(shop_id, 10) : shop_id;
-    
-    // Calcula período (últimos N dias)
-    const now = Math.floor(Date.now() / 1000);
-    const daysInSeconds = days_back * 24 * 60 * 60;
-    const timeFrom = now - daysInSeconds;
-    const timeTo = now;
-
-    console.log(`[CollectSales] Buscando pedidos de ${days_back} dias para loja ${shopId}`);
-
-    // Buscar apenas pedidos concluídos (COMPLETED)
-    let allOrders: Array<{ order_sn: string }> = [];
-    let cursor = '';
-    let hasMore = true;
-
-    while (hasMore) {
-      const orderList = await getOrderList(
-        shopId,
-        'create_time',
-        timeFrom,
-        timeTo,
-        'COMPLETED',
-        100,
-        cursor
-      );
-      
-      allOrders = [...allOrders, ...orderList.orders];
-      hasMore = orderList.more;
-      cursor = orderList.nextCursor;
-
-      // Limite de segurança
-      if (allOrders.length > 1000) {
-        console.log('[CollectSales] Limite de 1000 pedidos atingido');
-        break;
-      }
-    }
-
-    console.log(`[CollectSales] Total de pedidos encontrados: ${allOrders.length}`);
-
-    if (allOrders.length === 0) {
-      return res.json({
-        success: true,
-        data: {
-          period: { from: timeFrom, to: timeTo, days: days_back },
-          orders_count: 0,
-          sku_summary: [],
-        },
-      });
-    }
-
-    // Buscar detalhes em batches de 50
-    const batchSize = 50;
-    const skuSummary: Record<string, {
-      item_sku: string;
-      item_name: string;
-      total_quantity: number;
-      total_revenue: number;
-      avg_price: number;
-      orders_count: number;
-      min_price: number;
-      max_price: number;
-    }> = {};
-
-    for (let i = 0; i < allOrders.length; i += batchSize) {
-      const batch = allOrders.slice(i, i + batchSize);
-      const orderSns = batch.map(o => o.order_sn);
-      
-      console.log(`[CollectSales] Buscando detalhes batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(allOrders.length/batchSize)}`);
-      
-      const details = await getOrderDetailBatch(shopId, orderSns);
-
-      for (const order of details) {
-        if (!order.item_list) continue;
-
-        for (const item of order.item_list) {
-          const sku = item.item_sku || item.model_sku || 'SEM_SKU';
-          const price = item.model_discounted_price || item.model_original_price || 0;
-          const qty = item.model_quantity_purchased || 0;
-          
-          if (!skuSummary[sku]) {
-            skuSummary[sku] = {
-              item_sku: sku,
-              item_name: item.item_name || '',
-              total_quantity: 0,
-              total_revenue: 0,
-              avg_price: 0,
-              orders_count: 0,
-              min_price: price,
-              max_price: price,
-            };
-          }
-
-          skuSummary[sku].total_quantity += qty;
-          skuSummary[sku].total_revenue += price * qty;
-          skuSummary[sku].orders_count += 1;
-          
-          if (price > 0) {
-            skuSummary[sku].min_price = Math.min(skuSummary[sku].min_price, price);
-            skuSummary[sku].max_price = Math.max(skuSummary[sku].max_price, price);
-          }
-        }
-      }
-
-      // Delay entre batches
-      if (i + batchSize < allOrders.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-    }
-
-    // Calcular preço médio
-    const skuSummaryWithAvg = Object.values(skuSummary).map(sku => ({
-      ...sku,
-      avg_price: sku.total_quantity > 0 ? sku.total_revenue / sku.total_quantity : 0,
-    }));
-
-    // Ordenar por quantidade vendida
-    skuSummaryWithAvg.sort((a, b) => b.total_quantity - a.total_quantity);
-
-    console.log(`[CollectSales] Dados agregados para ${skuSummaryWithAvg.length} SKUs`);
-
-    return res.json({
-      success: true,
-      data: {
-        period: { 
-          from: timeFrom, 
-          to: timeTo, 
-          days: days_back,
-          from_date: new Date(timeFrom * 1000).toISOString(),
-          to_date: new Date(timeTo * 1000).toISOString(),
-        },
-        orders_count: allOrders.length,
-        sku_summary: skuSummaryWithAvg,
-      },
-    });
-  } catch (error: any) {
-    console.error('Erro ao coletar dados de vendas:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Erro ao coletar dados de vendas',
-    });
-  }
+router.post('/orders/collect-sales-data', async (_req: Request, res: Response) => {
+  return res.status(403).json({
+    success: false,
+    data: { sku_summary: [] },
+    blocked: true,
+    error_code: 'SHOPEE_ENDPOINT_BLOCKED_BY_POLICY',
+    message: 'Coleta de vendas por detalhe de pedido nao disponivel nesta integracao',
+  });
 });
 
 // ============================================================
@@ -1494,7 +1398,7 @@ router.post('/orders/collect-sales-data', authMiddleware, async (req: Request, r
  * POST /api/shopee/product/update-price
  * Atualiza preço de um item ou modelo
  */
-router.post('/product/update-price', authMiddleware, async (req: Request, res: Response) => {
+router.post('/product/update-price', async (req: Request, res: Response) => {
   try {
     const { shop_id, item_id, price_list } = req.body;
 
@@ -1546,7 +1450,7 @@ router.post('/product/update-price', authMiddleware, async (req: Request, res: R
  * POST /api/shopee/product/update-price-batch
  * Atualiza preços de múltiplos itens
  */
-router.post('/product/update-price-batch', authMiddleware, async (req: Request, res: Response) => {
+router.post('/product/update-price-batch', async (req: Request, res: Response) => {
   try {
     const { shop_id, updates } = req.body as {
       shop_id: number | string;
@@ -1627,7 +1531,7 @@ router.post('/product/update-price-batch', authMiddleware, async (req: Request, 
  * GET /api/shopee/product/price-info
  * Busca informações de preço de itens
  */
-router.get('/product/price-info', authMiddleware, async (req: Request, res: Response) => {
+router.get('/product/price-info', async (req: Request, res: Response) => {
   try {
     const { shop_id, item_ids } = req.query;
 
@@ -1657,3 +1561,5 @@ router.get('/product/price-info', authMiddleware, async (req: Request, res: Resp
 });
 
 export default router;
+
+

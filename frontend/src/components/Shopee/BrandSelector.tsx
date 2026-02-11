@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2, Search, AlertCircle } from 'lucide-react';
 import { auth } from '@/config/firebase';
 import { ShopeeBrand } from '@/types/shopee-product.types';
 
@@ -25,6 +25,7 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
   const [isMandatory, setIsMandatory] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (shopId && categoryId) {
@@ -57,11 +58,12 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
   const loadBrands = async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = await getAuthToken();
       if (!token) return;
 
       const response = await fetch(
-        `${API_BASE}/api/shopee/categories/${categoryId}/brands?shop_id=${shopId}`,
+        `${API_BASE}/api/shopee/categories/${categoryId}/brands?shop_id=${shopId}&language=pt-BR&all=true`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await response.json();
@@ -69,9 +71,12 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
       if (data.success) {
         setBrands(data.data?.brands || []);
         setIsMandatory(Boolean(data.data?.is_mandatory ?? data.data?.isMandatory));
+      } else {
+        setError(data.error || 'Erro ao carregar marcas');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao carregar marcas:', err);
+      setError(err.message || 'Erro ao carregar marcas');
     } finally {
       setLoading(false);
     }
@@ -101,6 +106,22 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
       <Label className="text-sm">
         Marca {isMandatory && <span className="text-red-500">*</span>}
       </Label>
+
+      {error && (
+        <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-3 py-2">
+          <div className="flex items-center gap-2 text-red-700 text-xs">
+            <AlertCircle className="w-3 h-3" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            className="text-xs text-red-700 underline"
+            onClick={loadBrands}
+          >
+            Tentar novamente
+          </button>
+        </div>
+      )}
 
       <div className="relative">
         <div

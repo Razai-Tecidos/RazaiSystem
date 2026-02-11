@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Loader2, Ruler, X } from 'lucide-react';
+import { Loader2, Ruler, X, AlertCircle } from 'lucide-react';
 import { auth } from '@/config/firebase';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -29,6 +29,7 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
   const [supported, setSupported] = useState(false);
   const [sizeCharts, setSizeCharts] = useState<SizeChart[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (shopId && categoryId) {
@@ -64,6 +65,7 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
   const checkSupport = async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = await getAuthToken();
       if (!token) return;
 
@@ -78,9 +80,13 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
         loadSizeCharts(token);
       } else {
         setSupported(false);
+        if (!data.success) {
+          setError(data.error || 'Erro ao verificar suporte de tabela de medidas');
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao verificar suporte a size chart:', err);
+      setError(err.message || 'Erro ao verificar suporte de tabela de medidas');
     } finally {
       setLoading(false);
     }
@@ -96,9 +102,12 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
 
       if (data.success) {
         setSizeCharts(data.data || []);
+      } else {
+        setError(data.error || 'Erro ao carregar tabelas de medidas');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao carregar size charts:', err);
+      setError(err.message || 'Erro ao carregar tabelas de medidas');
     }
   };
 
@@ -107,6 +116,16 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
       <div className="flex items-center gap-2 py-2">
         <Loader2 className="w-4 h-4 animate-spin" />
         <span className="text-sm text-gray-500">Verificando tabela de medidas...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 py-2 text-red-600">
+        <AlertCircle className="w-4 h-4" />
+        <span className="text-sm">{error}</span>
+        <Button variant="ghost" size="sm" onClick={checkSupport}>Tentar novamente</Button>
       </div>
     );
   }

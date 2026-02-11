@@ -104,6 +104,7 @@ export interface ShopeeDataSnapshot {
  * Condição do produto
  */
 export type ProductCondition = 'NEW' | 'USED';
+export type ShopeeImageRatio = '1:1' | '3:4';
 
 /**
  * Produto Shopee (rascunho ou publicado)
@@ -120,6 +121,9 @@ export interface ShopeeProduct {
   
   // Imagens principais do produto (galeria)
   imagens_principais: string[];
+  imagens_principais_1_1?: string[];
+  imagens_principais_3_4?: string[];
+  imagem_ratio_principal?: ShopeeImageRatio;
   
   // Vídeo do produto (opcional)
   video_url?: string;
@@ -230,6 +234,9 @@ export interface CreateShopeeProductData {
   titulo_anuncio?: string;
   usar_imagens_publicas?: boolean;
   imagens_principais?: string[];
+  imagens_principais_1_1?: string[];
+  imagens_principais_3_4?: string[];
+  imagem_ratio_principal?: ShopeeImageRatio;
   template_id?: string;
   
   // Campos adicionais

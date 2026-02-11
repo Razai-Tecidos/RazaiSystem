@@ -199,9 +199,10 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
       setMosaicos(data);
     } catch (error) {
       console.error(error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao ler mosaicos.';
       toast({
         title: 'Erro',
-        description: 'Nao foi possivel carregar os mosaicos salvos.',
+        description: `Nao foi possivel carregar os mosaicos salvos. ${errorMessage}`,
         variant: 'destructive',
       });
     } finally {
@@ -446,9 +447,7 @@ export function GestaoImagens({ onNavigateHome }: GestaoImagensProps) {
         createdBy: auth.currentUser?.uid || 'unknown',
       });
 
-      if (selectedTecidoId !== tecidoId) {
-        setSelectedTecidoId(tecidoId);
-      } else {
+      if (selectedTecidoId === tecidoId) {
         await loadMosaicos(tecidoId);
       }
 

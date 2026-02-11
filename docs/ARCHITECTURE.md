@@ -144,4 +144,4 @@ rg -n "gestao_imagens_mosaicos|mosaicos/|mosaic" frontend/src functions/src fire
 - `docs/README.md`
 - `docs/SHOPEE.md`
 - `docs/SHOPEE_ANUNCIOS.md`
-- `docs/SHOPEE_ANUNCIOS_ROADMAP.md`
+- `docs/ENTREGAS_2026-02-11.md`
