@@ -203,6 +203,63 @@ export async function getCategoryPath(
   return path;
 }
 
+// Mapeia input_type numerico da API Shopee para string do nosso tipo
+const INPUT_TYPE_MAP: Record<number, string> = {
+  1: 'DROP_DOWN',         // SINGLE_DROP_DOWN
+  2: 'COMBO_BOX',         // SINGLE_COMBO_BOX
+  3: 'TEXT_FILED',         // FREE_TEXT (Shopee usa TEXT_FILED, nao TEXT_FIELD)
+  4: 'MULTIPLE_SELECT',   // MULTI_DROP_DOWN
+  5: 'MULTIPLE_SELECT_COMBO_BOX', // MULTI_COMBO_BOX
+};
+
+// Extrai texto pt-BR de multi_lang, fallback para nome original
+function extractPtBR(multiLang?: Array<{ language: string; value: string }>, fallback?: string): string {
+  if (!multiLang || multiLang.length === 0) return fallback || '';
+  const pt = multiLang.find(ml => ml.language === 'pt-BR');
+  return pt?.value || multiLang[0]?.value || fallback || '';
+}
+
+/**
+ * Normaliza um atributo raw da API Shopee para o formato ShopeeCategoryAttribute
+ * que o frontend espera.
+ */
+function normalizeRawAttribute(raw: Record<string, unknown>): ShopeeCategoryAttribute | null {
+  const attributeId = raw.attribute_id as number | undefined;
+  if (attributeId === undefined) return null;
+
+  const attrInfo = (raw.attribute_info || {}) as Record<string, unknown>;
+  const rawInputType = attrInfo.input_type as number | undefined;
+  const rawValidationType = attrInfo.input_validation_type as number | undefined;
+  const rawFormatType = attrInfo.format_type as number | undefined;
+
+  // Normaliza attribute_value_list
+  const rawValues = (raw.attribute_value_list || []) as Array<Record<string, unknown>>;
+  const normalizedValues = rawValues.map(v => ({
+    value_id: v.value_id as number,
+    original_value_name: (v.name || v.original_value_name || '') as string,
+    display_value_name: extractPtBR(
+      v.multi_lang as Array<{ language: string; value: string }>,
+      (v.name || v.original_value_name || '') as string
+    ),
+    value_unit: (v.value_unit || undefined) as string | undefined,
+  }));
+
+  return {
+    attribute_id: attributeId,
+    original_attribute_name: (raw.name || '') as string,
+    display_attribute_name: extractPtBR(
+      raw.multi_lang as Array<{ language: string; value: string }>,
+      (raw.name || '') as string
+    ),
+    is_mandatory: (raw.mandatory === true) || (raw.is_mandatory === true),
+    input_type: INPUT_TYPE_MAP[rawInputType || 0] || 'TEXT_FILED',
+    input_validation_type: String(rawValidationType || 0),
+    format_type: String(rawFormatType || 1),
+    attribute_unit: (attrInfo.attribute_unit_list || undefined) as string[] | undefined,
+    attribute_value_list: normalizedValues.length > 0 ? normalizedValues : undefined,
+  };
+}
+
 /**
  * Busca atributos de uma categoria
  */
@@ -231,12 +288,26 @@ export async function getCategoryAttributes(shopId: number, categoryId: number):
         error?: string;
         message?: string;
         response?: {
-          attribute_list: ShopeeCategoryAttribute[];
+          list?: Array<{
+            category_id?: number;
+            attribute_tree?: Array<Record<string, unknown>>;
+          }>;
+          attribute_list?: Array<Record<string, unknown>>;
         };
       };
 
       if (!response.error) {
-        return response.response?.attribute_list || [];
+        // Formato documentado: response.list[0].attribute_tree
+        const rawAttributes = response.response?.list?.[0]?.attribute_tree
+          || response.response?.attribute_list
+          || [];
+
+        // Normaliza cada atributo para o formato que o frontend espera
+        const normalized = rawAttributes
+          .map(normalizeRawAttribute)
+          .filter((a): a is ShopeeCategoryAttribute => a !== null);
+
+        return normalized;
       }
 
       lastErrorMessage = `${response.error} - ${response.message || 'sem detalhes'}`;

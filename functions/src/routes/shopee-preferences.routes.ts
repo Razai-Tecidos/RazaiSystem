@@ -108,6 +108,7 @@ router.put(
         usar_imagens_publicas_padrao,
         descricao_template,
         ncm_padrao,
+        cest_padrao,
         categoria_nome_padrao,
       } = req.body;
 
@@ -243,6 +244,17 @@ router.put(
         }
       }
 
+      if (cest_padrao !== undefined) {
+        const normalizedCest = String(cest_padrao).replace(/\D/g, '');
+        if (!(normalizedCest === '00' || normalizedCest.length === 7)) {
+          res.status(400).json({
+            success: false,
+            error: 'CEST padrao deve conter 7 digitos ou "00"',
+          });
+          return;
+        }
+      }
+
       const preferences = await preferencesService.saveUserPreferences(userId, {
         preco_base_padrao,
         comissao_percentual_padrao,
@@ -262,6 +274,7 @@ router.put(
         usar_imagens_publicas_padrao,
         descricao_template,
         ncm_padrao,
+        cest_padrao,
         categoria_nome_padrao,
       });
 

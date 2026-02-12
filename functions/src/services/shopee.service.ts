@@ -365,8 +365,8 @@ export async function uploadImageToShopeeMultipart(
         contentType: 'image/jpeg', // Shopee aceita JPEG, PNG
       });
       formData.append('scene', 'normal');
-      if (ratio === '3:4') {
-        formData.append('ratio', '3:4');
+      if (ratio) {
+        formData.append('ratio', ratio);
       }
 
       const response = await axios.post(url, formData, {

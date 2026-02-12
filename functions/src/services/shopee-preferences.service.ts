@@ -56,6 +56,7 @@ export async function saveUserPreferences(
   if (data.usar_imagens_publicas_padrao !== undefined) updateData.usar_imagens_publicas_padrao = data.usar_imagens_publicas_padrao;
   if (data.descricao_template !== undefined) updateData.descricao_template = data.descricao_template;
   if (data.ncm_padrao !== undefined) updateData.ncm_padrao = data.ncm_padrao;
+  if (data.cest_padrao !== undefined) updateData.cest_padrao = data.cest_padrao;
   if (data.categoria_nome_padrao !== undefined) updateData.categoria_nome_padrao = data.categoria_nome_padrao;
 
   await docRef.set(updateData, { merge: true });
@@ -132,6 +133,7 @@ export async function getDefaultValues(
   usar_imagens_publicas: boolean;
   descricao_template?: string;
   ncm_padrao?: string;
+  cest_padrao?: string;
 }> {
   const preferences = await getUserPreferences(userId);
 
@@ -193,6 +195,7 @@ export async function getDefaultValues(
     dimensoes,
     usar_imagens_publicas,
     descricao_template: preferences?.descricao_template,
-    ncm_padrao: preferences?.ncm_padrao,
+    ncm_padrao: SYSTEM_DEFAULTS.ncm_padrao,
+    cest_padrao: SYSTEM_DEFAULTS.cest_padrao,
   };
 }

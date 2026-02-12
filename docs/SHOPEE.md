@@ -1,6 +1,6 @@
 # Integracao Shopee
 
-Ultima atualizacao: 2026-02-11
+Ultima atualizacao: 2026-02-12
 
 ## Leitura rapida (para agentes)
 1. Fluxo de anuncio end-to-end: `docs/SHOPEE_ANUNCIOS.md`
@@ -35,13 +35,16 @@ Ultima atualizacao: 2026-02-11
   - `frontend/src/pages/CriarAnuncioShopee.tsx`
 - Mudar formula de preco/lucro:
   - `frontend/src/lib/shopeePricing.ts`
-- Mudar payload de publish (`add_item` / `init_tier_variation`):
+- Mudar payload de publish (`add_item` / `init_tier_variation` / `update_item`):
   - `functions/src/services/shopee-product.service.ts`
 - Mudar validacoes pre-publish (atributos/marca/logistica/size chart):
   - `functions/src/services/shopee-product.service.ts`
   - `frontend/src/components/Shopee/CategoryAttributes.tsx`
   - `frontend/src/components/Shopee/BrandSelector.tsx`
   - `frontend/src/components/Shopee/SizeChartSelector.tsx`
+- Mudar auto-fill de atributos (material, estampa, largura, comprimento):
+  - `frontend/src/components/Shopee/CategoryAttributes.tsx` (logica de auto-fill + `ATTR_UNITS`)
+  - `frontend/src/pages/CriarAnuncioShopee.tsx` (monta `tecidoDataForAttributes`)
 - Mudar defaults/preferencias Shopee:
   - `functions/src/services/shopee-preferences.service.ts`
   - `functions/src/routes/shopee-preferences.routes.ts`
@@ -76,14 +79,16 @@ Ultima atualizacao: 2026-02-11
 
 ## Fluxos criticos
 
-### Publish (2 etapas)
-1. Validar draft + ownership + pre-publish.
-2. Upload de imagens para `image_id`.
-3. `add_item` (sem tier/model).
-4. Esperar 5s.
-5. `init_tier_variation` (tiers + models).
-6. Persistir `item_id`, status e sincronizacao.
-7. Em falha parcial, executar rollback (`delete_item`).
+### Publish (3 etapas API)
+1. Validar draft + ownership + pre-publish (atributos, marca, logistica, size chart).
+2. Adquirir lock transacional (`publish_lock` com TTL).
+3. Upload de imagens (1:1 + variacoes) para `image_id` (com retry/backoff).
+4. `add_item` (item base, SEM tier/model).
+5. Esperar 5s (tempo de processamento Shopee).
+6. `init_tier_variation` (tiers + models).
+7. Esperar 5s, entao `update_item` para imagens 3:4 (com retry se `not_found`).
+8. Persistir `item_id`, status e sincronizacao.
+9. Em falha parcial, executar rollback (`delete_item`).
 
 ### Estoque por disponibilidade
 - Regra principal: disponibilidade de cor por estoque (`total_available_stock`), nao por `model_status`.
@@ -96,10 +101,16 @@ Ultima atualizacao: 2026-02-11
 rg -n "router\.(get|post|put|delete)\('/api/shopee|/:id/publish|sync-all" functions/src/routes
 
 # localizar payload de publish
-rg -n "add_item|init_tier_variation|size_chart_info|publish_lock" functions/src/services/shopee-product.service.ts
+rg -n "add_item|init_tier_variation|update_item|size_chart_info|publish_lock" functions/src/services/shopee-product.service.ts
 
 # localizar validacao de steps no frontend
 rg -n "canProceedFrom|validationErrors|STEP_ORDER" frontend/src/pages/CriarAnuncioShopee.tsx
+
+# localizar auto-fill de atributos
+rg -n "buildDynamicDefaults|ATTR_UNITS|DYNAMIC_ATTR_KEYS|autoFilledRef" frontend/src/components/Shopee/CategoryAttributes.tsx
+
+# localizar dados de tecido para auto-fill
+rg -n "tecidoDataForAttributes|extractMetersFromTamanhoNome" frontend/src/pages/CriarAnuncioShopee.tsx
 ```
 
 ## Documentos relacionados

@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Label } from '@/components/ui/label';
+import { Loader2, Ruler, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Loader2, Ruler, X, AlertCircle } from 'lucide-react';
 import { auth } from '@/config/firebase';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 interface SizeChart {
   size_chart_id: number;
-  size_chart_name?: string;
-  name?: string;
 }
 
 interface SizeChartSelectorProps {
@@ -30,13 +28,16 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
   const [sizeCharts, setSizeCharts] = useState<SizeChart[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoSelectedRef = useRef(false);
 
   useEffect(() => {
     if (shopId && categoryId) {
-      checkSupport();
+      autoSelectedRef.current = false;
+      checkSupportAndLoad();
     }
   }, [shopId, categoryId]);
 
+  // Validation reporting
   useEffect(() => {
     if (!onValidationChange) return;
     const hasSizeCharts = sizeCharts.length > 0;
@@ -50,11 +51,23 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
     });
   }, [loading, supported, sizeCharts, value, onValidationChange]);
 
+  // Clear value if not supported
   useEffect(() => {
     if (!supported && value !== undefined) {
       onChange(undefined);
     }
   }, [supported, value, onChange]);
+
+  // Auto-select first size chart when charts load
+  useEffect(() => {
+    if (!supported || sizeCharts.length === 0) return;
+    if (autoSelectedRef.current) return;
+    if (value !== undefined && value !== null) return;
+
+    // Auto-selecionar a primeira tabela disponivel
+    autoSelectedRef.current = true;
+    onChange(sizeCharts[0].size_chart_id);
+  }, [sizeCharts, supported, value, onChange]);
 
   const getAuthToken = async (): Promise<string | null> => {
     const user = auth.currentUser;
@@ -62,52 +75,46 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
     return user.getIdToken();
   };
 
-  const checkSupport = async () => {
+  const checkSupportAndLoad = async () => {
     try {
       setLoading(true);
       setError(null);
+      setSizeCharts([]);
+      setSupported(false);
       const token = await getAuthToken();
       if (!token) return;
 
-      const response = await fetch(
+      // 1. Verificar suporte
+      const supportResp = await fetch(
         `${API_BASE}/api/shopee/item-limit/size-chart-support?shop_id=${shopId}&category_id=${categoryId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const data = await response.json();
+      const supportData = await supportResp.json();
 
-      if (data.success && data.data?.supported) {
-        setSupported(true);
-        loadSizeCharts(token);
-      } else {
+      if (!supportData.success || !supportData.data?.supported) {
         setSupported(false);
-        if (!data.success) {
-          setError(data.error || 'Erro ao verificar suporte de tabela de medidas');
-        }
+        return;
       }
-    } catch (err: any) {
-      console.error('Erro ao verificar suporte a size chart:', err);
-      setError(err.message || 'Erro ao verificar suporte de tabela de medidas');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const loadSizeCharts = async (token: string) => {
-    try {
-      const response = await fetch(
+      setSupported(true);
+
+      // 2. Carregar lista de size charts
+      const chartsResp = await fetch(
         `${API_BASE}/api/shopee/item-limit/size-charts?shop_id=${shopId}&category_id=${categoryId}&page_size=50`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const data = await response.json();
+      const chartsData = await chartsResp.json();
 
-      if (data.success) {
-        setSizeCharts(data.data || []);
+      if (chartsData.success) {
+        setSizeCharts(chartsData.data || []);
       } else {
-        setError(data.error || 'Erro ao carregar tabelas de medidas');
+        setError(chartsData.error || 'Erro ao carregar tabelas de medidas');
       }
     } catch (err: any) {
-      console.error('Erro ao carregar size charts:', err);
+      console.error('Erro ao verificar/carregar size charts:', err);
       setError(err.message || 'Erro ao carregar tabelas de medidas');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -125,12 +132,12 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
       <div className="flex items-center gap-2 py-2 text-red-600">
         <AlertCircle className="w-4 h-4" />
         <span className="text-sm">{error}</span>
-        <Button variant="ghost" size="sm" onClick={checkSupport}>Tentar novamente</Button>
+        <Button variant="ghost" size="sm" onClick={checkSupportAndLoad}>Tentar novamente</Button>
       </div>
     );
   }
 
-  if (!supported) {
+  if (!supported || sizeCharts.length === 0) {
     return null;
   }
 
@@ -138,39 +145,28 @@ export function SizeChartSelector({ shopId, categoryId, value, onChange, onValid
     <div className="space-y-2">
       <Label className="text-sm flex items-center gap-2">
         <Ruler className="w-4 h-4" />
-        Tabela de Medidas (Size Chart)
+        Tabela de Medidas
       </Label>
 
-      {value ? (
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm">
-            Size Chart ID: {value}
-          </span>
-          <Button variant="ghost" size="sm" onClick={() => onChange(undefined)}>
-            <X className="w-4 h-4" />
-          </Button>
-        </div>
-      ) : sizeCharts.length > 0 ? (
-        <select
-          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          value=""
-          onChange={(e) => {
-            const id = parseInt(e.target.value);
-            if (id) onChange(id);
-          }}
-        >
-          <option value="">Selecione uma tabela de medidas...</option>
-          {sizeCharts.map(sc => (
-            <option key={sc.size_chart_id} value={sc.size_chart_id}>
-              {sc.name || sc.size_chart_name || `Size Chart #${sc.size_chart_id}`}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <p className="text-sm text-gray-500">
-          Esta categoria suporta tabela de medidas, mas nenhuma foi encontrada.
-        </p>
-      )}
+      <select
+        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        value={value !== undefined && value !== null ? String(value) : ''}
+        onChange={(e) => {
+          const id = parseInt(e.target.value, 10);
+          if (Number.isFinite(id) && id > 0) {
+            onChange(id);
+          } else {
+            onChange(undefined);
+          }
+        }}
+      >
+        <option value="">Nenhuma tabela selecionada</option>
+        {sizeCharts.map((sc, index) => (
+          <option key={sc.size_chart_id} value={sc.size_chart_id}>
+            Tabela de Medidas {sizeCharts.length > 1 ? `#${index + 1}` : ''} (ID: {sc.size_chart_id})
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

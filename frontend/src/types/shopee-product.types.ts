@@ -51,6 +51,7 @@ export interface TierVariation {
  */
 export interface TaxInfo {
   ncm: string;
+  cest?: string;
   gtin: string;
   item_name_in_invoice?: string;
 }
@@ -147,6 +148,7 @@ export interface ShopeeProduct {
   extended_description?: ExtendedDescription;
   wholesale?: WholesaleTier[];
   ncm_padrao?: string;
+  cest_padrao?: string;
   status: ShopeeProductStatus;
   error_message?: string;
   created_at: Timestamp;
@@ -202,6 +204,7 @@ export interface CreateShopeeProductData {
   extended_description?: ExtendedDescription;
   wholesale?: WholesaleTier[];
   ncm_padrao?: string;
+  cest_padrao?: string;
 }
 
 /**
@@ -244,6 +247,7 @@ export interface ShopeeUserPreferences {
   usar_imagens_publicas_padrao?: boolean;
   descricao_template?: string;
   ncm_padrao?: string;
+  cest_padrao?: string;
   ultimos_valores?: {
     preco_base?: number;
     estoque_padrao?: number;
@@ -308,6 +312,7 @@ export interface DefaultFormValues {
   usar_imagens_publicas: boolean;
   descricao_template?: string;
   ncm_padrao?: string;
+  cest_padrao?: string;
 }
 
 /**

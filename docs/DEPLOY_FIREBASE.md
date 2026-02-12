@@ -66,9 +66,17 @@ VITE_FIREBASE_APP_ID=1:696290533431:web:95c194457310d78e375fb2
 VITE_FIREBASE_MEASUREMENT_ID=G-ZC2SM2PLH5
 ```
 
-#### Cloud Functions
+#### Cloud Functions (.env em functions/)
 
-As Cloud Functions já têm acesso automático ao Firebase Admin SDK. Não é necessário configurar credenciais manualmente.
+As Cloud Functions usam Firebase Admin SDK (acesso automatico) + variaveis de ambiente em `functions/.env`:
+
+```env
+SHOPEE_PARTNER_ID=...
+SHOPEE_PARTNER_KEY=...
+SHOPEE_REDIRECT_URL=...
+```
+
+**Importante (Windows)**: Arquivos `.env` no Windows tem line endings `\r\n`. Se fizer parsing manual, usar `/\r?\n/` para split e `.trim()` nos valores, senao `\r` fica no final dos valores e quebra credenciais silenciosamente.
 
 **Emails autorizados**: Edite `functions/src/config/authorizedEmails.ts` para adicionar emails autorizados.
 
@@ -365,4 +373,4 @@ Após o deploy, você terá acesso a:
 
 ---
 
-**Última atualização**: 2026-02-03
+**Última atualização**: 2026-02-12

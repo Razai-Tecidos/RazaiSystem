@@ -33,6 +33,7 @@ export interface TierVariation {
  */
 export interface TaxInfo {
   ncm: string;                   // Código NCM (ex: "58013600" para tecidos)
+  cest?: string;                 // Código CEST (BR). Use "00" quando não aplicável
   gtin: string;                  // Código de barras EAN ("00" se não tiver)
   item_name_in_invoice?: string; // Auto-gerado: "Tecido [nome] [cor] [tamanho]"
 }
@@ -202,6 +203,7 @@ export interface ShopeeProduct {
   
   // Informações fiscais
   ncm_padrao?: string;
+  cest_padrao?: string;
   
   // Template usado
   template_id?: string;
@@ -259,6 +261,7 @@ export interface CreateShopeeProductData {
   
   // Informações fiscais padrão (aplicado em cada model)
   ncm_padrao?: string;
+  cest_padrao?: string;
 }
 
 /**

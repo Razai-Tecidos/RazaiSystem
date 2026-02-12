@@ -33,6 +33,15 @@ const PUBLISH_LOCK_TTL_MS = 10 * 60 * 1000;
 const IMAGE_UPLOAD_POOL_SIZE = 3;
 const IMAGE_UPLOAD_MAX_RETRIES = 2;
 const IMAGE_UPLOAD_RETRY_BASE_DELAY_MS = 500;
+const SHOPEE_BR_TAX_DEFAULTS = {
+  ncm: '55161300',
+  cest: '2806000',
+  same_state_cfop: '5102',
+  diff_state_cfop: '6102',
+  csosn: '102',
+  origin: '0',
+  measure_unit: 'M',
+} as const;
 
 type PublishLogLevel = 'info' | 'warn' | 'error';
 type PublishStage = 'lock' | 'validation' | 'upload' | 'add_item' | 'init_tier_variation' | 'rollback' | 'persist';
@@ -73,6 +82,36 @@ function getUploadRetryDelay(attempt: number): number {
   const exponential = IMAGE_UPLOAD_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1));
   const jitter = Math.floor(Math.random() * 200);
   return exponential + jitter;
+}
+
+function normalizeNcm(value?: string | null): string | null {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 8) return digits;
+  if (digits === '00') return digits;
+  return null;
+}
+
+function normalizeCest(value?: string | null): string {
+  if (!value) return SHOPEE_BR_TAX_DEFAULTS.cest;
+  const digits = value.replace(/\D/g, '');
+  if (digits === '00') return SHOPEE_BR_TAX_DEFAULTS.cest;
+  if (digits.length === 7) return digits;
+  return SHOPEE_BR_TAX_DEFAULTS.cest;
+}
+
+function normalizeImageUrlList(urls?: string[] | null): string[] {
+  if (!Array.isArray(urls)) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  urls.forEach((url) => {
+    if (typeof url !== 'string') return;
+    const trimmed = url.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  });
+  return normalized;
 }
 
 async function withUploadRetry<T>(
@@ -240,6 +279,38 @@ function isPublishLockActive(lockData: any): boolean {
 
 function buildPublishLockToken(productId: string): string {
   return `publish_${productId}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function pickPreferredSizeChartId(sizeCharts: Array<{
+  size_chart_id: number;
+}>): number | undefined {
+  if (sizeCharts.length === 0) return undefined;
+  // API so retorna size_chart_id (sem nome) — selecionar a primeira disponivel
+  return sizeCharts[0]?.size_chart_id;
+}
+
+async function resolveSizeChartIdForPublish(product: ShopeeProduct): Promise<number | undefined> {
+  const configuredId = product.size_chart_id || undefined;
+
+  try {
+    const support = await itemLimitService.checkSizeChartSupport(product.shop_id, product.categoria_id);
+    if (!support.supported) {
+      return undefined;
+    }
+
+    const sizeCharts = await itemLimitService.getSizeCharts(product.shop_id, product.categoria_id, 50);
+    if (sizeCharts.length === 0) {
+      return configuredId;
+    }
+
+    if (configuredId && sizeCharts.some((chart) => chart.size_chart_id === configuredId)) {
+      return configuredId;
+    }
+
+    return pickPreferredSizeChartId(sizeCharts) || configuredId;
+  } catch {
+    return configuredId;
+  }
 }
 
 async function validatePrePublishRequirements(product: ShopeeProduct): Promise<void> {
@@ -784,13 +855,11 @@ export async function createProduct(
   }
 
   // Galeria efetiva enviada para publicação (depende do ratio principal selecionado)
-  const imagensPrincipaisAtivas = imagemRatioPrincipal === '3:4'
-    ? imagensPrincipais34
-    : imagensPrincipais11;
-
-  const imagensPrincipais = imagensPrincipaisAtivas.length > 0
-    ? imagensPrincipaisAtivas
-    : tecido.imagemUrl ? [tecido.imagemUrl] : [];
+  const imagensPrincipais = imagensPrincipais11.length > 0
+    ? imagensPrincipais11
+    : imagensPrincipais34.length > 0
+      ? imagensPrincipais34
+      : tecido.imagemUrl ? [tecido.imagemUrl] : [];
   
   const now = admin.firestore.Timestamp.now();
   
@@ -821,14 +890,15 @@ export async function createProduct(
     titulo_anuncio: data.titulo_anuncio || null,
     descricao_customizada: data.descricao_customizada || null,
     usar_imagens_publicas: data.usar_imagens_publicas ?? true,
-    condition: data.condition || 'NEW',
+    condition: 'NEW',
     is_pre_order: data.is_pre_order ?? false,
     days_to_ship: data.days_to_ship ?? (data.is_pre_order ? 7 : 2),
     size_chart_id: data.size_chart_id || null,
     description_type: data.description_type || 'normal',
     extended_description: data.extended_description || null,
     wholesale: data.wholesale || null,
-    ncm_padrao: data.ncm_padrao || null,
+    ncm_padrao: data.ncm_padrao || SHOPEE_BR_TAX_DEFAULTS.ncm,
+    cest_padrao: data.cest_padrao || SHOPEE_BR_TAX_DEFAULTS.cest,
     status: 'draft' as const,
     created_at: now,
     updated_at: now,
@@ -879,6 +949,7 @@ export async function updateProduct(
   
   const updateData: Record<string, unknown> = {
     updated_at: admin.firestore.Timestamp.now(),
+    condition: 'NEW',
   };
   
   const hasCoresField = Object.prototype.hasOwnProperty.call(data, 'cores');
@@ -984,19 +1055,21 @@ export async function updateProduct(
     updateData.imagens_principais_3_4 = next34;
   }
 
+  const nextLegacyImages = next11.length > 0 ? next11 : next34;
   if (hasLegacyImages) {
-    updateData.imagens_principais = data.imagens_principais || [];
+    updateData.imagens_principais = data.imagens_principais || nextLegacyImages;
   } else if (hasRatioSpecific11 || hasRatioSpecific34 || data.imagem_ratio_principal !== undefined) {
-    updateData.imagens_principais = nextImageRatio === '3:4' ? next34 : next11;
+    updateData.imagens_principais = nextLegacyImages;
   }
-  if (data.condition !== undefined) updateData.condition = data.condition;
+  if (data.condition !== undefined) updateData.condition = 'NEW';
   if (data.is_pre_order !== undefined) updateData.is_pre_order = data.is_pre_order;
   if (data.days_to_ship !== undefined) updateData.days_to_ship = data.days_to_ship;
   if (data.size_chart_id !== undefined) updateData.size_chart_id = data.size_chart_id;
   if (data.description_type !== undefined) updateData.description_type = data.description_type;
   if (data.extended_description !== undefined) updateData.extended_description = data.extended_description;
   if (data.wholesale !== undefined) updateData.wholesale = data.wholesale;
-  if (data.ncm_padrao !== undefined) updateData.ncm_padrao = data.ncm_padrao;
+  if (data.ncm_padrao !== undefined) updateData.ncm_padrao = data.ncm_padrao || SHOPEE_BR_TAX_DEFAULTS.ncm;
+  if (data.cest_padrao !== undefined) updateData.cest_padrao = data.cest_padrao || SHOPEE_BR_TAX_DEFAULTS.cest;
   if (data.template_id !== undefined) updateData.template_id = data.template_id;
   
   await docRef.update(updateData);
@@ -1149,9 +1222,32 @@ export async function publishProduct(
   let createdItemId: number | null = null;
   let formattedName = '';
   let formattedDescription = '';
+  let sizeChartIdForPublish: number | undefined = product.size_chart_id || undefined;
+  const imageUrls11 = normalizeImageUrlList(product.imagens_principais_1_1);
+  const imageUrls34 = normalizeImageUrlList(product.imagens_principais_3_4);
+  const legacyImageUrls = normalizeImageUrlList(product.imagens_principais);
+  const mainImageRatioForAdd: '1:1' | '3:4' = imageUrls11.length > 0
+    ? '1:1'
+    : imageUrls34.length > 0
+      ? '3:4'
+      : product.imagem_ratio_principal === '3:4'
+        ? '3:4'
+        : '1:1';
+  const mainImageUrlsForAdd = imageUrls11.length > 0
+    ? imageUrls11
+    : imageUrls34.length > 0
+      ? imageUrls34
+      : legacyImageUrls;
+  const shouldSyncImages34AfterCreate = imageUrls34.length > 0 && mainImageRatioForAdd !== '3:4';
 
   try {
     await runPublishStage('validation', publishContext, async () => {
+      sizeChartIdForPublish = await resolveSizeChartIdForPublish(product);
+      const productForValidation = {
+        ...product,
+        size_chart_id: sizeChartIdForPublish,
+      } as ShopeeProduct;
+
       const tecido = await getTecidoData(product.tecido_id);
       const preferredTitle = product.titulo_anuncio?.trim() || product.tecido_nome;
       formattedName = formatItemName(
@@ -1173,7 +1269,7 @@ export async function publishProduct(
         stock: product.estoque_padrao,
         weight: product.peso,
         dimensions: product.dimensoes,
-        images: product.imagens_principais,
+        images: mainImageUrlsForAdd,
         tier_variations: product.tier_variations.map(t => ({
           tier_name: t.tier_name,
           options: t.options.map(o => ({ option_name: o.option_name })),
@@ -1192,7 +1288,7 @@ export async function publishProduct(
         });
       }
 
-      await validatePrePublishRequirements(product);
+      await validatePrePublishRequirements(productForValidation);
     });
 
     const accessToken = dryRun ? 'DRY_RUN' : await ensureValidToken(product.shop_id);
@@ -1244,16 +1340,16 @@ export async function publishProduct(
       });
     }
 
-    const { processedMainImages, processedTierVariations } = await runPublishStage(
+    const { processedMainImagesForAdd, processedMainImages34, processedTierVariations } = await runPublishStage(
       'upload',
       publishContext,
       async () => {
-        const mainImageRatio: '1:1' | '3:4' =
-          product.imagem_ratio_principal === '3:4' ? '3:4' : '1:1';
-
         if (dryRun) {
           return {
-            processedMainImages: product.imagens_principais.map((_, i) => `DRY_RUN_IMAGE_${i}`),
+            processedMainImagesForAdd: mainImageUrlsForAdd.map((_, i) => `DRY_RUN_IMAGE_ADD_${i}`),
+            processedMainImages34: shouldSyncImages34AfterCreate
+              ? imageUrls34.map((_, i) => `DRY_RUN_IMAGE_34_${i}`)
+              : null,
             processedTierVariations: product.tier_variations.map((tier, tierIndex) => ({
               name: tier.tier_name,
               option_list: tier.options.map((opt) => ({
@@ -1264,13 +1360,23 @@ export async function publishProduct(
           };
         }
 
-        const mainImages = await processImagesForPublish(
+        const mainImagesForAdd = await processImagesForPublish(
           product.shop_id,
           accessToken,
-          product.imagens_principais,
-          mainImageRatio,
+          mainImageUrlsForAdd,
+          mainImageRatioForAdd,
           product.usar_imagens_publicas
         );
+
+        const mainImages34 = shouldSyncImages34AfterCreate
+          ? await processImagesForPublish(
+              product.shop_id,
+              accessToken,
+              imageUrls34,
+              '3:4',
+              product.usar_imagens_publicas
+            )
+          : null;
 
         const tierVariations = await Promise.all(
           product.tier_variations.map(async (tier, tierIndex) => {
@@ -1286,7 +1392,7 @@ export async function publishProduct(
                           product.shop_id,
                           accessToken,
                           opt.imagem_url!,
-                          mainImageRatio
+                          mainImageRatioForAdd
                         )
                       )
                     : await withUploadRetry(`tier_overlay:${opt.option_name}`, () =>
@@ -1295,7 +1401,7 @@ export async function publishProduct(
                           accessToken,
                           opt.imagem_url!,
                           opt.option_name,
-                          mainImageRatio
+                          mainImageRatioForAdd
                         )
                       );
                   return {
@@ -1316,12 +1422,14 @@ export async function publishProduct(
         );
 
         return {
-          processedMainImages: mainImages,
+          processedMainImagesForAdd: mainImagesForAdd,
+          processedMainImages34: mainImages34,
           processedTierVariations: tierVariations,
         };
       },
       {
-        main_image_count: product.imagens_principais.length,
+        main_image_count: mainImageUrlsForAdd.length,
+        main_image_count_34: imageUrls34.length,
         tier_variation_count: product.tier_variations.length,
       }
     );
@@ -1343,12 +1451,12 @@ export async function publishProduct(
         package_height: product.dimensoes.altura,
       },
       image: {
-        image_id_list: processedMainImages,
-        image_ratio: product.imagem_ratio_principal === '3:4' ? '3:4' : '1:1',
+        image_id_list: processedMainImagesForAdd,
+        ...(mainImageRatioForAdd === '3:4' ? { image_ratio: '3:4' } : {}),
       },
       // tier_variation e model NAO vao no add_item - sao enviados via init_tier_variation
       logistic_info: logisticInfo,
-      condition: product.condition || 'NEW',
+      condition: 'NEW',
       item_status: 'NORMAL',
       pre_order: {
         is_pre_order: product.is_pre_order || false,
@@ -1357,15 +1465,16 @@ export async function publishProduct(
     };
 
     // tax_info no nivel do item (NAO por model)
-    if (product.ncm_padrao) {
-      shopeePayload.tax_info = {
-        ncm: product.ncm_padrao,
-        same_state_cfop: '',
-        diff_state_cfop: '',
-        csosn: '',
-        origin: '',
-      };
-    }
+    const normalizedNcm = normalizeNcm(product.ncm_padrao) || SHOPEE_BR_TAX_DEFAULTS.ncm;
+    shopeePayload.tax_info = {
+      ncm: normalizedNcm,
+      cest: normalizeCest(product.cest_padrao || SHOPEE_BR_TAX_DEFAULTS.cest),
+      same_state_cfop: SHOPEE_BR_TAX_DEFAULTS.same_state_cfop,
+      diff_state_cfop: SHOPEE_BR_TAX_DEFAULTS.diff_state_cfop,
+      csosn: SHOPEE_BR_TAX_DEFAULTS.csosn,
+      origin: SHOPEE_BR_TAX_DEFAULTS.origin,
+      measure_unit: SHOPEE_BR_TAX_DEFAULTS.measure_unit,
+    };
 
     // Adiciona video se disponivel
     if (product.video_url) {
@@ -1375,8 +1484,26 @@ export async function publishProduct(
     }
 
     // Adiciona atributos se disponiveis
+    // Normaliza formato: Shopee exige value_id=0 para valores customizados (texto livre)
     if (product.atributos && product.atributos.length > 0) {
-      shopeePayload.attribute_list = product.atributos;
+      shopeePayload.attribute_list = product.atributos.map((attr) => ({
+        attribute_id: attr.attribute_id,
+        attribute_value_list: (attr.attribute_value_list || []).map((val) => {
+          // Se ja tem value_id > 0, manter (opcao existente da Shopee)
+          if (val.value_id !== undefined && val.value_id !== null && val.value_id > 0) {
+            return { value_id: val.value_id };
+          }
+          // Texto livre: obrigatorio ter value_id=0 + original_value_name
+          if (val.original_value_name) {
+            return {
+              value_id: 0,
+              original_value_name: val.original_value_name,
+              ...(val.value_unit ? { value_unit: val.value_unit } : {}),
+            };
+          }
+          return val;
+        }),
+      }));
     }
 
     // Adiciona marca (brand_id + original_brand_name sao obrigatorios dentro do objeto brand)
@@ -1395,9 +1522,9 @@ export async function publishProduct(
     }
 
     // Adiciona size chart se disponivel (contrato v2)
-    if (product.size_chart_id) {
+    if (sizeChartIdForPublish) {
       shopeePayload.size_chart_info = {
-        size_chart_id: product.size_chart_id,
+        size_chart_id: sizeChartIdForPublish,
       };
     }
 
@@ -1416,11 +1543,13 @@ export async function publishProduct(
     const cleanPayload = removeUndefinedValues(shopeePayload);
 
     logPublishEvent('info', 'publish.add_item.payload_summary', publishContext, {
-      main_image_count: processedMainImages.length,
+      main_image_count: processedMainImagesForAdd.length,
+      main_image_count_34: processedMainImages34?.length || 0,
+      main_image_ratio: mainImageRatioForAdd,
       logistic_channel_count: logisticInfo.length,
       has_attributes: !!(product.atributos && product.atributos.length > 0),
       has_video: !!product.video_url,
-      has_size_chart: !!product.size_chart_id,
+      has_size_chart: !!sizeChartIdForPublish,
       has_wholesale: !!(product.wholesale && product.wholesale.length > 0),
     });
 
@@ -1450,6 +1579,23 @@ export async function publishProduct(
             seller_stock: [{ stock: m.estoque }],
           })),
         },
+        ...(processedMainImages34 && processedMainImages34.length > 0
+          ? {
+              update_item_image_ratio_3_4: {
+                item_id: 'DRY_RUN_ITEM_ID',
+                image: {
+                  image_id_list: processedMainImages34,
+                  image_ratio: '3:4',
+                },
+              },
+              update_item_promotion_images_3_4_fallback: {
+                item_id: 'DRY_RUN_ITEM_ID',
+                promotion_images: {
+                  image_id_list: processedMainImages34,
+                },
+              },
+            }
+          : {}),
       };
     }
 
@@ -1527,6 +1673,116 @@ export async function publishProduct(
       created_model_count: tierResponse.response?.model?.length || 0,
     });
 
+    if (
+      processedMainImages34 &&
+      processedMainImages34.length > 0
+    ) {
+      // Aguardar propagacao do item na Shopee antes de update_item (evita error_item_or_variation_not_found)
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      try {
+        const updateItemImage34Response = await callShopeeApi({
+          path: '/api/v2/product/update_item',
+          method: 'POST',
+          shopId: product.shop_id,
+          accessToken,
+          body: removeUndefinedValues({
+            item_id: itemId,
+            image: {
+              image_id_list: processedMainImages34,
+              image_ratio: '3:4',
+            },
+          }),
+        }) as { error?: string; message?: string };
+
+        if (updateItemImage34Response.error && updateItemImage34Response.error !== '' && updateItemImage34Response.error !== '-') {
+          throw new Error(`Erro ao sincronizar imagens 3:4: ${updateItemImage34Response.error} - ${updateItemImage34Response.message || 'sem detalhes'}`);
+        }
+
+        logPublishEvent('info', 'publish.update_item.image_ratio_3_4.success', publishContext, {
+          item_id: itemId,
+          image_count_34: processedMainImages34.length,
+        });
+      } catch (updateImageError) {
+        const firstErrorMsg = toErrorMessage(updateImageError);
+        logPublishEvent('warn', 'publish.update_item.image_ratio_3_4.failed', publishContext, {
+          item_id: itemId,
+          image_count_34: processedMainImages34.length,
+          error: firstErrorMsg,
+        });
+
+        // Se o erro for "item not found", aguardar mais e tentar novamente com image_ratio
+        const isNotFoundError = firstErrorMsg.includes('not_found') || firstErrorMsg.includes('not found');
+        if (isNotFoundError) {
+          logPublishEvent('info', 'publish.update_item.image_ratio_3_4.retry_after_delay', publishContext, {
+            item_id: itemId,
+            delay_ms: 5000,
+          });
+          await new Promise(resolve => setTimeout(resolve, 5000));
+
+          try {
+            const retryResponse = await callShopeeApi({
+              path: '/api/v2/product/update_item',
+              method: 'POST',
+              shopId: product.shop_id,
+              accessToken,
+              body: removeUndefinedValues({
+                item_id: itemId,
+                image: {
+                  image_id_list: processedMainImages34,
+                  image_ratio: '3:4',
+                },
+              }),
+            }) as { error?: string; message?: string };
+
+            if (retryResponse.error && retryResponse.error !== '' && retryResponse.error !== '-') {
+              throw new Error(`Erro ao sincronizar imagens 3:4 (retry): ${retryResponse.error} - ${retryResponse.message || 'sem detalhes'}`);
+            }
+            logPublishEvent('info', 'publish.update_item.image_ratio_3_4.retry_success', publishContext, {
+              item_id: itemId,
+              image_count_34: processedMainImages34.length,
+            });
+            // Retry com sucesso — pula o fallback de promotion_images
+          } catch (retryError) {
+            logPublishEvent('warn', 'publish.update_item.image_ratio_3_4.retry_failed', publishContext, {
+              item_id: itemId,
+              error: toErrorMessage(retryError),
+            });
+          }
+        }
+
+        // Fallback: tenta como promotion_images
+        try {
+          const updateItemResponse = await callShopeeApi({
+            path: '/api/v2/product/update_item',
+            method: 'POST',
+            shopId: product.shop_id,
+            accessToken,
+            body: removeUndefinedValues({
+              item_id: itemId,
+              promotion_images: {
+                image_id_list: processedMainImages34,
+              },
+            }),
+          }) as { error?: string; message?: string };
+
+          if (updateItemResponse.error && updateItemResponse.error !== '' && updateItemResponse.error !== '-') {
+            throw new Error(`Erro ao sincronizar promotion_images 3:4: ${updateItemResponse.error} - ${updateItemResponse.message || 'sem detalhes'}`);
+          }
+          logPublishEvent('info', 'publish.update_item.promotion_images_3_4.success', publishContext, {
+            item_id: itemId,
+            image_count_34: processedMainImages34.length,
+          });
+        } catch (promotionImageError) {
+          logPublishEvent('warn', 'publish.update_item.promotion_images_3_4.failed', publishContext, {
+            item_id: itemId,
+            image_count_34: processedMainImages34.length,
+            error: toErrorMessage(promotionImageError),
+          });
+        }
+      }
+    }
+
     // Atualiza produto com sucesso
     await runPublishStage('persist', publishContext, async () => {
       const now = admin.firestore.Timestamp.now();
@@ -1537,6 +1793,7 @@ export async function publishProduct(
         updated_at: now,
         last_synced_at: now,
         sync_status: 'synced',
+        ...(sizeChartIdForPublish ? { size_chart_id: sizeChartIdForPublish } : {}),
         publish_lock: admin.firestore.FieldValue.delete(),
         error_message: admin.firestore.FieldValue.delete(),
       });
@@ -1549,9 +1806,10 @@ export async function publishProduct(
         dimensoes: product.dimensoes,
       });
 
-      if (product.ncm_padrao || product.categoria_nome) {
+      if (product.ncm_padrao || product.cest_padrao || product.categoria_nome) {
         await preferencesService.saveUserPreferences(userId, {
           ...(product.ncm_padrao ? { ncm_padrao: product.ncm_padrao } : {}),
+          ...(product.cest_padrao ? { cest_padrao: product.cest_padrao } : {}),
           ...(product.categoria_nome ? { categoria_nome_padrao: product.categoria_nome } : {}),
         });
       }

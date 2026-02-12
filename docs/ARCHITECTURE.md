@@ -1,6 +1,6 @@
 # Arquitetura do Projeto
 
-Ultima atualizacao: 2026-02-11
+Ultima atualizacao: 2026-02-12
 
 ## Leitura rapida (para agentes)
 1. Runtime e fronteiras: secoes "Topologia" e "Camadas".
@@ -72,14 +72,17 @@ Ultima atualizacao: 2026-02-11
 
 ## Fluxos criticos
 
-### Shopee publish
+### Shopee publish (3 chamadas API)
 1. Carrega draft + ownership.
-2. Valida pre-publish.
-3. Upload de imagens para `image_id`.
-4. `add_item`.
-5. `init_tier_variation`.
-6. Persistencia de `item_id` e status.
-7. Rollback em falha parcial.
+2. Adquire lock transacional (`publish_lock` com TTL).
+3. Valida pre-publish (atributos, marca, logistica, size chart).
+4. Upload de imagens para `image_id` (com retry/backoff).
+5. `add_item` (item base, sem variacoes).
+6. Aguarda 5s.
+7. `init_tier_variation` (tiers + models).
+8. Aguarda 5s, `update_item` para imagens 3:4 (com retry em `not_found`).
+9. Persistencia de `item_id` e status.
+10. Rollback em falha parcial (`delete_item`).
 
 ### Gestao de imagens e mosaicos
 1. Fontes principais: `cor_tecido` e `estampas` (via `tecidoBaseId`).

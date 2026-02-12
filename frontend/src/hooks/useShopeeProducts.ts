@@ -282,6 +282,8 @@ export function useShopeeProducts() {
           altura: 10,
         },
         usar_imagens_publicas: true,
+        ncm_padrao: '55161300',
+        cest_padrao: '2806000',
       };
     }
   }, []);

@@ -202,6 +202,7 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       extended_description,
       wholesale,
       ncm_padrao,
+      cest_padrao,
     } = req.body;
     
     // Validações
@@ -344,6 +345,7 @@ router.post('/', authMiddleware, async (req: Request<object, object, CreateShope
       extended_description,
       wholesale,
       ncm_padrao,
+      cest_padrao,
     });
     
     res.status(201).json({

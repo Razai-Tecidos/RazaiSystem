@@ -6,6 +6,19 @@ import { auth } from '@/config/firebase';
 import { ShopeeBrand } from '@/types/shopee-product.types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const PREFERRED_BRAND_NAME = 'Razai Tecidos';
+const BRAND_PAGE_SIZE = 100;
+const BRAND_FETCH_MAX_PAGES = 10;
+const BRAND_CACHE_TTL_MS = 15 * 60 * 1000;
+const BRAND_CACHE_VERSION = 'v2';
+
+type CachedBrandResult = {
+  brands: ShopeeBrand[];
+  isMandatory: boolean;
+  expiresAt: number;
+};
+
+const brandCache = new Map<string, CachedBrandResult>();
 
 interface BrandSelectorProps {
   shopId: number;
@@ -26,6 +39,18 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const normalizeBrandName = (text: string): string =>
+    text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+  const getBrandLabel = (brand: ShopeeBrand): string =>
+    (brand.display_brand_name || brand.original_brand_name || '').trim();
+
+  const cacheKey = `${BRAND_CACHE_VERSION}:${shopId}:${categoryId}`;
 
   useEffect(() => {
     if (shopId && categoryId) {
@@ -57,22 +82,83 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
 
   const loadBrands = async () => {
     try {
+      const cached = brandCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        setBrands(cached.brands);
+        setIsMandatory(cached.isMandatory);
+        return;
+      }
+
       setLoading(true);
       setError(null);
       const token = await getAuthToken();
       if (!token) return;
 
-      const response = await fetch(
-        `${API_BASE}/api/shopee/categories/${categoryId}/brands?shop_id=${shopId}&language=pt-BR&all=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = await response.json();
+      const preferredNormalized = normalizeBrandName(PREFERRED_BRAND_NAME);
+      let fallbackBrands: ShopeeBrand[] = [];
+      let matchedPreferred: ShopeeBrand | null = null;
+      let resolvedMandatory = false;
+      let nextOffset = 0;
+      let hasMore = true;
 
-      if (data.success) {
-        setBrands(data.data?.brands || []);
-        setIsMandatory(Boolean(data.data?.is_mandatory ?? data.data?.isMandatory));
-      } else {
-        setError(data.error || 'Erro ao carregar marcas');
+      for (let pageIndex = 0; pageIndex < BRAND_FETCH_MAX_PAGES && hasMore && !matchedPreferred; pageIndex += 1) {
+        const response = await fetch(
+          `${API_BASE}/api/shopee/categories/${categoryId}/brands?shop_id=${shopId}&language=pt-BR&all=false&page_size=${BRAND_PAGE_SIZE}&offset=${nextOffset}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await response.json();
+
+        if (!data.success) {
+          setError(data.error || 'Erro ao carregar marcas');
+          return;
+        }
+
+        const pageBrands: ShopeeBrand[] = data.data?.brands || [];
+        if (pageIndex === 0) fallbackBrands = pageBrands;
+        resolvedMandatory = Boolean(data.data?.is_mandatory ?? data.data?.isMandatory ?? resolvedMandatory);
+
+        matchedPreferred = pageBrands.find(
+          (brand) => normalizeBrandName(getBrandLabel(brand)) === preferredNormalized
+        ) || null;
+
+        hasMore = Boolean(data.data?.has_more);
+        nextOffset = Number(data.data?.next_offset || 0);
+      }
+
+      // Fallback robusto: se nao encontrou na busca paginada, faz varredura completa.
+      if (!matchedPreferred) {
+        const response = await fetch(
+          `${API_BASE}/api/shopee/categories/${categoryId}/brands?shop_id=${shopId}&language=pt-BR&all=true&status=all&page_size=${BRAND_PAGE_SIZE}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await response.json();
+
+        if (data.success) {
+          const allBrands: ShopeeBrand[] = data.data?.brands || [];
+          resolvedMandatory = Boolean(data.data?.is_mandatory ?? data.data?.isMandatory ?? resolvedMandatory);
+          const exhaustiveMatch = allBrands.find(
+            (brand) => normalizeBrandName(getBrandLabel(brand)) === preferredNormalized
+          ) || null;
+          if (exhaustiveMatch) {
+            matchedPreferred = exhaustiveMatch;
+          } else if (allBrands.length > 0) {
+            fallbackBrands = allBrands;
+          }
+        }
+      }
+
+      const finalBrands = matchedPreferred ? [matchedPreferred] : fallbackBrands;
+      setBrands(finalBrands);
+      setIsMandatory(resolvedMandatory);
+
+      brandCache.set(cacheKey, {
+        brands: finalBrands,
+        isMandatory: resolvedMandatory,
+        expiresAt: Date.now() + BRAND_CACHE_TTL_MS,
+      });
+
+      if (matchedPreferred && value !== matchedPreferred.brand_id) {
+        onChange(matchedPreferred.brand_id, getBrandLabel(matchedPreferred));
       }
     } catch (err: any) {
       console.error('Erro ao carregar marcas:', err);
@@ -83,7 +169,7 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
   };
 
   const filteredBrands = brands.filter(b =>
-    b.display_brand_name.toLowerCase().includes(searchTerm.toLowerCase())
+    getBrandLabel(b).toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const selectedBrand = brands.find(b => b.brand_id === value);
@@ -129,7 +215,7 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
           onClick={() => setIsOpen(!isOpen)}
         >
           <span className={selectedBrand || value === 0 ? 'text-gray-900' : 'text-gray-400'}>
-            {value === 0 ? 'Sem marca' : selectedBrand ? selectedBrand.display_brand_name : 'Selecione a marca...'}
+            {value === 0 ? 'Sem marca' : selectedBrand ? getBrandLabel(selectedBrand) : 'Selecione a marca...'}
           </span>
           <Search className="w-4 h-4 text-gray-400" />
         </div>
@@ -166,12 +252,12 @@ export function BrandSelector({ shopId, categoryId, value, onChange, onValidatio
                     brand.brand_id === value ? 'bg-blue-50 text-blue-800' : ''
                   }`}
                   onClick={() => {
-                    onChange(brand.brand_id, brand.display_brand_name);
+                    onChange(brand.brand_id, getBrandLabel(brand));
                     setIsOpen(false);
                     setSearchTerm('');
                   }}
                 >
-                  {brand.display_brand_name}
+                  {getBrandLabel(brand)}
                 </div>
               ))}
               {filteredBrands.length === 0 && (

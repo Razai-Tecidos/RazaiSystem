@@ -27,6 +27,7 @@ export interface ShopeeUserPreferences {
   usar_imagens_publicas_padrao?: boolean;
   descricao_template?: string;
   ncm_padrao?: string;
+  cest_padrao?: string;
   categoria_nome_padrao?: string;
   ultimos_valores?: {
     preco_base?: number;
@@ -68,6 +69,7 @@ export interface UpdateShopeePreferencesData {
   usar_imagens_publicas_padrao?: boolean;
   descricao_template?: string;
   ncm_padrao?: string;
+  cest_padrao?: string;
   categoria_nome_padrao?: string;
 }
 
@@ -91,4 +93,6 @@ export const SYSTEM_DEFAULTS = {
   teto_comissao_padrao: 100,
   aplicar_teto_padrao: true,
   aplicar_baixo_valor_padrao: true,
+  ncm_padrao: '55161300',
+  cest_padrao: '2806000',
 };

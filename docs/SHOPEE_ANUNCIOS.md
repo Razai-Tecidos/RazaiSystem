@@ -1,6 +1,6 @@
 # Modulo de Criacao de Anuncios Shopee
 
-Ultima atualizacao: 2026-02-11
+Ultima atualizacao: 2026-02-12
 
 ## Acompanhamento de ondas e tasks
 
@@ -12,6 +12,7 @@ Para acompanhar execucao por fase (Onda 1, 2 e 3), usar:
 
 ### Entrypoints de codigo
 - UI principal do fluxo: `frontend/src/pages/CriarAnuncioShopee.tsx`
+- Auto-fill de atributos: `frontend/src/components/Shopee/CategoryAttributes.tsx`
 - Logica de precificacao: `frontend/src/lib/shopeePricing.ts`
 - Publicacao/backend Shopee: `functions/src/services/shopee-product.service.ts`
 - Rotas Shopee: `functions/src/routes/shopee-products.routes.ts`
@@ -25,6 +26,9 @@ Para acompanhar execucao por fase (Onda 1, 2 e 3), usar:
 - `mudar defaults de precificacao`: `frontend/src/hooks/useShopeePreferences.ts` + `functions/src/services/shopee-preferences.service.ts`
 - `mudar payload de publicacao`: `functions/src/services/shopee-product.service.ts`
 - `mudar validacao de categoria/marca/size chart`: `frontend/src/components/Shopee/*.tsx` + `functions/src/services/shopee-category.service.ts` + `functions/src/services/shopee-item-limit.service.ts`
+- `mudar auto-fill de atributos`: `frontend/src/components/Shopee/CategoryAttributes.tsx` (logica + `ATTR_UNITS` + `buildDynamicDefaults`)
+- `mudar dados enviados para auto-fill`: `frontend/src/pages/CriarAnuncioShopee.tsx` (`tecidoDataForAttributes` useMemo)
+- `mudar timing/retry de imagens 3:4`: `functions/src/services/shopee-product.service.ts`
 
 ### Comandos de verificacao
 ```powershell
@@ -172,6 +176,28 @@ O step permite:
 - `canProceedFromTamanhosPrecificacao`: exige preco valido
 - `canProceedFromImagens`: exige 9 imagens `1:1` e 9 imagens `3:4`
 
+## Auto-fill de atributos
+
+### Componente: `CategoryAttributes.tsx`
+
+O componente pre-preenche atributos automaticamente ao selecionar categoria, usando dados do tecido:
+
+- **Material**: extraido de `composicao` do tecido (ex: "Poliester e Elastano")
+- **Estampa/Pattern**: baseado em `tipo` ("liso" → "Lisa", "estampado" → "Estampada")
+- **Largura/Width (100660)**: de `tecido.largura`, com `value_unit: "m"`
+- **Comprimento/Length (100594)**: dos tamanhos selecionados, multi-valor com `value_unit: "m"`
+
+### Mecanismo tecnico
+- `buildDynamicDefaults()` monta defaults a partir de `tecidoData` prop
+- `ATTR_UNITS` map define unidades por atributo (`comprimento: 'm'`, `largura: 'm'`)
+- COMBO_BOX free-text: `value_id: 0` + `original_value_name` + `value_unit` (se aplicavel)
+- Auto-fill roda 1x ao carregar atributos (guarda `autoFilledRef`)
+- `onChange` usa ref estavel para evitar loops de re-render
+
+### Dados enviados de `CriarAnuncioShopee.tsx`
+- `tecidoDataForAttributes` useMemo monta: `{ composicao, tipo, largura, comprimentos }`
+- `comprimentos` extraidos de `selectedTamanhos` via `extractMetersFromTamanhoNome()`
+
 ## Regra de galeria de imagens (1:1 e 3:4)
 
 - o fluxo trabalha com duas galerias independentes: `imagens_principais_1_1` e `imagens_principais_3_4`
@@ -198,7 +224,7 @@ Principais ajustes aplicados:
 - `get_attribute_tree` com contrato `category_id_list` e fallback compativel (`category_ids`/`category_id`) no backend.
 - obrigatoriedade de marca ajustada no frontend para ler `is_mandatory`.
 - size chart corrigido com `category_id` e `page_size` no endpoint de listagem.
-- suporte a size chart baseado em `get_item_limit.size_chart_supported`.
+- suporte a size chart baseado em `get_item_limit` → `size_chart_limit.support_image_size_chart`.
 - publicacao alterada para enviar `size_chart_info: { size_chart_id }`.
 - `logistic_info` persistido no draft e respeitado no publish (com filtro de compatibilidade por peso/dimensoes).
 - ownership reforcado no `GET /api/shopee/products/:id` (aceitando `created_by`/`user_id`).
@@ -251,3 +277,21 @@ Principais ajustes aplicados:
 Detalhes e evidencias de validacao:
 - `docs/SHOPEE_ANUNCIOS.md`
 - `docs/ENTREGAS_2026-02-11.md`
+
+## Correcoes pos-Onda 3 (2026-02-12)
+
+### Fix: Imagens 3:4 nao apareciam na publicacao
+- **Problema**: `update_item` para imagens 3:4 falhava com `error_item_or_variation_not_found` porque era chamado imediatamente apos `init_tier_variation`.
+- **Causa raiz**: Shopee precisa de ~5s para processar o item apos `init_tier_variation`.
+- **Fix**: Adicionado delay de 5s antes do `update_item` + retry com mais 5s se falhar com "not_found".
+- **Arquivo**: `functions/src/services/shopee-product.service.ts`
+
+### Fix: Auto-fill de atributos nao funcionava
+- **Problema**: useEffect de auto-fill entrava em loop ciclico por `onChange` nao memoizado.
+- **Fix**: `onChange` via `useRef` + guard `autoFilledRef` para rodar apenas 1x.
+- **Arquivo**: `frontend/src/components/Shopee/CategoryAttributes.tsx`
+
+### Feature: Auto-fill de Largura e Comprimento
+- Width (100660) e Length (100594) agora sao pre-preenchidos com dados do tecido/tamanhos.
+- Ambos usam `value_unit: "m"` (minusculo, validado em producao).
+- **Arquivos**: `CategoryAttributes.tsx`, `CriarAnuncioShopee.tsx`

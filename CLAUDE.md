@@ -266,17 +266,33 @@ router.get('/protected', authMiddleware, (req, res) => {
 3. Tokens stored in `shopee_shops` collection (backend only)
 4. Scheduled function refreshes tokens before expiry
 
-### Product Publishing Flow
+### Product Publishing Flow (3 API calls)
 1. Draft created in `shopee_products` (status: "draft")
 2. Read draft, verify permission (`created_by === userId`)
-3. Fetch fabric data, validate payload (`shopee-validation.ts`)
-4. Status → "publishing", ensure valid OAuth token
-5. Fetch logistics channels, compress images (Sharp, max 2MB)
-6. Upload main images + variation color images → get `image_id`s
-7. Build payload with `seller_stock` at BOTH levels, `brand`, `removeUndefinedValues()`
-8. POST `/api/v2/product/add_item`
-9. Update draft: `item_id`, status → "created", `published_at`
-- **Dry-run**: `POST /:id/publish?dry_run=true` — runs steps 1-7, returns payload without API call
+3. Fetch fabric data, validate payload (pre-publish checks)
+4. Acquire transactional lock (`publish_lock` with TTL)
+5. Status → "publishing", ensure valid OAuth token
+6. Fetch logistics channels, compress images (Sharp, max 2MB)
+7. Upload main images + variation color images → get `image_id`s
+8. Build payload with `seller_stock` at BOTH levels, `brand`, `removeUndefinedValues()`
+9. POST `/api/v2/product/add_item` (item base, NO tier/model)
+10. Wait 5 seconds (Shopee processing time)
+11. POST `/api/v2/product/init_tier_variation` (tiers + models)
+12. Wait 5 seconds, then POST `/api/v2/product/update_item` for 3:4 images (with retry on "not_found")
+13. Persist `item_id`, status → "created", `published_at`
+14. On partial failure: rollback via `delete_item`
+- **Dry-run**: `POST /:id/publish?dry_run=true` — runs steps 1-8, returns payload without API calls
+
+### Attribute Auto-Fill (CategoryAttributes)
+- Component: `frontend/src/components/Shopee/CategoryAttributes.tsx`
+- Auto-fills attributes from fabric data via `tecidoData` prop:
+  - **Material**: Extracted from `composicao` (e.g., "Poliester e Elastano")
+  - **Estampa/Pattern**: Based on `tipo` ("liso" → "Lisa", "estampado" → "Estampada")
+  - **Largura/Width**: From `largura` with `value_unit: "m"`
+  - **Comprimento/Length**: From selected tamanhos with `value_unit: "m"` (multi-value)
+- Uses `ATTR_UNITS` map for attributes requiring `value_unit`
+- COMBO_BOX free-text: `value_id: 0` + `original_value_name` + optional `value_unit`
+- Auto-fill runs once when attributes load (guarded by `autoFilledRef`)
 
 ### Webhook Handling
 - **Endpoint**: `/api/shopee/webhook`
@@ -359,8 +375,13 @@ VITE_FIREBASE_APP_ID=...
 VITE_FIREBASE_MEASUREMENT_ID=...
 ```
 
-### Cloud Functions (Firebase config, not .env)
-Environment variables set via Firebase CLI or Console, accessed via `functions.config()`.
+### Cloud Functions (.env in functions/)
+```
+SHOPEE_PARTNER_ID=...
+SHOPEE_PARTNER_KEY=...
+SHOPEE_REDIRECT_URL=...
+```
+**Windows `.env` gotcha**: `.env` files on Windows have `\r\n` line endings. Manual parsing must split on `/\r?\n/` and `.trim()` values, or `\r` gets appended to values and silently breaks API credentials.
 
 ## Documentation Files
 

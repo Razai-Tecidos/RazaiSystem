@@ -84,6 +84,13 @@ function extractMetersFromTamanhoNome(nome?: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function toComprimentoId(value: number): string {
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+  return String(value).replace(',', '.');
+}
+
 function shuffleArray<T>(items: T[]): T[] {
   const copy = [...items];
   for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -240,7 +247,8 @@ export function CriarAnuncioShopee({
   });
 
   // Informações fiscais
-  const [ncmPadrao, setNcmPadrao] = useState<string>('58013600');
+  const [ncmPadrao, setNcmPadrao] = useState<string>('55161300');
+  const [cestPadrao, setCestPadrao] = useState<string>('2806000');
   
   // Busca de categoria
   const [categorySearchTerm, setCategorySearchTerm] = useState<string>('');
@@ -286,6 +294,62 @@ export function CriarAnuncioShopee({
     () => tamanhos.filter((tamanho) => extractMetersFromTamanhoNome(tamanho.nome) !== 4),
     [tamanhos]
   );
+
+  const tamanhoIdToComprimentoId = useMemo(() => {
+    const map = new Map<string, string>();
+    availableTamanhos.forEach((tamanho) => {
+      const metros = extractMetersFromTamanhoNome(tamanho.nome);
+      if (metros !== null) {
+        map.set(tamanho.id, toComprimentoId(metros));
+      }
+    });
+    return map;
+  }, [availableTamanhos]);
+
+  const comprimentoIdToTamanhoId = useMemo(() => {
+    const map = new Map<string, string>();
+    availableTamanhos.forEach((tamanho) => {
+      const metros = extractMetersFromTamanhoNome(tamanho.nome);
+      if (metros !== null) {
+        const key = toComprimentoId(metros);
+        if (!map.has(key)) {
+          map.set(key, tamanho.id);
+        }
+      }
+    });
+    return map;
+  }, [availableTamanhos]);
+
+  const selectedComprimentosForPayload = useMemo(() => {
+    const deduped: string[] = [];
+    selectedTamanhos.forEach((tamanhoId) => {
+      const comprimentoId = tamanhoIdToComprimentoId.get(tamanhoId);
+      if (comprimentoId && !deduped.includes(comprimentoId)) {
+        deduped.push(comprimentoId);
+      }
+    });
+    return deduped;
+  }, [selectedTamanhos, tamanhoIdToComprimentoId]);
+
+  const mapPrecosToComprimentoIds = useCallback((source: Record<string, number>) => {
+    return Object.entries(source).reduce<Record<string, number>>((acc, [tamanhoId, preco]) => {
+      const comprimentoId = tamanhoIdToComprimentoId.get(tamanhoId);
+      if (comprimentoId) {
+        acc[comprimentoId] = preco;
+      }
+      return acc;
+    }, {});
+  }, [tamanhoIdToComprimentoId]);
+
+  const mapMarginsToComprimentoIds = useCallback((source: MargemPorTamanho) => {
+    return Object.entries(source).reduce<MargemPorTamanho>((acc, [tamanhoId, margin]) => {
+      const comprimentoId = tamanhoIdToComprimentoId.get(tamanhoId);
+      if (comprimentoId) {
+        acc[comprimentoId] = margin;
+      }
+      return acc;
+    }, {});
+  }, [tamanhoIdToComprimentoId]);
 
   const normalizePricingParams = useCallback(
     (params: ShopeePricingParams): ShopeePricingParams => ({
@@ -445,10 +509,54 @@ export function CriarAnuncioShopee({
       setSelectedTecido(tecido);
       await getVinculosByTecido(tecido.id);
     }
+    const mapDraftKeyToLocalTamanhoId = (rawKey?: string, fallbackNome?: string): string | null => {
+      if (!rawKey && !fallbackNome) return null;
+
+      if (rawKey && availableTamanhos.some((item) => item.id === rawKey)) {
+        return rawKey;
+      }
+
+      const fromNumericKey = rawKey ? Number.parseFloat(rawKey.replace(',', '.')) : NaN;
+      if (Number.isFinite(fromNumericKey)) {
+        const found = comprimentoIdToTamanhoId.get(toComprimentoId(fromNumericKey));
+        if (found) return found;
+      }
+
+      const fromNome = extractMetersFromTamanhoNome(fallbackNome);
+      if (fromNome !== null) {
+        const found = comprimentoIdToTamanhoId.get(toComprimentoId(fromNome));
+        if (found) return found;
+      }
+
+      return null;
+    };
+
+    const mappedPrecosPorTamanho = Object.entries(product.precos_por_tamanho || {}).reduce<Record<string, number>>(
+      (acc, [key, value]) => {
+        const localTamanhoId = mapDraftKeyToLocalTamanhoId(key);
+        if (localTamanhoId) {
+          acc[localTamanhoId] = value;
+        }
+        return acc;
+      },
+      {}
+    );
+
+    const mappedMargemPorTamanho = Object.entries(product.precificacao?.margem_por_tamanho || {}).reduce<MargemPorTamanho>(
+      (acc, [key, value]) => {
+        const localTamanhoId = mapDraftKeyToLocalTamanhoId(key);
+        if (localTamanhoId) {
+          acc[localTamanhoId] = value;
+        }
+        return acc;
+      },
+      {}
+    );
+
     setPrecoUnico(product.preco_base);
-    setPrecosPorTamanho(product.precos_por_tamanho || {});
+    setPrecosPorTamanho(mappedPrecosPorTamanho);
     setPrecificacaoParams(normalizePricingParams(fromPrecificacaoPayload(product.precificacao)));
-    setMargemPorTamanho(product.precificacao?.margem_por_tamanho || {});
+    setMargemPorTamanho(mappedMargemPorTamanho);
     setPricingError(null);
     setEstoquePadrao(product.estoque_padrao);
     setCategoriaId(product.categoria_id);
@@ -469,7 +577,8 @@ export function CriarAnuncioShopee({
     setWholesaleEnabled(Boolean(product.wholesale && product.wholesale.length > 0));
     setWholesaleTiers(product.wholesale || []);
     setSizeChartId(product.size_chart_id);
-    setNcmPadrao(product.ncm_padrao || '58013600');
+    setNcmPadrao(product.ncm_padrao || '55161300');
+    setCestPadrao(product.cest_padrao || '2806000');
     const imagens11 = product.imagens_principais_1_1 && product.imagens_principais_1_1.length > 0
       ? product.imagens_principais_1_1
       : (product.imagem_ratio_principal !== '3:4' ? (product.imagens_principais || []) : []);
@@ -499,15 +608,14 @@ export function CriarAnuncioShopee({
     setCoresConfig(Array.from(coresMap.values()));
     
     // Configura tamanhos
-    const tamanhoIds = product.tier_variations
-      .find(t => t.tier_name === 'Tamanho')?.options
-      .map((_, i) => product.modelos.find(m => m.tier_index[1] === i)?.tamanho_id)
-      .filter(Boolean) as string[] || [];
-    const filteredTamanhoIds = tamanhoIds.filter((id) => {
-      const tamanho = tamanhos.find((item) => item.id === id);
-      return extractMetersFromTamanhoNome(tamanho?.nome) !== 4;
-    });
-    setSelectedTamanhos(filteredTamanhoIds);
+    const tierTamanhoOptions = product.tier_variations.find((t) => t.tier_name === 'Tamanho')?.options || [];
+    const selectedTamanhoIds = tierTamanhoOptions
+      .map((option, index) => {
+        const modelo = product.modelos.find((m) => m.tier_index[1] === index);
+        return mapDraftKeyToLocalTamanhoId(modelo?.tamanho_id, option.option_name || modelo?.tamanho_nome);
+      })
+      .filter((value): value is string => Boolean(value));
+    setSelectedTamanhos(Array.from(new Set(selectedTamanhoIds)));
   };
 
   const loadDefaultValues = async () => {
@@ -522,6 +630,7 @@ export function CriarAnuncioShopee({
       setUsarImagensPublicas(defaults.usar_imagens_publicas);
       if (defaults.descricao_template) setDescricaoCustomizada(defaults.descricao_template);
       if (defaults.ncm_padrao) setNcmPadrao(defaults.ncm_padrao);
+      if (defaults.cest_padrao) setCestPadrao(defaults.cest_padrao);
       setPrecificacaoParams((current) => ({
         ...current,
         comissao_percentual: defaults.comissao_percentual_padrao ?? current.comissao_percentual,
@@ -799,7 +908,6 @@ export function CriarAnuncioShopee({
     temPrecoValido && 
     categoriaId !== null && 
     tituloValido &&
-    hasEnabledLogistics &&
     mandatoryAttributesReadyAndValid &&
     mandatoryBrandReadyAndValid &&
     sizeChartReadyAndValid &&
@@ -807,6 +915,7 @@ export function CriarAnuncioShopee({
     dimensoes.comprimento > 0 && 
     dimensoes.largura > 0 && 
     dimensoes.altura > 0;
+  const canPublishFromPreview = canProceedFromConfiguracoes && hasEnabledLogistics;
 
   // Navegação entre etapas
   const goToNextStep = () => {
@@ -853,6 +962,14 @@ export function CriarAnuncioShopee({
       return;
     }
 
+    const tamanhosPayload = selectedComprimentosForPayload.length > 0
+      ? selectedComprimentosForPayload
+      : undefined;
+    const precosPorTamanhoPayload = selectedComprimentosForPayload.length > 0
+      ? mapPrecosToComprimentoIds(precosPorTamanho)
+      : undefined;
+    const margemPorTamanhoPayload = mapMarginsToComprimentoIds(margemPorTamanho);
+
     const data: CreateShopeeProductData = {
       shop_id: selectedShop.shopId,
       tecido_id: selectedTecido.id,
@@ -860,10 +977,10 @@ export function CriarAnuncioShopee({
         cor_id: c.cor_id,
         estoque: estoquePadrao,
       })),
-      tamanhos: selectedTamanhos.length > 0 ? selectedTamanhos : undefined,
-      precos_por_tamanho: selectedTamanhos.length > 0 ? precosPorTamanho : undefined,
+      tamanhos: tamanhosPayload,
+      precos_por_tamanho: precosPorTamanhoPayload,
       preco_base: precoBaseParaApi,
-      precificacao: toPrecificacaoPayload(precificacaoParams, margemPorTamanho),
+      precificacao: toPrecificacaoPayload(precificacaoParams, margemPorTamanhoPayload),
       estoque_padrao: estoquePadrao,
       categoria_id: categoriaId!,
       peso,
@@ -874,16 +991,17 @@ export function CriarAnuncioShopee({
       imagem_ratio_principal: imagemRatioPrincipal,
       imagens_principais_1_1: imagensPrincipais11.length > 0 ? imagensPrincipais11 : undefined,
       imagens_principais_3_4: imagensPrincipais34.length > 0 ? imagensPrincipais34 : undefined,
-      imagens_principais: imagensPrincipais.length > 0 ? imagensPrincipais : undefined,
       atributos: atributos.length > 0 ? atributos : undefined,
       brand_id: brandId,
       brand_nome: brandNome || undefined,
       logistic_info: logisticInfo,
+      condition: 'NEW',
       size_chart_id: sizeChartId,
       description_type: extendedDescEnabled ? 'extended' : 'normal',
       extended_description: extendedDescEnabled ? extendedDescription : undefined,
       wholesale: wholesaleEnabled && wholesaleTiers.length > 0 ? wholesaleTiers : undefined,
       ncm_padrao: ncmPadrao || undefined,
+      cest_padrao: cestPadrao || '2806000',
     };
 
     let result;
@@ -972,6 +1090,25 @@ export function CriarAnuncioShopee({
 
   // Calcula total de combinações
   const totalCombinations = selectedCores.length * (selectedTamanhos.length || 1);
+
+  // Dados do tecido para auto-fill de atributos Shopee
+  const tecidoDataForAttributes = useMemo(() => {
+    if (!selectedTecido) return undefined;
+    // Extrair comprimentos dos tamanhos selecionados (em metros)
+    const comprimentos = selectedTamanhos
+      .map((id) => {
+        const tam = tamanhos.find((t) => t.id === id);
+        return tam ? extractMetersFromTamanhoNome(tam.nome) : null;
+      })
+      .filter((v): v is number => v !== null)
+      .sort((a, b) => a - b);
+    return {
+      composicao: selectedTecido.composicao,
+      tipo: selectedTecido.tipo,
+      largura: selectedTecido.largura,
+      comprimentos,
+    };
+  }, [selectedTecido?.composicao, selectedTecido?.tipo, selectedTecido?.largura, selectedTamanhos, tamanhos]);
 
   // Nome auto-gerado do anúncio
   const nomeAutoGerado = useMemo(() => {
@@ -2115,6 +2252,7 @@ export function CriarAnuncioShopee({
                       categoryId={categoriaId}
                       values={atributos}
                       onChange={setAtributos}
+                      tecidoData={tecidoDataForAttributes}
                       onValidationChange={setAttributesValidation}
                     />
                   </div>
@@ -2141,6 +2279,8 @@ export function CriarAnuncioShopee({
                   <FiscalInfo
                     ncm={ncmPadrao}
                     onNcmChange={setNcmPadrao}
+                    cest={cestPadrao}
+                    onCestChange={setCestPadrao}
                     tecidoNome={selectedTecido?.nome}
                     corExemplo={selectedCores[0]?.cor_nome}
                     tamanhoExemplo={selectedTamanhos.length > 0 ? tamanhos.find(t => t.id === selectedTamanhos[0])?.nome : undefined}
@@ -2155,6 +2295,11 @@ export function CriarAnuncioShopee({
                       value={logisticInfo}
                       onChange={setLogisticInfo}
                     />
+                    {!hasEnabledLogistics && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        Para publicar, habilite pelo menos um canal de logistica.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -2306,6 +2451,7 @@ export function CriarAnuncioShopee({
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <h3 className="font-medium mb-2">Informações Fiscais</h3>
                     <p className="text-sm">NCM: <strong>{ncmPadrao || 'Não informado'}</strong></p>
+                    <p className="text-sm">CEST: <strong>{cestPadrao || '2806000'}</strong></p>
                     <p className="text-sm">GTIN: <strong>00</strong> <span className="text-xs text-gray-400">(fixo)</span></p>
                     <p className="text-sm">Nome NF: <strong className="text-xs">Tecido {selectedTecido?.nome} [cor] [tamanho]</strong></p>
                   </div>
@@ -2458,7 +2604,7 @@ export function CriarAnuncioShopee({
                 {currentStep === 'preview' ? (
                   <Button
                     onClick={handlePublish}
-                    disabled={publishing || !canProceedFromConfiguracoes}
+                    disabled={publishing || !canPublishFromPreview}
                     className="min-h-[44px]"
                   >
                     {publishing ? (

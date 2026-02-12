@@ -5,6 +5,8 @@ import { FileText, Info } from 'lucide-react';
 interface FiscalInfoProps {
   ncm: string;
   onNcmChange: (value: string) => void;
+  cest: string;
+  onCestChange: (value: string) => void;
   tecidoNome?: string;
   corExemplo?: string;
   tamanhoExemplo?: string;
@@ -19,6 +21,8 @@ interface FiscalInfoProps {
 export function FiscalInfo({
   ncm,
   onNcmChange,
+  cest,
+  onCestChange,
   tecidoNome,
   corExemplo,
   tamanhoExemplo,
@@ -41,19 +45,37 @@ export function FiscalInfo({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
           {/* NCM */}
           <FieldHint
             label="NCM"
             required
-            hint="Nomenclatura Comum do Mercosul. Para tecidos de composição mista (ex: poliéster), use 58013600. Será salvo como padrão."
+            hint="Nomenclatura Comum do Mercosul. Padrão do sistema: 55161300 para tecidos."
             description="Código fiscal do produto. Usado na nota fiscal da Shopee."
           >
             <Input
               value={ncm}
               onChange={(e) => onNcmChange(e.target.value.replace(/\D/g, '').slice(0, 8))}
-              placeholder="Ex: 58013600"
+              placeholder="Ex: 55161300"
               maxLength={8}
+              className="font-mono"
+            />
+          </FieldHint>
+
+          {/* CEST */}
+          <FieldHint
+            label="CEST"
+            hint='Codigo CEST (BR). Use 7 digitos ou "00" quando nao se aplica.'
+            description='Campo fiscal exigido em alguns NCMs na Shopee.'
+          >
+            <Input
+              value={cest}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, '');
+                onCestChange(digits.slice(0, 7));
+              }}
+              placeholder='Ex: 2806000'
+              maxLength={7}
               className="font-mono"
             />
           </FieldHint>

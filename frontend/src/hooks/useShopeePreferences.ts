@@ -31,6 +31,7 @@ interface UpdatePreferencesData {
   usar_imagens_publicas_padrao?: boolean;
   descricao_template?: string;
   ncm_padrao?: string;
+  cest_padrao?: string;
   categoria_nome_padrao?: string;
 }
 

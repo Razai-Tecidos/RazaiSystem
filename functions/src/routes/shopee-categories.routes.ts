@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { ensureOwnedShopOrFail } from '../middleware/shopee-shop-ownership.middleware';
 import * as categoryService from '../services/shopee-category.service';
+import { ShopeeBrand } from '../types/shopee-product.types';
 
 const router = Router();
 const DEFAULT_SHOPEE_LANGUAGE = 'pt-BR';
@@ -23,6 +24,12 @@ function resolveLanguage(value: unknown): string {
   if (typeof value !== 'string') return DEFAULT_SHOPEE_LANGUAGE;
   const sanitized = value.replace('_', '-').trim();
   return sanitized || DEFAULT_SHOPEE_LANGUAGE;
+}
+
+function resolvePageSize(value: unknown, fallback = 100): number {
+  const parsed = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, 100);
 }
 
 function extractShopeeEndpoint(errorMessage: string): string | null {
@@ -289,9 +296,12 @@ router.get('/:id/brands', async (req: Request, res: Response): Promise<void> => 
     const shopId = parseInt(req.query.shop_id as string, 10);
     const categoryId = parseInt(req.params.id, 10);
     const language = resolveLanguage(req.query.language);
-    const pageSize = parseInt(req.query.page_size as string) || 100;
+    const pageSize = resolvePageSize(req.query.page_size, 100);
     const offset = parseInt(req.query.offset as string) || 0;
     const fetchAllPages = req.query.all !== 'false';
+    const statusQuery = String(req.query.status || '1').toLowerCase();
+    const statusMode: 1 | 2 | 'all' =
+      statusQuery === '2' ? 2 : statusQuery === 'all' ? 'all' : 1;
     
     if (!shopId || isNaN(shopId)) {
       res.status(400).json({
@@ -310,9 +320,37 @@ router.get('/:id/brands', async (req: Request, res: Response): Promise<void> => 
     }
     
     const isMandatory = await categoryService.isBrandMandatory(shopId, categoryId);
+    const mergeBrands = (lists: Array<{ brands: ShopeeBrand[] }>) => {
+      const dedup = new Map<number, ShopeeBrand>();
+      lists.forEach((list) => {
+        list.brands.forEach((brand) => {
+          dedup.set(brand.brand_id, brand);
+        });
+      });
+      return Array.from(dedup.values());
+    };
 
     if (fetchAllPages) {
-      const result = await categoryService.getAllCategoryBrands(shopId, categoryId, 1, pageSize, language);
+      if (statusMode === 'all') {
+        const [normal, pending] = await Promise.all([
+          categoryService.getAllCategoryBrands(shopId, categoryId, 1, pageSize, language),
+          categoryService.getAllCategoryBrands(shopId, categoryId, 2, pageSize, language),
+        ]);
+        const brands = mergeBrands([normal, pending]);
+        res.json({
+          success: true,
+          data: {
+            brands,
+            has_more: normal.hasMore || pending.hasMore,
+            total: brands.length,
+            pages_fetched: normal.pagesFetched + pending.pagesFetched,
+            is_mandatory: isMandatory,
+          },
+        });
+        return;
+      }
+
+      const result = await categoryService.getAllCategoryBrands(shopId, categoryId, statusMode, pageSize, language);
       res.json({
         success: true,
         data: {
@@ -326,7 +364,26 @@ router.get('/:id/brands', async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const result = await categoryService.getCategoryBrands(shopId, categoryId, 1, pageSize, offset, language);
+    if (statusMode === 'all') {
+      const [normal, pending] = await Promise.all([
+        categoryService.getCategoryBrands(shopId, categoryId, 1, pageSize, offset, language),
+        categoryService.getCategoryBrands(shopId, categoryId, 2, pageSize, offset, language),
+      ]);
+      const brands = mergeBrands([normal, pending]);
+      res.json({
+        success: true,
+        data: {
+          brands,
+          has_more: normal.hasMore || pending.hasMore,
+          next_offset: Math.max(normal.nextOffset, pending.nextOffset),
+          total: brands.length,
+          is_mandatory: isMandatory,
+        },
+      });
+      return;
+    }
+
+    const result = await categoryService.getCategoryBrands(shopId, categoryId, statusMode, pageSize, offset, language);
     res.json({
       success: true,
       data: {
@@ -352,4 +409,3 @@ router.get('/:id/brands', async (req: Request, res: Response): Promise<void> => 
 });
 
 export default router;
-
